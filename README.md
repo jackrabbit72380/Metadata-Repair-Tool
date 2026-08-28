@@ -8,31 +8,231 @@ Developed by **jacktrabblt72380**.
 
 ---
 
-## Requirements
+## Requirements (native)
 
-- **Windows** (Windows Forms / PowerShell)
-- **PowerShell 5.1+** (Windows PowerShell or PowerShell 7+)
-- No installers beyond the scripts in this folder
+| Item | Detail |
+|------|--------|
+| **Platform** | **Windows 10 / 11** (primary and fully supported) |
+| **Runtime** | PowerShell 5.1+ (built-in) or PowerShell 7+ |
+| **UI** | .NET Windows Forms (`System.Windows.Forms`) |
+| **Install** | No installer — only the `.ps1` and `.bat` in this folder |
 
 Optional network access is used for GameTDB downloads and related tools.
 
+> **Important:** This application is a **Windows desktop GUI** built with WinForms. It does **not** run natively on Android, iOS, Linux, or macOS. See [Platform instructions](#platform-instructions) below for what works on each system.
+
 ---
 
-## Quick start
+## Platform instructions
+
+### Windows (full support)
+
+This is the intended environment.
 
 1. Keep these files in the **same folder**:
-   - `Metadata-Repair-Tool.ps1` — main application
-   - `Metadata-Repair-Launcher.bat` — double-click launcher
+   - `Metadata-Repair-Tool.ps1` — main application  
+   - `Metadata-Repair-Launcher.bat` — double-click launcher  
 2. Double-click **`Metadata-Repair-Launcher.bat`**  
-   (runs the script with `-ExecutionPolicy Bypass` and a hidden console).
-3. Or run from PowerShell:
+   (runs the script with `-ExecutionPolicy Bypass` and a hidden console window).  
+3. Or run from PowerShell / Terminal:
 
    ```powershell
+   Set-Location "C:\path\to\this\folder"
    powershell -ExecutionPolicy Bypass -File ".\Metadata-Repair-Tool.ps1"
    ```
 
-4. **Create** or **Add** a collection (metadata `.txt` + media folder).
-5. Select the collection — games load into Form view. Edit fields, use the tool panels on the left, then **Save**.
+   PowerShell 7:
+
+   ```powershell
+   pwsh -ExecutionPolicy Bypass -File ".\Metadata-Repair-Tool.ps1"
+   ```
+
+4. If Windows blocks the script: right-click the `.ps1` → **Properties** → check **Unblock** → OK.  
+5. **Create** or **Add** a collection (metadata `.txt` + media folder).  
+6. Select the collection — games load into Form view. Edit fields, use the left tool panels, then **Save**.
+
+**Config path (Windows):**
+
+`%APPDATA%\Pegasus-Metadata-Editor\config.json`  
+(typically `C:\Users\<You>\AppData\Roaming\Pegasus-Metadata-Editor\config.json`)
+
+Point collections at folders on local drives, external HDDs, or mapped network shares that Windows can access.
+
+---
+
+### Linux
+
+#### Install PowerShell on Linux
+
+PowerShell (formerly “PowerShell Core”) is cross-platform and works on Linux, macOS, and Windows. You can install it and run **many** `.ps1` scripts. For *this* tool, read the **important limitation** below.
+
+**Ubuntu / Debian:**
+
+```bash
+# Update package lists
+sudo apt update
+
+# Install prerequisites
+sudo apt install -y wget apt-transport-https software-properties-common
+
+# Import Microsoft package repository
+wget -q https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/packages-microsoft-prod.deb
+sudo dpkg -i packages-microsoft-prod.deb
+
+# Update again and install PowerShell
+sudo apt update
+sudo apt install -y powershell
+```
+
+**Fedora / CentOS / RHEL** (example repo for Fedora 38 — use the matching packages.microsoft.com package for your release):
+
+```bash
+sudo dnf install -y https://packages.microsoft.com/config/fedora/38/packages-microsoft-prod.rpm
+sudo dnf install -y powershell
+```
+
+**Start PowerShell:**
+
+```bash
+pwsh
+```
+
+You should see a `PS>` prompt.
+
+**Run a PowerShell script:**
+
+```bash
+pwsh ./Metadata-Repair-Tool.ps1
+```
+
+Or from inside PowerShell:
+
+```powershell
+./Metadata-Repair-Tool.ps1
+```
+
+**Execution policy** (if unsigned/local scripts are blocked):
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+**Optional — run `.ps1` files directly:**
+
+Add a shebang at the top of a script:
+
+```powershell
+#!/usr/bin/env pwsh
+```
+
+Then:
+
+```bash
+chmod +x Metadata-Repair-Tool.ps1
+./Metadata-Repair-Tool.ps1
+```
+
+Other distributions: [Install PowerShell on Linux](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux).
+
+**Key points about PowerShell on Linux:**
+
+- Same language engine as on Windows — many scripts work without changes  
+- You can mix PowerShell with native Linux commands  
+- Useful for cross-platform automation  
+
+#### Important limitation for *this* application
+
+Installing PowerShell on Linux does **not** make Metadata Repair Tool’s GUI work.
+
+This app is built with **.NET Windows Forms** (`System.Windows.Forms`), which is **Windows-only**. On Linux, `pwsh ./Metadata-Repair-Tool.ps1` will typically fail when loading WinForms — the main window will not open.
+
+**What Linux users should do for this tool:**
+
+| Approach | Notes |
+|----------|--------|
+| **Windows PC or VM (recommended)** | Run the tool in a Windows VM (VirtualBox, VMware, QEMU/KVM). Share ROM/metadata folders with the guest (Samba, virtio-9p, shared folder). Full UI and all features work. |
+| **Wine + Windows PowerShell** | Experimental only. WinForms under Wine is unreliable; dialogs and controls often break. **Not recommended** for production libraries. |
+| **Edit metadata as text** | Pegasus metadata is plain text. Use any editor or your own scripts for small fixes. |
+
+**Light editing without this app:**
+
+```bash
+less "/path/to/collection/snes.txt"
+nano "/path/to/collection/snes.txt"
+```
+
+Keep backups before hand-editing large files. Use **Metadata Repair Tool on Windows** (or a Windows VM) when you need health checks, GameTDB, batch import, Sort A–Z, image tools, etc.
+
+---
+
+### macOS (not native — limited options)
+
+Same limitation as Linux: **WinForms is Windows-only**. PowerShell for macOS (`pwsh`) cannot display this UI.
+
+**Practical options:**
+
+| Approach | Notes |
+|----------|--------|
+| **Windows VM or Boot Camp / Parallels / VMware Fusion** | Run the tool inside Windows; share the folder that holds your Pegasus collections (or copy metadata in/out). |
+| **Remote Windows machine** | RDP / remote desktop into a Windows PC that has the tool and access to the library (local or network path). |
+| **Plain-text editing** | Metadata remains UTF-8 text. Use TextEdit, VS Code, or similar for small fixes only. |
+
+Do not expect `pwsh Metadata-Repair-Tool.ps1` to open the window on macOS — it will fail when loading `System.Windows.Forms`.
+
+---
+
+### Android (not supported)
+
+This is a **desktop Windows executable script**, not an Android app.
+
+- It cannot be installed from Play Store or sideloaded as an APK.  
+- Termux / PowerShell-on-Android **cannot** host WinForms UI.  
+- Pegasus or other Android frontends may **read** the same metadata files if you sync them, but **repair/editing with this tool must be done on Windows**.
+
+**Suggested workflow for Android libraries:**
+
+1. Keep the master metadata + media on a PC (or synced cloud/USB).  
+2. Run **Metadata Repair Tool on Windows** to fix titles, paths, art, and order.  
+3. Copy or sync the updated collection folder to the Android device for the frontend to use.
+
+Use a file manager or text editor on Android only for emergency one-line fixes; prefer the Windows tool for bulk work.
+
+---
+
+### iOS / iPadOS (not supported)
+
+There is **no way** to run this application on iPhone or iPad:
+
+- No WinForms / Windows PowerShell GUI on iOS.  
+- Shortcuts, Pythonista, or SSH apps cannot host this UI.  
+- App Store policies and sandboxing prevent running arbitrary Windows desktop tools.
+
+**Suggested workflow:**
+
+1. Maintain collections on a **Windows PC** (or Mac with a Windows VM) using this tool.  
+2. Transfer the collection folder to the device via Files, a computer, or cloud sync if your frontend supports it.  
+3. Use the mobile frontend only to **play**; use Windows for **metadata repair**.
+
+---
+
+### Summary
+
+| Platform | Runs this app? | What to do |
+|----------|----------------|------------|
+| **Windows** | **Yes — full support** | Use the launcher or PowerShell; see steps above |
+| **Linux** | No (native) | Windows VM + shared folders, or edit text files carefully |
+| **macOS** | No (native) | Windows VM / Parallels / remote Windows |
+| **Android** | No | Repair on Windows, then sync library to device |
+| **iOS** | No | Repair on Windows, then transfer collection data |
+
+---
+
+## Quick start (Windows)
+
+1. Place `Metadata-Repair-Tool.ps1` and `Metadata-Repair-Launcher.bat` in the same folder.  
+2. Double-click **`Metadata-Repair-Launcher.bat`**.  
+3. **Create** or **Add** a collection.  
+4. Select it, edit in Form (or Raw) view, run tools from the left panel, then **Save**.
 
 Config is stored under:
 
