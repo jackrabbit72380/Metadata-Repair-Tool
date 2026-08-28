@@ -1,5 +1,7 @@
 # Metadata Repair Tool
 
+![Metadata Repair Tool Preview](Preview.jpg)
+
 **Version 2.5.2**
 
 A Windows desktop utility for managing [Pegasus Frontend](https://pegasus-frontend.org/) collection metadata. Edit game entries in form or raw view, fix paths and art, pull titles/covers from GameTDB, import EmulationStation gamelists, and run batch repair jobs on large libraries.
@@ -409,6 +411,7 @@ Use the in-app **Guide** button for more step-by-step scenarios.
 
 | File | Role |
 |------|------|
+| `Preview.jpg` | Screenshot shown at the top of this README |
 | `Metadata-Repair-Tool.ps1` | Full application (UI + all tools) |
 | `Metadata-Repair-Launcher.bat` | Convenience launcher |
 | `README.md` | This document |
