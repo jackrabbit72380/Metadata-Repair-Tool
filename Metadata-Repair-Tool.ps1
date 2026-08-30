@@ -7244,9 +7244,9 @@ function Show-GameTDBCoverPackDialog {
         $grpOpt.Controls.Add($chkBoxFull)
 
         $chkRename = New-Object System.Windows.Forms.CheckBox
-        $chkRename.Text = "Rename images to game titles"
+        $chkRename.Text = "Rename to game titles"
         $chkRename.Location = New-Object System.Drawing.Point(12, 116)
-        $chkRename.Size = New-Object System.Drawing.Size(250, 18)
+        $chkRename.Size = New-Object System.Drawing.Size(200, 18)
         $chkRename.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkRename.ForeColor = $script:theme.text
         $chkRename.BackColor = $script:theme.background
@@ -7255,7 +7255,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkPng = New-Object System.Windows.Forms.CheckBox
         $chkPng.Text = "Convert to PNG"
-        $chkPng.Location = New-Object System.Drawing.Point(270, 116)
+        $chkPng.Location = New-Object System.Drawing.Point(220, 116)
         $chkPng.Size = New-Object System.Drawing.Size(160, 18)
         $chkPng.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkPng.ForeColor = $script:theme.text
