@@ -185,8 +185,8 @@ function Test-WindowsAppsLightTheme {
     return $true
 }
 
-function Initialize-SteamTheme {
-    # Classic dark blue / Steam-like look
+function Initialize-DefaultTheme {
+    # App default: dark blue panel with cyan accent labels + green success text
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(30, 30, 50)
         panel       = [System.Drawing.Color]::FromArgb(40, 40, 65)
@@ -202,6 +202,27 @@ function Initialize-SteamTheme {
         buttonHover = [System.Drawing.Color]::FromArgb(80, 80, 120)
         editor      = [System.Drawing.Color]::FromArgb(20, 20, 40)
         terminal    = [System.Drawing.Color]::FromArgb(20, 20, 40)
+    }
+    $script:isLightTheme = $false
+}
+
+function Initialize-SteamTheme {
+    # Separate Steam-inspired dark gray theme (not the app default)
+    $script:theme = @{
+        background  = [System.Drawing.Color]::FromArgb(27, 40, 56)
+        panel       = [System.Drawing.Color]::FromArgb(23, 26, 33)
+        border      = [System.Drawing.Color]::FromArgb(55, 65, 80)
+        text        = [System.Drawing.Color]::FromArgb(198, 212, 223)
+        textDim     = [System.Drawing.Color]::FromArgb(140, 155, 170)
+        accent      = [System.Drawing.Color]::FromArgb(102, 192, 244)
+        accentDark  = [System.Drawing.Color]::FromArgb(27, 140, 180)
+        success     = [System.Drawing.Color]::FromArgb(90, 200, 120)
+        error       = [System.Drawing.Color]::FromArgb(255, 110, 110)
+        warning     = [System.Drawing.Color]::FromArgb(230, 180, 70)
+        button      = [System.Drawing.Color]::FromArgb(42, 71, 94)
+        buttonHover = [System.Drawing.Color]::FromArgb(55, 95, 125)
+        editor      = [System.Drawing.Color]::FromArgb(18, 24, 32)
+        terminal    = [System.Drawing.Color]::FromArgb(18, 24, 32)
     }
     $script:isLightTheme = $false
 }
@@ -286,7 +307,7 @@ function Initialize-LightTheme {
 }
 
 function Initialize-HighContrastTheme {
-    # High contrast: black / white / bright yellow accents
+    # High contrast: black / white / cyan accents (same cyan family as Default)
     $script:isLightTheme = $false
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(0, 0, 0)
@@ -294,11 +315,11 @@ function Initialize-HighContrastTheme {
         border      = [System.Drawing.Color]::FromArgb(255, 255, 255)
         text        = [System.Drawing.Color]::FromArgb(255, 255, 255)
         textDim     = [System.Drawing.Color]::FromArgb(220, 220, 220)
-        accent      = [System.Drawing.Color]::FromArgb(255, 255, 0)
-        accentDark  = [System.Drawing.Color]::FromArgb(200, 200, 0)
+        accent      = [System.Drawing.Color]::FromArgb(100, 200, 255)
+        accentDark  = [System.Drawing.Color]::FromArgb(60, 120, 180)
         success     = [System.Drawing.Color]::FromArgb(0, 255, 0)
         error       = [System.Drawing.Color]::FromArgb(255, 80, 80)
-        warning     = [System.Drawing.Color]::FromArgb(255, 200, 0)
+        warning     = [System.Drawing.Color]::FromArgb(255, 200, 80)
         button      = [System.Drawing.Color]::FromArgb(20, 20, 20)
         buttonHover = [System.Drawing.Color]::FromArgb(60, 60, 60)
         editor      = [System.Drawing.Color]::FromArgb(0, 0, 0)
@@ -307,12 +328,13 @@ function Initialize-HighContrastTheme {
 }
 
 function Initialize-SystemTheme {
-    if (-not $script:themeMode) { $script:themeMode = "Steam" }
+    if (-not $script:themeMode) { $script:themeMode = "Default" }
     switch ($script:themeMode) {
+        "Steam"        { Initialize-SteamTheme }
         "Windows"      { Initialize-WindowsTheme }
         "Light"        { Initialize-LightTheme }
         "HighContrast" { Initialize-HighContrastTheme }
-        default        { Initialize-SteamTheme }  # Steam = default blue/green dark
+        default        { Initialize-DefaultTheme }  # Default = cyan/green accent look
     }
 }
 
@@ -322,6 +344,8 @@ function Apply-ThemeToControl {
     try {
         $t = $script:theme
         $n = $ctrl.GetType().Name
+        $role = $null
+        try { if ($null -ne $ctrl.Tag) { $role = [string]$ctrl.Tag } } catch {}
         if ($n -eq "Form" -or $n -eq "Panel" -or $n -eq "TableLayoutPanel" -or $n -eq "StatusStrip") {
             $ctrl.BackColor = $t.background
             try { $ctrl.ForeColor = $t.text } catch {}
@@ -330,7 +354,15 @@ function Apply-ThemeToControl {
             $ctrl.ForeColor = $t.text
         } elseif ($n -eq "Button") {
             $ctrl.BackColor = $t.button
-            $ctrl.ForeColor = $t.text
+            $btnName = ""
+            try { $btnName = [string]$ctrl.Name } catch {}
+            if ($role -eq "accent" -or $btnName -eq "mrtAccentBtn") {
+                $ctrl.ForeColor = $t.accent
+            } elseif ($role -eq "success" -or $btnName -eq "mrtSuccessBtn") {
+                $ctrl.ForeColor = $t.success
+            } else {
+                $ctrl.ForeColor = $t.text
+            }
             try {
                 $ctrl.FlatAppearance.MouseOverBackColor = $t.buttonHover
                 $ctrl.FlatAppearance.BorderColor = $t.border
@@ -344,21 +376,28 @@ function Apply-ThemeToControl {
             $ctrl.ForeColor = $t.text
         } elseif ($n -eq "Label") {
             try {
-                if ($ctrl.Name -eq "countLabel") {
+                if ($ctrl.Name -eq "countLabel" -or $role -eq "success") {
                     $ctrl.ForeColor = $t.success
+                } elseif ($role -eq "accent") {
+                    $ctrl.ForeColor = $t.accent
+                } elseif ($role -eq "dim" -or $role -eq "hint") {
+                    $ctrl.ForeColor = $t.textDim
                 } else {
                     $ctrl.ForeColor = $t.text
                 }
             } catch {
                 $ctrl.ForeColor = $t.text
             }
+        } elseif ($n -eq "RadioButton" -or $n -eq "CheckBox") {
+            $ctrl.BackColor = $t.background
+            $ctrl.ForeColor = $t.text
         }
         foreach ($c in @($ctrl.Controls)) { Apply-ThemeToControl $c }
     } catch {}
 }
 
 function Set-AppThemeMode {
-    param([ValidateSet("Steam","Light","HighContrast","Windows")][string]$Mode)
+    param([ValidateSet("Default","Steam","Light","HighContrast","Windows")][string]$Mode)
     $script:themeMode = $Mode
     Initialize-SystemTheme
     try { Save-Config } catch {}
@@ -391,7 +430,7 @@ function Set-AppThemeMode {
 }
 
 # Default until config loads
-$script:themeMode = "Steam"
+$script:themeMode = "Default"
 Initialize-SystemTheme
 
 
@@ -428,7 +467,7 @@ function Load-Config {
             $config = $raw | ConvertFrom-Json
             if ($null -ne $config.themeMode) {
                 $tm = [string]$config.themeMode
-                if ($tm -in @("Steam", "Light", "HighContrast", "Windows")) {
+                if ($tm -in @("Default", "Steam", "Light", "HighContrast", "Windows")) {
                     $script:themeMode = $tm
                 }
             }
@@ -468,7 +507,7 @@ function Save-Config {
         }
         $config = @{
             collections = $script:collections
-            themeMode   = $(if ($script:themeMode) { $script:themeMode } else { "Steam" })
+            themeMode   = $(if ($script:themeMode) { $script:themeMode } else { "Default" })
             pegasusPath = $(if ($script:pegasusPath) { [string]$script:pegasusPath } else { "" })
         }
         $json = $config | ConvertTo-Json -Depth 6
@@ -653,6 +692,7 @@ function Register-LeftSection {
         $btn.FlatAppearance.BorderSize = 0
         $btn.BackColor = $script:theme.button
         $btn.ForeColor = $script:theme.accent
+        $btn.Name = "mrtAccentBtn"
         $btn.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
         $btn.TabStop = $false
@@ -2042,7 +2082,7 @@ function Show-DeveloperLogDialog {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Settings"
-    $dlg.Size = New-Object System.Drawing.Size(480, 520)
+    $dlg.Size = New-Object System.Drawing.Size(480, 360)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -2050,9 +2090,12 @@ function Show-SettingsDialog {
     $dlg.BackColor = $script:theme.background
     $dlg.ForeColor = $script:theme.text
 
+    # Uniform button size used everywhere in this dialog
+    $btnW = 100
     $btnH = 26
     $secW = 440
     $secX = 16
+    $gap = 6
 
     # ========== Section 1: Pegasus ==========
     $grpPeg = New-Object System.Windows.Forms.GroupBox
@@ -2066,7 +2109,7 @@ function Show-SettingsDialog {
 
     $txtPegasus = New-Object System.Windows.Forms.TextBox
     $txtPegasus.Location = New-Object System.Drawing.Point(12, 28)
-    $txtPegasus.Size = New-Object System.Drawing.Size(340, 22)
+    $txtPegasus.Size = New-Object System.Drawing.Size(($secW - 24), 22)
     $txtPegasus.BackColor = $script:theme.editor
     $txtPegasus.ForeColor = $script:theme.text
     $txtPegasus.BorderStyle = "FixedSingle"
@@ -2074,7 +2117,7 @@ function Show-SettingsDialog {
     $txtPegasus.Text = $(if ($script:pegasusPath) { $script:pegasusPath } else { "" })
     $grpPeg.Controls.Add($txtPegasus)
 
-    $btnBrowsePeg = Create-Button "Browse" 360 26 68 $btnH
+    $btnBrowsePeg = Create-Button "Browse" 12 60 $btnW $btnH
     $btnBrowsePeg.Add_Click({
         $of = New-Object System.Windows.Forms.OpenFileDialog
         $of.Title = "Select Pegasus Frontend executable"
@@ -2096,7 +2139,7 @@ function Show-SettingsDialog {
     })
     $grpPeg.Controls.Add($btnBrowsePeg)
 
-    $btnSavePeg = Create-Button "Save Path" 12 60 100 $btnH
+    $btnSavePeg = Create-Button "Save Path" (12 + $btnW + $gap) 60 $btnW $btnH
     $btnSavePeg.Add_Click({
         $script:pegasusPath = $txtPegasus.Text.Trim()
         try { Save-Config } catch {}
@@ -2114,66 +2157,85 @@ function Show-SettingsDialog {
     $grpGuide.BackColor = $script:theme.background
     $dlg.Controls.Add($grpGuide)
 
-    $btnGuide = Create-Button "Open Workflow Guide" 12 28 160 $btnH
+    $btnGuide = Create-Button "Workflow Guide" 12 28 $btnW $btnH
     $btnGuide.Add_Click({ ShowWorkflowDialog })
     $grpGuide.Controls.Add($btnGuide)
 
-    $btnDevLog = Create-Button "Dev Log" 180 28 100 $btnH
+    $btnDevLog = Create-Button "Dev Log" (12 + $btnW + $gap) 28 $btnW $btnH
     $btnDevLog.Add_Click({ Show-DeveloperLogDialog })
     $grpGuide.Controls.Add($btnDevLog)
 
-    # ========== Section 3: Theme ==========
+    # ========== Section 3: Theme (horizontal equal buttons) ==========
     $grpTheme = New-Object System.Windows.Forms.GroupBox
     $grpTheme.Text = " Theme "
     $grpTheme.Location = New-Object System.Drawing.Point($secX, 202)
-    $grpTheme.Size = New-Object System.Drawing.Size($secW, 210)
+    $grpTheme.Size = New-Object System.Drawing.Size($secW, 70)
     $grpTheme.ForeColor = $script:theme.text
     $grpTheme.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $grpTheme.BackColor = $script:theme.background
     $dlg.Controls.Add($grpTheme)
 
     $themes = @(
-        @{ Name = "Steam (default)"; Mode = "Steam" },
+        @{ Name = "Default"; Mode = "Default" },
+        @{ Name = "Steam"; Mode = "Steam" },
         @{ Name = "Light"; Mode = "Light" },
-        @{ Name = "High Contrast"; Mode = "HighContrast" },
-        @{ Name = "Windows (system)"; Mode = "Windows" }
+        @{ Name = "Contrast"; Mode = "HighContrast" },
+        @{ Name = "Windows"; Mode = "Windows" }
     )
-    $ty = 28
+    # 5 equal buttons across the group width
+    $themeCount = $themes.Count
+    $themePad = 12
+    $themeInner = $secW - (2 * $themePad)
+    $themeBw = [Math]::Floor(($themeInner - ($gap * ($themeCount - 1))) / $themeCount)
+    $tx = $themePad
+    $themeBtns = New-Object System.Collections.ArrayList
     foreach ($th in $themes) {
-        $rb = New-Object System.Windows.Forms.RadioButton
-        $rb.Text = $th.Name
-        $rb.Tag = $th.Mode
-        $rb.Location = New-Object System.Drawing.Point(16, $ty)
-        $rb.Size = New-Object System.Drawing.Size(280, 22)
-        $rb.ForeColor = $script:theme.text
-        $rb.BackColor = $script:theme.background
-        $rb.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        if ($script:themeMode -eq $th.Mode) { $rb.Checked = $true }
-        $grpTheme.Controls.Add($rb)
-        $ty += 28
+        $tb = Create-Button $th.Name $tx 28 $themeBw $btnH
+        $tb.Tag = $th.Mode
+        $tb.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+        if ($script:themeMode -eq $th.Mode) {
+            $tb.BackColor = $script:theme.accentDark
+            $tb.ForeColor = [System.Drawing.Color]::White
+        }
+        $tb.Add_Click({
+            param($sender, $e)
+            $chosen = [string]$sender.Tag
+            if ([string]::IsNullOrWhiteSpace($chosen)) { return }
+            if ($script:themeMode -eq $chosen) { return }
+            Set-AppThemeMode -Mode $chosen
+            try {
+                $form = $sender.FindForm()
+                if ($form) {
+                    Apply-ThemeToControl $form
+                    # Re-highlight the active theme button after full theme apply
+                    foreach ($c in @($form.Controls)) {
+                        if ($c -isnot [System.Windows.Forms.GroupBox]) { continue }
+                        if ($c.Text -notmatch 'Theme') { continue }
+                        foreach ($b in @($c.Controls)) {
+                            if ($b -isnot [System.Windows.Forms.Button]) { continue }
+                            $mode = [string]$b.Tag
+                            if ($mode -eq $script:themeMode) {
+                                $b.BackColor = $script:theme.accentDark
+                                $b.ForeColor = [System.Drawing.Color]::White
+                            } else {
+                                $b.BackColor = $script:theme.button
+                                $b.ForeColor = $script:theme.text
+                            }
+                        }
+                    }
+                }
+            } catch {}
+            Log-Message "Theme: $chosen" "Cyan"
+        })
+        $grpTheme.Controls.Add($tb)
+        [void]$themeBtns.Add($tb)
+        $tx += $themeBw + $gap
     }
 
-    $btnApplyTheme = Create-Button "Apply Theme" 12 168 110 $btnH
-    $btnApplyTheme.Tag = $grpTheme
-    $btnApplyTheme.Add_Click({
-        param($sender, $e)
-        $grp = $sender.Tag
-        $chosen = $null
-        foreach ($ctrl in @($grp.Controls)) {
-            if ($ctrl -is [System.Windows.Forms.RadioButton] -and $ctrl.Checked) {
-                $chosen = [string]$ctrl.Tag
-                break
-            }
-        }
-        if ($chosen) {
-            Set-AppThemeMode -Mode $chosen
-            Log-Message "Theme applied: $chosen" "Cyan"
-        }
-    })
-    $grpTheme.Controls.Add($btnApplyTheme)
-
     # ========== Close ==========
-    $btnClose = Create-Button "Close" 350 430 100 $btnH
+    $btnClose = Create-Button "Close" ([Math]::Floor(($dlg.ClientSize.Width - $btnW) / 2)) 290 $btnW $btnH
+    # Fixed position relative to dialog content
+    $btnClose.Location = New-Object System.Drawing.Point( (16 + [Math]::Floor(($secW - $btnW) / 2)) , 290)
     $btnClose.Tag = $txtPegasus
     $btnClose.Add_Click({
         param($sender, $e)
@@ -2687,6 +2749,7 @@ function Show-MainWindow {
     $titleLabel.Size = New-Object System.Drawing.Size($leftW, 36)
     $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
     $titleLabel.ForeColor = $script:theme.accent
+    $titleLabel.Tag = "accent"
     $titleLabel.BackColor = $script:theme.background
     $titleLabel.BorderStyle = "FixedSingle"
     $titleLabel.TextAlign = "MiddleCenter"
@@ -3089,7 +3152,8 @@ function Show-MainWindow {
     # ============================================================
     # SECTION 5: GAMETDB TOOLS
     # ============================================================
-    $gtdbExpandedH = 180
+    # 4 rows x 2 equal half-width buttons
+    $gtdbExpandedH = 148
     $gtdbGroup = New-Object System.Windows.Forms.GroupBox
     $gtdbGroup.Text = " GameTDB Tools "
     $gtdbGroup.Location = New-Object System.Drawing.Point(5, 1196)
@@ -3100,32 +3164,32 @@ function Show-MainWindow {
     
     $gty = 22
     $gtBw = [Math]::Floor(($leftW - 24) / 2)
+    $gtCol2 = 8 + $gtBw + 6
     $btnGt1 = Create-Button "Download Titles DB" 8 $gty $gtBw 26
     $btnGt1.Add_Click({ Download-GameTDBTitles })
     $gtdbGroup.Controls.Add($btnGt1)
     
-    $btnGt2 = Create-Button "Download Covers by ID" (8 + $gtBw + 6) $gty $gtBw 26
+    $btnGt2 = Create-Button "Download Covers by ID" $gtCol2 $gty $gtBw 26
     $btnGt2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $btnGt2.Add_Click({ Download-GameTDBCovers })
     $gtdbGroup.Controls.Add($btnGt2)
     
     $gty += 30
-    $btnGtPack = Create-Button "Download Cover Pack..." 8 $gty ($leftW - 16) 26
+    $btnGtPack = Create-Button "Download Cover Pack..." 8 $gty $gtBw 26
     $btnGtPack.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $btnGtPack.Add_Click({ Show-GameTDBCoverPackDialog })
     $gtdbGroup.Controls.Add($btnGtPack)
     
-    $gty += 30
-    $btnGt3 = Create-Button "Lookup Title by ID" 8 $gty $gtBw 26
+    $btnGt3 = Create-Button "Lookup Title by ID" $gtCol2 $gty $gtBw 26
     $btnGt3.Add_Click({ Lookup-GameTDBTitle })
     $gtdbGroup.Controls.Add($btnGt3)
     
-    $btnGt4 = Create-Button "Open GameTDB Page" (8 + $gtBw + 6) $gty $gtBw 26
+    $gty += 30
+    $btnGt4 = Create-Button "Open GameTDB Page" 8 $gty $gtBw 26
     $btnGt4.Add_Click({ Open-GameTDBPage })
     $gtdbGroup.Controls.Add($btnGt4)
     
-    $gty += 30
-    $btnGt5 = Create-Button "Apply Titles from GameTDB" 8 $gty ($leftW - 16) 26
+    $btnGt5 = Create-Button "Apply Titles from GameTDB" $gtCol2 $gty $gtBw 26
     $btnGt5.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $btnGt5.Add_Click({ Apply-GameTDBTitles })
     $gtdbGroup.Controls.Add($btnGt5)
@@ -3135,7 +3199,7 @@ function Show-MainWindow {
     $btnGt7.Add_Click({ Fill-GameTDBBoxArtPaths })
     $gtdbGroup.Controls.Add($btnGt7)
     
-    $btnGt8 = Create-Button "DL Covers from Game List" (8 + $gtBw + 6) $gty $gtBw 26
+    $btnGt8 = Create-Button "DL Covers from Game List" $gtCol2 $gty $gtBw 26
     $btnGt8.Add_Click({ Download-CoversFromGameList })
     $gtdbGroup.Controls.Add($btnGt8)
     
@@ -3327,6 +3391,7 @@ function Show-MainWindow {
     $btnMetaToggle.FlatAppearance.BorderSize = 0
     $btnMetaToggle.BackColor = $script:theme.button
     $btnMetaToggle.ForeColor = $script:theme.accent
+    $btnMetaToggle.Tag = "accent"
     $btnMetaToggle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $btnMetaToggle.Cursor = [System.Windows.Forms.Cursors]::Hand
     $btnMetaToggle.TabStop = $false
@@ -3426,6 +3491,7 @@ function Show-MainWindow {
     $hdrTitle.Location = New-Object System.Drawing.Point(6, $fy)
     $hdrTitle.Size = New-Object System.Drawing.Size(520, 20)
     $hdrTitle.ForeColor = $script:theme.success
+    $hdrTitle.Tag = "success"
     $hdrTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $detailPanel.Controls.Add($hdrTitle)
     $fy += 24
@@ -3459,6 +3525,7 @@ function Show-MainWindow {
         $lbl.Location = New-Object System.Drawing.Point(6, $fy)
         $lbl.Size = New-Object System.Drawing.Size($labelW, 20)
         $lbl.ForeColor = $script:theme.accent
+        $lbl.Tag = "accent"
         $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
         $lbl.AutoSize = $false
         $lbl.AutoEllipsis = $false
@@ -3470,6 +3537,7 @@ function Show-MainWindow {
             $hintLbl.Location = New-Object System.Drawing.Point($hintX, ($fy + 1))
             $hintLbl.Size = New-Object System.Drawing.Size($hintW, 18)
             $hintLbl.ForeColor = $hintColor
+            $hintLbl.Tag = "hint"
             $hintLbl.Font = New-Object System.Drawing.Font("Consolas", 8)
             $hintLbl.AutoSize = $false
             $hintLbl.AutoEllipsis = $false
@@ -3504,6 +3572,7 @@ function Show-MainWindow {
     $gameTitle.Location = New-Object System.Drawing.Point(6, $fy)
     $gameTitle.Size = New-Object System.Drawing.Size(520, 20)
     $gameTitle.ForeColor = $script:theme.success
+    $gameTitle.Tag = "success"
     $gameTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $detailPanel.Controls.Add($gameTitle)
     $fy += 24
@@ -3549,6 +3618,7 @@ function Show-MainWindow {
         $lbl.Location = New-Object System.Drawing.Point(6, $fy)
         $lbl.Size = New-Object System.Drawing.Size($labelW, 20)
         $lbl.ForeColor = $script:theme.accent
+        $lbl.Tag = "accent"
         $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
         $lbl.AutoSize = $false
         $lbl.AutoEllipsis = $false
@@ -3560,6 +3630,7 @@ function Show-MainWindow {
             $hintLbl.Location = New-Object System.Drawing.Point($hintX, ($fy + 1))
             $hintLbl.Size = New-Object System.Drawing.Size($hintW, 18)
             $hintLbl.ForeColor = $hintColor
+            $hintLbl.Tag = "hint"
             $hintLbl.Font = New-Object System.Drawing.Font("Consolas", 8)
             $hintLbl.AutoSize = $false
             $hintLbl.AutoEllipsis = $false
@@ -3878,6 +3949,7 @@ function Show-MainWindow {
     $btnTermToggle.FlatAppearance.BorderSize = 0
     $btnTermToggle.BackColor = $script:theme.button
     $btnTermToggle.ForeColor = $script:theme.accent
+    $btnTermToggle.Tag = "accent"
     $btnTermToggle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $btnTermToggle.Cursor = [System.Windows.Forms.Cursors]::Hand
     $btnTermToggle.TabStop = $false
@@ -4176,7 +4248,7 @@ Sections
   Build & Repair Tools - Scan, Build, Import, Sync, ES XML, orphan cleanup
 
 Theme
-  Use Settings -> Theme to choose Steam / Light / High Contrast / Windows.
+  Use Settings -> Theme to choose Default / Steam / Light / High Contrast / Windows (applies immediately).
 
 Developer note
   All changes and updates must always be listed in the developer log
@@ -6682,11 +6754,30 @@ function Build-GameTDBCoverUrl {
     return "https://art.gametdb.com/$($info.ArtPath)/$ArtType/$Region/$shortId.$ext"
 }
 
+
+function Get-GameTDBCoverTypeDescription {
+    param([string]$CoverType)
+    $map = @{
+        "cover"        = "Standard box front covers (typical ~512px). Use for Box Front / box2dfront entries."
+        "coverHQ"      = "High quality box front covers (768x680). Use for Box Front / box2dfront entries."
+        "coverfullHQ"  = "High quality full box art (front + spine + back wrap). Best for boxFull / box2dfull."
+        "coverM"       = "Medium-size box front covers. Lighter downloads; fine for thumbs or box2dfront."
+        "cover3D"      = "3D rendered game box images (PNG). Decorative; not a flat 2D box front."
+        "back"         = "Standard box back covers. Use for Box Back / box2dback entries."
+        "backHQ"       = "High quality box back covers. Use for Box Back / box2dback entries."
+        "backM"        = "Medium-size box back covers. Use for Box Back / box2dback entries."
+        "disc"         = "Official disc / disc-label art (PNG). Use for disc / cartridge-style assets."
+        "discCustom"   = "Custom / alternate disc art (PNG). Use for disc assets when official disc is missing."
+    }
+    if ($map.ContainsKey($CoverType)) { return $map[$CoverType] }
+    return "GameTDB art type '$CoverType' from art.gametdb.com."
+}
+
 function Show-GameTDBCoverPackDialog {
     # Full cover-pack downloader (System + Cover type + Region) like the standalone GameTDB tool
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "GameTDB Cover Pack Download"
-    $dlg.Size = New-Object System.Drawing.Size(460, 340)
+    $dlg.Size = New-Object System.Drawing.Size(460, 400)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -6733,15 +6824,35 @@ function Show-GameTDBCoverPackDialog {
     $cmbCover.ForeColor = $script:theme.text
     $dlg.Controls.Add($cmbCover)
 
+    # Description of the selected cover type (updates when combo changes)
+    $lblCoverDesc = New-Object System.Windows.Forms.Label
+    $lblCoverDesc.Name = "coverDesc"
+    $lblCoverDesc.Location = New-Object System.Drawing.Point(20, 72)
+    $lblCoverDesc.Size = New-Object System.Drawing.Size(400, 40)
+    $lblCoverDesc.ForeColor = $script:theme.accent
+    $lblCoverDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblCoverDesc.Text = ""
+    $dlg.Controls.Add($lblCoverDesc)
+
+    $cmbCover.Tag = $lblCoverDesc
+    $cmbCover.Add_SelectedIndexChanged({
+        param($sender, $e)
+        $descLbl = $sender.Tag
+        if (-not $descLbl) { return }
+        $ct = [string]$sender.SelectedItem
+        if ([string]::IsNullOrWhiteSpace($ct)) { $descLbl.Text = "" }
+        else { $descLbl.Text = Get-GameTDBCoverTypeDescription $ct }
+    })
+
     $lblReg = New-Object System.Windows.Forms.Label
     $lblReg.Text = "Region"
-    $lblReg.Location = New-Object System.Drawing.Point(20, 78)
+    $lblReg.Location = New-Object System.Drawing.Point(20, 118)
     $lblReg.Size = New-Object System.Drawing.Size(120, 20)
     $lblReg.ForeColor = $script:theme.text
     $dlg.Controls.Add($lblReg)
 
     $cmbReg = New-Object System.Windows.Forms.ComboBox
-    $cmbReg.Location = New-Object System.Drawing.Point(20, 100)
+    $cmbReg.Location = New-Object System.Drawing.Point(20, 140)
     $cmbReg.Size = New-Object System.Drawing.Size(120, 24)
     $cmbReg.DropDownStyle = "DropDownList"
     $cmbReg.BackColor = $script:theme.editor
@@ -6752,13 +6863,13 @@ function Show-GameTDBCoverPackDialog {
 
     $lblOut = New-Object System.Windows.Forms.Label
     $lblOut.Text = "Save folder (subfolder System\Type\Region is created)"
-    $lblOut.Location = New-Object System.Drawing.Point(20, 140)
+    $lblOut.Location = New-Object System.Drawing.Point(20, 178)
     $lblOut.Size = New-Object System.Drawing.Size(400, 20)
     $lblOut.ForeColor = $script:theme.textDim
     $dlg.Controls.Add($lblOut)
 
     $txtOut = New-Object System.Windows.Forms.TextBox
-    $txtOut.Location = New-Object System.Drawing.Point(20, 162)
+    $txtOut.Location = New-Object System.Drawing.Point(20, 200)
     $txtOut.Size = New-Object System.Drawing.Size(340, 24)
     $txtOut.BackColor = $script:theme.editor
     $txtOut.ForeColor = $script:theme.text
@@ -6770,7 +6881,7 @@ function Show-GameTDBCoverPackDialog {
     }
     $dlg.Controls.Add($txtOut)
 
-    $btnBrowse = Create-Button "..." 370 160 50 26
+    $btnBrowse = Create-Button "..." 370 198 50 26
     $btnBrowse.Add_Click({
         $fd = New-Object System.Windows.Forms.FolderBrowserDialog
         $fd.Description = "Select folder for GameTDB covers"
@@ -6780,7 +6891,7 @@ function Show-GameTDBCoverPackDialog {
 
     $hint = New-Object System.Windows.Forms.Label
     $hint.Text = "Downloads the full titles list, then each cover for the chosen type/region. Existing files are skipped."
-    $hint.Location = New-Object System.Drawing.Point(20, 200)
+    $hint.Location = New-Object System.Drawing.Point(20, 236)
     $hint.Size = New-Object System.Drawing.Size(400, 36)
     $hint.ForeColor = $script:theme.textDim
     $dlg.Controls.Add($hint)
@@ -6808,9 +6919,12 @@ function Show-GameTDBCoverPackDialog {
             $prefer0 = if ($types0 -contains "coverfullHQ") { "coverfullHQ" } else { [string]$types0[0] }
             $cmbCover.SelectedItem = $prefer0
         }
+        if ($cmbCover.SelectedItem) {
+            $lblCoverDesc.Text = Get-GameTDBCoverTypeDescription ([string]$cmbCover.SelectedItem)
+        }
     }
 
-    $btnStart = Create-Button "Start Download" 100 250 140 26
+    $btnStart = Create-Button "Start Download" 100 290 140 26
     $btnStart.Add_Click({
         $idx = $cmbSys.SelectedIndex
         if ($idx -lt 0) { return }
@@ -6833,7 +6947,7 @@ function Show-GameTDBCoverPackDialog {
     })
     $dlg.Controls.Add($btnStart)
 
-    $btnCancel = Create-Button "Cancel" 260 250 100 26
+    $btnCancel = Create-Button "Cancel" 260 290 100 26
     $btnCancel.Add_Click({ $dlg.Close() })
     $dlg.Controls.Add($btnCancel)
 
@@ -6842,6 +6956,106 @@ function Show-GameTDBCoverPackDialog {
     $opts = $dlg.Tag
     if (-not $opts) { return }
     Start-GameTDBCoverPackDownload -Platform $opts.Platform -CoverType $opts.CoverType -Region $opts.Region -OutBase $opts.OutBase
+}
+
+function Show-GameTDBProgressWindow {
+    # Non-modal progress overlay so the main terminal stays visible underneath
+    param(
+        [string]$Title = "GameTDB Cover Pack"
+    )
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = $Title
+    $form.Size = New-Object System.Drawing.Size(420, 160)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.TopMost = $true
+    $form.ShowInTaskbar = $true
+    $form.BackColor = $script:theme.background
+    $form.ForeColor = $script:theme.text
+    $form.ControlBox = $false
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Name = "statusLabel"
+    $lbl.Text = "Starting..."
+    $lbl.Location = New-Object System.Drawing.Point(16, 16)
+    $lbl.Size = New-Object System.Drawing.Size(370, 36)
+    $lbl.ForeColor = $script:theme.text
+    $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $form.Controls.Add($lbl)
+
+    $bar = New-Object System.Windows.Forms.ProgressBar
+    $bar.Name = "progressBar"
+    $bar.Location = New-Object System.Drawing.Point(16, 60)
+    $bar.Size = New-Object System.Drawing.Size(370, 22)
+    $bar.Minimum = 0
+    $bar.Maximum = 100
+    $bar.Value = 0
+    $bar.Style = "Continuous"
+    $form.Controls.Add($bar)
+
+    $btnAbort = Create-Button "Abort" 150 95 100 26
+    $btnAbort.Name = "abortButton"
+    $btnAbort.Tag = $form
+    $btnAbort.Add_Click({
+        param($sender, $e)
+        $script:gtdbCoverPackAbort = $true
+        try {
+            if ($sender.Text -eq "Close") {
+                $f = $sender.Tag
+                if ($f -and -not $f.IsDisposed) { $f.Close() }
+                return
+            }
+            $sender.Enabled = $false
+            $sender.Text = "Aborting..."
+        } catch {}
+    })
+    $form.Controls.Add($btnAbort)
+
+    $script:gtdbCoverPackAbort = $false
+    $form.Show()
+    $form.BringToFront()
+    [System.Windows.Forms.Application]::DoEvents()
+    return $form
+}
+
+function Update-GameTDBProgressWindow {
+    param(
+        $Form,
+        [int]$Percent,
+        [string]$Status,
+        [switch]$Completed,
+        [switch]$Aborted
+    )
+    if (-not $Form -or $Form.IsDisposed) { return }
+    try {
+        $bar = $Form.Controls["progressBar"]
+        $lbl = $Form.Controls["statusLabel"]
+        $btn = $Form.Controls["abortButton"]
+        if ($Percent -lt 0) { $Percent = 0 }
+        if ($Percent -gt 100) { $Percent = 100 }
+        if ($bar) { $bar.Value = $Percent }
+        if ($lbl -and $Status) { $lbl.Text = $Status }
+        if ($Completed) {
+            if ($bar) { $bar.Value = 100 }
+            if ($lbl) {
+                if ($Status) { $lbl.Text = "Completed`r`n$Status" }
+                else { $lbl.Text = "Completed" }
+            }
+            if ($btn) {
+                $btn.Text = "Close"
+                $btn.Enabled = $true
+            }
+        } elseif ($Aborted) {
+            if ($lbl) { $lbl.Text = $(if ($Status) { $Status } else { "Aborted" }) }
+            if ($btn) {
+                $btn.Text = "Close"
+                $btn.Enabled = $true
+            }
+        }
+        [System.Windows.Forms.Application]::DoEvents()
+    } catch {}
 }
 
 function Start-GameTDBCoverPackDownload {
@@ -6867,10 +7081,15 @@ function Start-GameTDBCoverPackDownload {
 
     Log-Message "========================================" "Cyan"
     Log-Message "GAMETDB COVER PACK - $($info.Label) / $CoverType / $Region" "Cyan"
+    Log-Message (Get-GameTDBCoverTypeDescription $CoverType) "White"
     Log-Message "========================================" "Cyan"
     Log-Message "Output: $outDir" "White"
 
+    $prog = $null
     try {
+        $prog = Show-GameTDBProgressWindow -Title "GameTDB: $($info.Label) / $CoverType"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching titles list..."
+
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
         Log-Message "Fetching titles: $($info.TitlesUrl)" "White"
@@ -6888,15 +7107,28 @@ function Start-GameTDBCoverPackDownload {
                 [void]$ids.Add($id)
             }
         }
-        Log-Message "IDs to process: $($ids.Count)" "Cyan"
+        $total = $ids.Count
+        Log-Message "IDs to process: $total" "Cyan"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $total  (starting downloads...)"
 
         $ok = 0; $skip = 0; $fail = 0; $n = 0
+        $aborted = $false
         foreach ($id in $ids) {
-            $n++
-            if ($n % 50 -eq 0) {
-                Log-Message "Progress: $n / $($ids.Count) (ok=$ok skip=$skip fail=$fail)" "White"
-                [System.Windows.Forms.Application]::DoEvents()
+            if ($script:gtdbCoverPackAbort) {
+                $aborted = $true
+                Log-Message "Abort requested - stopping cover pack download." "Yellow"
+                break
             }
+            $n++
+            $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
+            if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
+                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status ("{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
+            }
+            if ($n % 50 -eq 0) {
+                Log-Message "Progress: $n / $total (ok=$ok skip=$skip fail=$fail)" "White"
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+
             $dest = Join-Path $outDir "$id.$ext"
             if (Test-Path $dest) { $skip++; continue }
             $url = "https://art.gametdb.com/$($artInfo.ArtPath)/$CoverType/$Region/$id.$ext"
@@ -6914,13 +7146,22 @@ function Start-GameTDBCoverPackDownload {
             }
         }
         $wc.Dispose()
-        Log-Message "Done. Downloaded: $ok  Skipped: $skip  Missing: $fail" "Green"
-        Log-Message "Folder: $outDir" "Cyan"
-        [System.Windows.Forms.MessageBox]::Show(
-            "Downloaded: $ok`nSkipped (exists): $skip`nNot available: $fail`n`n$outDir",
-            "GameTDB Cover Pack", "OK", "Information") | Out-Null
+
+        $summary = "Downloaded: $ok   Skipped: $skip   Missing: $fail"
+        if ($aborted) {
+            Log-Message "Aborted. $summary" "Yellow"
+            Log-Message "Folder: $outDir" "Cyan"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
+        } else {
+            Log-Message "Done. $summary" "Green"
+            Log-Message "Folder: $outDir" "Cyan"
+            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
+        }
     } catch {
         Log-Message "ERROR: $_" "Red"
+        if ($prog -and -not $prog.IsDisposed) {
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
+        }
     }
 }
 
