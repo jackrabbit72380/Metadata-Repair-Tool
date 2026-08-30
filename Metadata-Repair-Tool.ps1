@@ -1,6 +1,6 @@
 ﻿# ============================================================================
 # METADATA REPAIR TOOL
-# Version: 2.5.4 - Raw Find bar; Save keeps place; paste fix; Settings themes
+# Version: 2.5.8 - Cover Pack: collection-only, missing, region fallback, assets
 # (Steam/Light/HighContrast/Windows); UTF-8 BOM for Windows PowerShell 5.1;
 # Remove Games w/ No File; SNES guide; Sort A-Z; Games list height fix.
 # ============================================================================
@@ -43,7 +43,7 @@ public static class MrtCrc32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.7"
+$script:version = "2.5.9"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
@@ -1998,6 +1998,17 @@ function Get-DeveloperLogText {
     return @"
 Developer Log
 Policy: All changes and updates must always be listed here.
+
+2.5.9 - 2026-08-30
+- Cover Pack: boxFull (Unicovers), rename to game title, convert PNG
+
+2.5.8 - 2026-08-30
+- GameTDB Cover Pack: collection-only filter (game_id)
+- Only missing art; region fallback (US/EN/...)
+- Multi cover-type select in one run
+- Save into media folders (box2dfront / box2dback / disc)
+- Write asset paths into metadata after download
+- failed_covers.csv report for retries
 
 2.5.7 - 2026-08-29
 - GameTDB: Download Cover Pack dialog (System + Cover type + Region)
@@ -4464,12 +4475,13 @@ Download Covers by ID
   - Downloads cover from art.gametdb.com into box2dfront
 
 Download Cover Pack...
-  - Full pack like the standalone GameTDB downloader
-  - Choose System, Cover type, and Region
-  - Cover types depend on system (e.g. Switch: cover, coverHQ,
-    coverfullHQ, coverM, back, backHQ, backM)
-  - Saves to: <folder>\<System>\<Type>\<Region>\<ID>.jpg|png
-  - Skips files that already exist
+  - System + multi cover types + primary region
+  - Options: current collection only (game_id), only missing art,
+    region fallback, save into media folders, write asset paths
+  - Media folders: box2dfront / box2dback / disc by cover type
+  - Writes assets.box_front / box_back / box_full / cartridge
+  - Failures logged to failed_covers.csv (media/Tools or out folder)
+  - Skips files that already exist; abortable progress window
 
 Lookup Title by ID / Open GameTDB Page / Apply Titles
 Fill Missing Box Art Paths / DL Covers from Game List
@@ -6773,189 +6785,540 @@ function Get-GameTDBCoverTypeDescription {
     return "GameTDB art type '$CoverType' from art.gametdb.com."
 }
 
-function Show-GameTDBCoverPackDialog {
-    # Full cover-pack downloader (System + Cover type + Region) like the standalone GameTDB tool
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "GameTDB Cover Pack Download"
-    $dlg.Size = New-Object System.Drawing.Size(460, 400)
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.MinimizeBox = $false
-    $dlg.BackColor = $script:theme.background
-    $dlg.ForeColor = $script:theme.text
-
-    $lblSys = New-Object System.Windows.Forms.Label
-    $lblSys.Text = "System"
-    $lblSys.Location = New-Object System.Drawing.Point(20, 18)
-    $lblSys.Size = New-Object System.Drawing.Size(120, 20)
-    $lblSys.ForeColor = $script:theme.text
-    $dlg.Controls.Add($lblSys)
-
-    $cmbSys = New-Object System.Windows.Forms.ComboBox
-    $cmbSys.Location = New-Object System.Drawing.Point(20, 40)
-    $cmbSys.Size = New-Object System.Drawing.Size(200, 24)
-    $cmbSys.DropDownStyle = "DropDownList"
-    $cmbSys.BackColor = $script:theme.editor
-    $cmbSys.ForeColor = $script:theme.text
-    $platKeys = @($script:gameTdbPlatforms.Keys | Sort-Object)
-    foreach ($k in $platKeys) {
-        [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label)
+function Get-GameTDBCoverTypeFolder {
+    param(
+        [string]$CoverType,
+        [switch]$UseBoxFull
+    )
+    switch -Regex ($CoverType) {
+        '^(back|backHQ|backM)$' { return "box2dback" }
+        '^(disc|discCustom|discHQ|discCustomHQ)$' { return "disc" }
+        '^(coverfullHQ)$' {
+            if ($UseBoxFull) { return "boxFull" }
+            return "box2dfull"
+        }
+        default { return "box2dfront" }
     }
-    $selIdx = 0
-    for ($i = 0; $i -lt $platKeys.Count; $i++) {
-        if ($platKeys[$i] -eq $script:lastGameTdbPlatform) { $selIdx = $i; break }
+}
+
+function Get-GameTDBCoverTypeAssetKey {
+    param(
+        [string]$CoverType,
+        [switch]$UseBoxFull
+    )
+    switch -Regex ($CoverType) {
+        '^(back|backHQ|backM)$' { return "assets.box_back" }
+        '^(disc|discCustom|discHQ|discCustomHQ)$' { return "assets.cartridge" }
+        '^(coverfullHQ)$' {
+            if ($UseBoxFull) { return "assets.boxFull" }
+            return "assets.box_full"
+        }
+        default { return "assets.box_front" }
     }
-    $cmbSys.SelectedIndex = $selIdx
-    $dlg.Controls.Add($cmbSys)
+}
 
-    $lblCover = New-Object System.Windows.Forms.Label
-    $lblCover.Text = "Cover type"
-    $lblCover.Location = New-Object System.Drawing.Point(240, 18)
-    $lblCover.Size = New-Object System.Drawing.Size(180, 20)
-    $lblCover.ForeColor = $script:theme.text
-    $dlg.Controls.Add($lblCover)
+function Get-SafeGameFileName {
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
+    $n = $Title.Trim()
+    $n = $n -replace '[\/:*?"<>|]', ''
+    $n = $n -replace '\s+', ' '
+    $n = $n.Trim().TrimEnd('.')
+    if ($n.Length -gt 120) { $n = $n.Substring(0, 120).Trim().TrimEnd('.') }
+    if ([string]::IsNullOrWhiteSpace($n)) { return $null }
+    return $n
+}
 
-    $cmbCover = New-Object System.Windows.Forms.ComboBox
-    $cmbCover.Location = New-Object System.Drawing.Point(240, 40)
-    $cmbCover.Size = New-Object System.Drawing.Size(180, 24)
-    $cmbCover.DropDownStyle = "DropDownList"
-    $cmbCover.BackColor = $script:theme.editor
-    $cmbCover.ForeColor = $script:theme.text
-    $dlg.Controls.Add($cmbCover)
+function Convert-ImageFileToPng {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $Path }
+    if ($Path -match '\.png$') { return $Path }
+    $pngPath = [System.IO.Path]::ChangeExtension($Path, ".png")
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $img = [System.Drawing.Image]::FromStream($fs)
+            try {
+                $bmp = New-Object System.Drawing.Bitmap $img
+                try {
+                    $bmp.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                } finally { $bmp.Dispose() }
+            } finally { $img.Dispose() }
+        } finally { $fs.Close(); $fs.Dispose() }
+        if ((Test-Path -LiteralPath $pngPath) -and ((Get-Item -LiteralPath $pngPath).Length -gt 0)) {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+            return $pngPath
+        }
+    } catch {
+        Log-Message ("PNG convert failed for {0}: {1}" -f $Path, $_.Exception.Message) "Yellow"
+    }
+    return $Path
+}
 
-    # Description of the selected cover type (updates when combo changes)
-    $lblCoverDesc = New-Object System.Windows.Forms.Label
-    $lblCoverDesc.Name = "coverDesc"
-    $lblCoverDesc.Location = New-Object System.Drawing.Point(20, 72)
-    $lblCoverDesc.Size = New-Object System.Drawing.Size(400, 40)
-    $lblCoverDesc.ForeColor = $script:theme.accent
-    $lblCoverDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-    $lblCoverDesc.Text = ""
-    $dlg.Controls.Add($lblCoverDesc)
-
-    $cmbCover.Tag = $lblCoverDesc
-    $cmbCover.Add_SelectedIndexChanged({
-        param($sender, $e)
-        $descLbl = $sender.Tag
-        if (-not $descLbl) { return }
-        $ct = [string]$sender.SelectedItem
-        if ([string]::IsNullOrWhiteSpace($ct)) { $descLbl.Text = "" }
-        else { $descLbl.Text = Get-GameTDBCoverTypeDescription $ct }
-    })
-
-    $lblReg = New-Object System.Windows.Forms.Label
-    $lblReg.Text = "Region"
-    $lblReg.Location = New-Object System.Drawing.Point(20, 118)
-    $lblReg.Size = New-Object System.Drawing.Size(120, 20)
-    $lblReg.ForeColor = $script:theme.text
-    $dlg.Controls.Add($lblReg)
-
-    $cmbReg = New-Object System.Windows.Forms.ComboBox
-    $cmbReg.Location = New-Object System.Drawing.Point(20, 140)
-    $cmbReg.Size = New-Object System.Drawing.Size(120, 24)
-    $cmbReg.DropDownStyle = "DropDownList"
-    $cmbReg.BackColor = $script:theme.editor
-    $cmbReg.ForeColor = $script:theme.text
-    foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
-    $cmbReg.SelectedItem = "US"
-    $dlg.Controls.Add($cmbReg)
-
-    $lblOut = New-Object System.Windows.Forms.Label
-    $lblOut.Text = "Save folder (subfolder System\Type\Region is created)"
-    $lblOut.Location = New-Object System.Drawing.Point(20, 178)
-    $lblOut.Size = New-Object System.Drawing.Size(400, 20)
-    $lblOut.ForeColor = $script:theme.textDim
-    $dlg.Controls.Add($lblOut)
-
-    $txtOut = New-Object System.Windows.Forms.TextBox
-    $txtOut.Location = New-Object System.Drawing.Point(20, 200)
-    $txtOut.Size = New-Object System.Drawing.Size(340, 24)
-    $txtOut.BackColor = $script:theme.editor
-    $txtOut.ForeColor = $script:theme.text
+function Get-CollectionGameIdMap {
+    # Returns hashtable: shortId (upper) -> @{ Title; HasBoxFront; BoxFrontPath; GameId }
+    $map = @{}
     $c = Get-Col
-    if ($c -and $c.mediaPath) {
-        $txtOut.Text = Join-Path $c.mediaPath "Covers"
-    } else {
-        $txtOut.Text = Join-Path $env:USERPROFILE "Downloads\GameTDB_Covers"
+    if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
+    try {
+        $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($content)) { return $map }
+        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
+        foreach ($g in $games) {
+            $title = ""
+            if ($g -match '(?m)^game:\s*(.+)$') { $title = $matches[1].Trim() }
+            $gid = $null
+            if ($g -match '(?m)^game_id:\s*(\S+)') { $gid = $matches[1].Trim() }
+            if (-not $gid) { continue }
+            $short = Get-GameTDBShortId $gid
+            if (-not $short) { $short = $gid }
+            $short = $short.ToUpperInvariant()
+            $hasFront = $false
+            $frontPath = ""
+            if ($g -match '(?m)^assets\.box_front:\s*(.+)$') {
+                $frontPath = $matches[1].Trim().Trim('"')
+                if (-not [string]::IsNullOrWhiteSpace($frontPath)) {
+                    if ([System.IO.Path]::IsPathRooted($frontPath)) {
+                        $hasFront = Test-Path -LiteralPath $frontPath
+                    } else {
+                        $try1 = Join-Path (Split-Path $c.metadataPath -Parent) $frontPath
+                        $try2 = if ($c.mediaPath) { Join-Path $c.mediaPath $frontPath } else { $null }
+                        $hasFront = (Test-Path -LiteralPath $try1) -or ($try2 -and (Test-Path -LiteralPath $try2))
+                    }
+                }
+            }
+            if (-not $map.ContainsKey($short)) {
+                $map[$short] = @{
+                    Title        = $title
+                    GameId       = $gid
+                    HasBoxFront  = $hasFront
+                    BoxFrontPath = $frontPath
+                }
+            }
+        }
+    } catch {
+        Log-Message "Get-CollectionGameIdMap: $_" "Yellow"
     }
-    $dlg.Controls.Add($txtOut)
+    return $map
+}
 
-    $btnBrowse = Create-Button "..." 370 198 50 26
-    $btnBrowse.Add_Click({
-        $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-        $fd.Description = "Select folder for GameTDB covers"
-        if ($fd.ShowDialog() -eq "OK") { $txtOut.Text = $fd.SelectedPath }
-    })
-    $dlg.Controls.Add($btnBrowse)
+function Show-GameTDBCoverPackDialog {
+    # Matches Settings-style dialogs: GroupBoxes, tight layout, PS 5.1 safe
+    try {
+        $dlg = New-Object System.Windows.Forms.Form
+        $dlg.Text = "GameTDB Cover Pack"
+        $dlg.Size = New-Object System.Drawing.Size(500, 470)
+        $dlg.StartPosition = "CenterParent"
+        $dlg.FormBorderStyle = "FixedDialog"
+        $dlg.MaximizeBox = $false
+        $dlg.MinimizeBox = $false
+        $dlg.ShowInTaskbar = $false
+        $dlg.BackColor = $script:theme.background
+        $dlg.ForeColor = $script:theme.text
+        $dlg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
 
-    $hint = New-Object System.Windows.Forms.Label
-    $hint.Text = "Downloads the full titles list, then each cover for the chosen type/region. Existing files are skipped."
-    $hint.Location = New-Object System.Drawing.Point(20, 236)
-    $hint.Size = New-Object System.Drawing.Size(400, 36)
-    $hint.ForeColor = $script:theme.textDim
-    $dlg.Controls.Add($hint)
+        $secX = 14
+        $secW = 456
+        $btnW = 100
+        $btnH = 26
+        $gap = 6
 
-    $cmbSys.Add_SelectedIndexChanged({
-        param($sender, $e)
-        $cmbCover.Items.Clear()
-        $idx = $cmbSys.SelectedIndex
-        if ($idx -lt 0) { return }
-        $key = $platKeys[$idx]
-        $types = $script:gameTdbPlatforms[$key].CoverTypes
-        if (-not $types) { $types = @("cover") }
-        foreach ($t in $types) { [void]$cmbCover.Items.Add($t) }
-        if ($cmbCover.Items.Count -gt 0) {
-            $prefer = if ($types -contains "coverfullHQ") { "coverfullHQ" } else { [string]$types[0] }
-            $cmbCover.SelectedItem = $prefer
+        # ========== Source ==========
+        $grpSrc = New-Object System.Windows.Forms.GroupBox
+        $grpSrc.Text = " Source "
+        $grpSrc.Location = New-Object System.Drawing.Point($secX, 10)
+        $grpSrc.Size = New-Object System.Drawing.Size($secW, 168)
+        $grpSrc.ForeColor = $script:theme.text
+        $grpSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpSrc.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpSrc)
+
+        $lblSys = New-Object System.Windows.Forms.Label
+        $lblSys.Text = "System"
+        $lblSys.Location = New-Object System.Drawing.Point(12, 22)
+        $lblSys.Size = New-Object System.Drawing.Size(200, 16)
+        $lblSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblSys.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblSys)
+
+        $lblTypes = New-Object System.Windows.Forms.Label
+        $lblTypes.Text = "Cover types"
+        $lblTypes.Location = New-Object System.Drawing.Point(230, 22)
+        $lblTypes.Size = New-Object System.Drawing.Size(200, 16)
+        $lblTypes.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblTypes.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblTypes)
+
+        $cmbSys = New-Object System.Windows.Forms.ComboBox
+        $cmbSys.Location = New-Object System.Drawing.Point(12, 40)
+        $cmbSys.Size = New-Object System.Drawing.Size(200, 24)
+        $cmbSys.DropDownStyle = "DropDownList"
+        $cmbSys.BackColor = $script:theme.editor
+        $cmbSys.ForeColor = $script:theme.text
+        $cmbSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $grpSrc.Controls.Add($cmbSys)
+
+        $clbCover = New-Object System.Windows.Forms.CheckedListBox
+        $clbCover.Location = New-Object System.Drawing.Point(230, 40)
+        $clbCover.Size = New-Object System.Drawing.Size(210, 86)
+        $clbCover.BackColor = $script:theme.editor
+        $clbCover.ForeColor = $script:theme.text
+        $clbCover.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $clbCover.CheckOnClick = $true
+        $clbCover.BorderStyle = "FixedSingle"
+        $clbCover.IntegralHeight = $true
+        $grpSrc.Controls.Add($clbCover)
+
+        $lblReg = New-Object System.Windows.Forms.Label
+        $lblReg.Text = "Region"
+        $lblReg.Location = New-Object System.Drawing.Point(12, 70)
+        $lblReg.Size = New-Object System.Drawing.Size(200, 16)
+        $lblReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblReg.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblReg)
+
+        $cmbReg = New-Object System.Windows.Forms.ComboBox
+        $cmbReg.Location = New-Object System.Drawing.Point(12, 88)
+        $cmbReg.Size = New-Object System.Drawing.Size(90, 24)
+        $cmbReg.DropDownStyle = "DropDownList"
+        $cmbReg.BackColor = $script:theme.editor
+        $cmbReg.ForeColor = $script:theme.text
+        $cmbReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $grpSrc.Controls.Add($cmbReg)
+
+        # Description under system/region (full width of left column + wraps under list)
+        $lblDesc = New-Object System.Windows.Forms.Label
+        $lblDesc.Location = New-Object System.Drawing.Point(12, 120)
+        $lblDesc.Size = New-Object System.Drawing.Size(428, 36)
+        $lblDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblDesc.ForeColor = $script:theme.accent
+        $lblDesc.Text = "Select a cover type to see its description."
+        $grpSrc.Controls.Add($lblDesc)
+
+        $platKeys = @($script:gameTdbPlatforms.Keys | Sort-Object)
+        foreach ($k in $platKeys) {
+            [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label)
         }
-    })
-    # seed cover types for initial system
-    if ($cmbSys.SelectedIndex -ge 0) {
-        $key0 = $platKeys[$cmbSys.SelectedIndex]
-        foreach ($t in @($script:gameTdbPlatforms[$key0].CoverTypes)) { [void]$cmbCover.Items.Add($t) }
-        if ($cmbCover.Items.Count -gt 0) {
-            $types0 = $script:gameTdbPlatforms[$key0].CoverTypes
-            $prefer0 = if ($types0 -contains "coverfullHQ") { "coverfullHQ" } else { [string]$types0[0] }
-            $cmbCover.SelectedItem = $prefer0
+        foreach ($r in $script:gameTdbRegions) {
+            [void]$cmbReg.Items.Add($r)
         }
-        if ($cmbCover.SelectedItem) {
-            $lblCoverDesc.Text = Get-GameTDBCoverTypeDescription ([string]$cmbCover.SelectedItem)
+        $cmbReg.SelectedItem = "US"
+
+        $script:__gtdbPackPlatKeys = $platKeys
+        $script:__gtdbPackClb = $clbCover
+        $script:__gtdbPackDesc = $lblDesc
+
+        $fillTypes = {
+            $clb = $script:__gtdbPackClb
+            $keys = $script:__gtdbPackPlatKeys
+            if (-not $clb -or -not $keys) { return }
+            $clb.Items.Clear()
+            $idx = $script:__gtdbPackCmb.SelectedIndex
+            if ($idx -lt 0 -or $idx -ge $keys.Count) { return }
+            $types = $script:gameTdbPlatforms[$keys[$idx]].CoverTypes
+            if (-not $types) { $types = @("cover") }
+            foreach ($t in $types) { [void]$clb.Items.Add([string]$t) }
+            # Prefer a front cover type
+            for ($i = 0; $i -lt $clb.Items.Count; $i++) {
+                $t = [string]$clb.Items[$i]
+                if ($t -eq "cover" -or $t -eq "coverHQ" -or $t -eq "coverfullHQ") {
+                    $clb.SetItemChecked($i, $true)
+                    $clb.SelectedIndex = $i
+                    break
+                }
+            }
+            if ($clb.CheckedItems.Count -eq 0 -and $clb.Items.Count -gt 0) {
+                $clb.SetItemChecked(0, $true)
+                $clb.SelectedIndex = 0
+            }
+            # Shrink list height to content (max ~6 rows)
+            $rowH = 18
+            try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
+            $rows = [Math]::Min(6, [Math]::Max(3, $clb.Items.Count))
+            $clb.Height = ($rows * $rowH) + 4
         }
+
+        $updateDesc = {
+            $clb = $script:__gtdbPackClb
+            $lbl = $script:__gtdbPackDesc
+            if (-not $clb -or -not $lbl) { return }
+            $t = $null
+            if ($clb.SelectedIndex -ge 0) {
+                $t = [string]$clb.Items[$clb.SelectedIndex]
+            } elseif ($clb.CheckedItems.Count -gt 0) {
+                $t = [string]$clb.CheckedItems[0]
+            }
+            if ($t) {
+                $lbl.Text = Get-GameTDBCoverTypeDescription $t
+            } else {
+                $lbl.Text = "Select a cover type to see its description."
+            }
+        }
+
+        $script:__gtdbPackCmb = $cmbSys
+        $cmbSys.Add_SelectedIndexChanged({
+            try {
+                & $script:__gtdbPackFill
+                & $script:__gtdbPackUpdateDesc
+            } catch {}
+        })
+        $clbCover.Add_SelectedIndexChanged({
+            try { & $script:__gtdbPackUpdateDesc } catch {}
+        })
+        $script:__gtdbPackFill = $fillTypes
+        $script:__gtdbPackUpdateDesc = $updateDesc
+
+        $selIdx = 0
+        for ($i = 0; $i -lt $platKeys.Count; $i++) {
+            if ($platKeys[$i] -eq $script:lastGameTdbPlatform) { $selIdx = $i; break }
+        }
+        if ($cmbSys.Items.Count -gt 0) {
+            $cmbSys.SelectedIndex = $selIdx
+            if ($clbCover.Items.Count -eq 0) {
+                & $fillTypes
+                & $updateDesc
+            }
+        }
+
+        # ========== Options ==========
+        $grpOpt = New-Object System.Windows.Forms.GroupBox
+        $grpOpt.Text = " Options "
+        $grpOpt.Location = New-Object System.Drawing.Point($secX, 184)
+        $grpOpt.Size = New-Object System.Drawing.Size($secW, 178)
+        $grpOpt.ForeColor = $script:theme.text
+        $grpOpt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpOpt.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpOpt)
+
+        $chkCollection = New-Object System.Windows.Forms.CheckBox
+        $chkCollection.Text = "Current collection only (requires game_id)"
+        $chkCollection.Location = New-Object System.Drawing.Point(12, 20)
+        $chkCollection.Size = New-Object System.Drawing.Size(430, 18)
+        $chkCollection.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkCollection.ForeColor = $script:theme.text
+        $chkCollection.BackColor = $script:theme.background
+        $chkCollection.Checked = $true
+        $grpOpt.Controls.Add($chkCollection)
+
+        $chkMissing = New-Object System.Windows.Forms.CheckBox
+        $chkMissing.Text = "Only missing art"
+        $chkMissing.Location = New-Object System.Drawing.Point(12, 40)
+        $chkMissing.Size = New-Object System.Drawing.Size(200, 18)
+        $chkMissing.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkMissing.ForeColor = $script:theme.text
+        $chkMissing.BackColor = $script:theme.background
+        $chkMissing.Checked = $true
+        $grpOpt.Controls.Add($chkMissing)
+
+        $chkFallback = New-Object System.Windows.Forms.CheckBox
+        $chkFallback.Text = "Region fallback"
+        $chkFallback.Location = New-Object System.Drawing.Point(220, 40)
+        $chkFallback.Size = New-Object System.Drawing.Size(200, 18)
+        $chkFallback.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkFallback.ForeColor = $script:theme.text
+        $chkFallback.BackColor = $script:theme.background
+        $chkFallback.Checked = $true
+        $grpOpt.Controls.Add($chkFallback)
+
+        $chkMedia = New-Object System.Windows.Forms.CheckBox
+        $chkMedia.Text = "Save into media folders"
+        $chkMedia.Location = New-Object System.Drawing.Point(12, 60)
+        $chkMedia.Size = New-Object System.Drawing.Size(200, 18)
+        $chkMedia.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkMedia.ForeColor = $script:theme.text
+        $chkMedia.BackColor = $script:theme.background
+        $chkMedia.Checked = $true
+        $grpOpt.Controls.Add($chkMedia)
+
+        $chkWrite = New-Object System.Windows.Forms.CheckBox
+        $chkWrite.Text = "Write asset paths into metadata"
+        $chkWrite.Location = New-Object System.Drawing.Point(220, 60)
+        $chkWrite.Size = New-Object System.Drawing.Size(220, 18)
+        $chkWrite.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkWrite.ForeColor = $script:theme.text
+        $chkWrite.BackColor = $script:theme.background
+        $chkWrite.Checked = $true
+        $grpOpt.Controls.Add($chkWrite)
+
+        $chkBoxFull = New-Object System.Windows.Forms.CheckBox
+        $chkBoxFull.Text = "Full covers -> boxFull (Unicovers / theme)"
+        $chkBoxFull.Location = New-Object System.Drawing.Point(12, 80)
+        $chkBoxFull.Size = New-Object System.Drawing.Size(430, 18)
+        $chkBoxFull.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkBoxFull.ForeColor = $script:theme.text
+        $chkBoxFull.BackColor = $script:theme.background
+        $chkBoxFull.Checked = $true
+        $grpOpt.Controls.Add($chkBoxFull)
+
+        $chkRename = New-Object System.Windows.Forms.CheckBox
+        $chkRename.Text = "Rename images to game titles"
+        $chkRename.Location = New-Object System.Drawing.Point(12, 100)
+        $chkRename.Size = New-Object System.Drawing.Size(250, 18)
+        $chkRename.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkRename.ForeColor = $script:theme.text
+        $chkRename.BackColor = $script:theme.background
+        $chkRename.Checked = $true
+        $grpOpt.Controls.Add($chkRename)
+
+        $chkPng = New-Object System.Windows.Forms.CheckBox
+        $chkPng.Text = "Convert to PNG"
+        $chkPng.Location = New-Object System.Drawing.Point(270, 100)
+        $chkPng.Size = New-Object System.Drawing.Size(160, 18)
+        $chkPng.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkPng.ForeColor = $script:theme.text
+        $chkPng.BackColor = $script:theme.background
+        $chkPng.Checked = $true
+        $grpOpt.Controls.Add($chkPng)
+
+        $lblOptHint = New-Object System.Windows.Forms.Label
+        $lblOptHint.Text = "boxFull for coverfullHQ. Rename/PNG run after each successful download."
+        $lblOptHint.Location = New-Object System.Drawing.Point(12, 124)
+        $lblOptHint.Size = New-Object System.Drawing.Size(430, 16)
+        $lblOptHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblOptHint.ForeColor = $script:theme.textDim
+        $grpOpt.Controls.Add($lblOptHint)
+
+        $chkCollection.Add_CheckedChanged({
+            param($sender, $e)
+            if (-not $sender.Checked) {
+                $chkMedia.Checked = $false
+                $chkWrite.Checked = $false
+            }
+        })
+
+        # ========== Output ==========
+        $grpOut = New-Object System.Windows.Forms.GroupBox
+        $grpOut.Text = " Output folder "
+        $grpOut.Location = New-Object System.Drawing.Point($secX, 368)
+        $grpOut.Size = New-Object System.Drawing.Size($secW, 72)
+        $grpOut.ForeColor = $script:theme.text
+        $grpOut.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpOut.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpOut)
+
+        $lblOutHint = New-Object System.Windows.Forms.Label
+        $lblOutHint.Text = "Used only when not saving into media folders"
+        $lblOutHint.Location = New-Object System.Drawing.Point(12, 20)
+        $lblOutHint.Size = New-Object System.Drawing.Size(420, 14)
+        $lblOutHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblOutHint.ForeColor = $script:theme.textDim
+        $grpOut.Controls.Add($lblOutHint)
+
+        $txtOut = New-Object System.Windows.Forms.TextBox
+        $txtOut.Location = New-Object System.Drawing.Point(12, 38)
+        $txtOut.Size = New-Object System.Drawing.Size(390, 22)
+        $txtOut.BackColor = $script:theme.editor
+        $txtOut.ForeColor = $script:theme.text
+        $txtOut.BorderStyle = "FixedSingle"
+        $txtOut.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $c = Get-Col
+        if ($c -and $c.mediaPath) {
+            $txtOut.Text = [string](Join-Path $c.mediaPath "Covers")
+        } else {
+            $txtOut.Text = [string](Join-Path $env:USERPROFILE "Downloads\GameTDB_Covers")
+        }
+        $grpOut.Controls.Add($txtOut)
+
+        $btnBrowse = Create-Button "..." 408 36 36 $btnH
+        $btnBrowse.Add_Click({
+            $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+            $fd.Description = "Select folder for GameTDB covers"
+            if ($fd.ShowDialog() -eq "OK") { $txtOut.Text = $fd.SelectedPath }
+        })
+        $grpOut.Controls.Add($btnBrowse)
+
+        # ========== Buttons ==========
+        $btnStart = Create-Button "Start" 155 452 100 $btnH
+        $btnStart.Add_Click({
+            try {
+                $idx = $cmbSys.SelectedIndex
+                if ($idx -lt 0 -or $idx -ge $platKeys.Count) { return }
+                $types = @()
+                foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
+                if ($types.Count -eq 0) {
+                    [System.Windows.Forms.MessageBox]::Show("Select at least one cover type.", "GameTDB", "OK", "Warning") | Out-Null
+                    return
+                }
+                $region = [string]$cmbReg.SelectedItem
+                $outBase = $txtOut.Text.Trim()
+                $useMedia = [bool]$chkMedia.Checked
+                $collectionOnly = [bool]$chkCollection.Checked
+                $writeAssets = [bool]$chkWrite.Checked
+                if ($writeAssets -or $useMedia -or $collectionOnly) {
+                    $col = Get-Col
+                    if (-not $col) {
+                        [System.Windows.Forms.MessageBox]::Show(
+                            "Select a collection first.", "GameTDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    if ($useMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
+                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "GameTDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                }
+                if (-not $useMedia -and [string]::IsNullOrWhiteSpace($outBase)) {
+                    [System.Windows.Forms.MessageBox]::Show("Choose an output folder.", "GameTDB", "OK", "Warning") | Out-Null
+                    return
+                }
+                if ([string]::IsNullOrWhiteSpace($region)) {
+                    [System.Windows.Forms.MessageBox]::Show("Choose a region.", "GameTDB", "OK", "Warning") | Out-Null
+                    return
+                }
+                $dlg.Tag = @{
+                    Platform       = $platKeys[$idx]
+                    CoverTypes     = $types
+                    Region         = $region
+                    OutBase        = $outBase
+                    CollectionOnly = $collectionOnly
+                    OnlyMissing    = [bool]$chkMissing.Checked
+                    RegionFallback = [bool]$chkFallback.Checked
+                    SaveIntoMedia  = $useMedia
+                    WriteAssets    = $writeAssets
+                    UseBoxFull     = [bool]$chkBoxFull.Checked
+                    RenameToTitle  = [bool]$chkRename.Checked
+                    ConvertToPng   = [bool]$chkPng.Checked
+                }
+                $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                $dlg.Close()
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Error: $($_.Exception.Message)", "GameTDB", "OK", "Error") | Out-Null
+            }
+        })
+        $dlg.Controls.Add($btnStart)
+
+        $btnCancel = Create-Button "Cancel" 267 452 $btnW $btnH
+        $btnCancel.Add_Click({ $dlg.Close() })
+        $dlg.Controls.Add($btnCancel)
+
+        # Fit dialog to bottom of buttons
+        $dlg.ClientSize = New-Object System.Drawing.Size(484, 492)
+
+        $result = $dlg.ShowDialog($script:mainForm)
+        if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
+        $opts = $dlg.Tag
+        if (-not $opts) { return }
+
+        Start-GameTDBCoverPackDownload `
+            -Platform $opts.Platform `
+            -CoverTypes $opts.CoverTypes `
+            -Region $opts.Region `
+            -OutBase $opts.OutBase `
+            -CollectionOnly:$opts.CollectionOnly `
+            -OnlyMissing:$opts.OnlyMissing `
+            -RegionFallback:$opts.RegionFallback `
+            -SaveIntoMedia:$opts.SaveIntoMedia `
+            -WriteAssets:$opts.WriteAssets `
+            -UseBoxFull:$opts.UseBoxFull `
+            -RenameToTitle:$opts.RenameToTitle `
+            -ConvertToPng:$opts.ConvertToPng
+    } catch {
+        $msg = "Cover Pack dialog error: $($_.Exception.Message)"
+        try { Log-Message $msg "Red" } catch {}
+        try {
+            [System.Windows.Forms.MessageBox]::Show($msg, "GameTDB Cover Pack", "OK", "Error") | Out-Null
+        } catch {}
     }
-
-    $btnStart = Create-Button "Start Download" 100 290 140 26
-    $btnStart.Add_Click({
-        $idx = $cmbSys.SelectedIndex
-        if ($idx -lt 0) { return }
-        $platKey = $platKeys[$idx]
-        $coverType = [string]$cmbCover.SelectedItem
-        $region = [string]$cmbReg.SelectedItem
-        $outBase = $txtOut.Text.Trim()
-        if (-not $coverType -or -not $region -or -not $outBase) {
-            [System.Windows.Forms.MessageBox]::Show("Choose system, cover type, region, and folder.", "GameTDB", "OK", "Warning") | Out-Null
-            return
-        }
-        $dlg.Tag = @{
-            Platform = $platKey
-            CoverType = $coverType
-            Region = $region
-            OutBase = $outBase
-        }
-        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-        $dlg.Close()
-    })
-    $dlg.Controls.Add($btnStart)
-
-    $btnCancel = Create-Button "Cancel" 260 290 100 26
-    $btnCancel.Add_Click({ $dlg.Close() })
-    $dlg.Controls.Add($btnCancel)
-
-    $result = $dlg.ShowDialog($script:mainForm)
-    if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
-    $opts = $dlg.Tag
-    if (-not $opts) { return }
-    Start-GameTDBCoverPackDownload -Platform $opts.Platform -CoverType $opts.CoverType -Region $opts.Region -OutBase $opts.OutBase
 }
 
 function Show-GameTDBProgressWindow {
@@ -7061,10 +7424,23 @@ function Update-GameTDBProgressWindow {
 function Start-GameTDBCoverPackDownload {
     param(
         [string]$Platform,
-        [string]$CoverType,
+        [string[]]$CoverTypes,
         [string]$Region,
-        [string]$OutBase
+        [string]$OutBase,
+        [switch]$CollectionOnly,
+        [switch]$OnlyMissing,
+        [switch]$RegionFallback,
+        [switch]$SaveIntoMedia,
+        [switch]$WriteAssets,
+        [switch]$UseBoxFull,
+        [switch]$RenameToTitle,
+        [switch]$ConvertToPng
     )
+    if (-not $CoverTypes -or $CoverTypes.Count -eq 0) {
+        Log-Message "No cover types selected." "Red"
+        return
+    }
+
     $info = $script:gameTdbPlatforms[$Platform]
     if (-not $info) {
         Log-Message "Unknown platform: $Platform" "Red"
@@ -7073,21 +7449,48 @@ function Start-GameTDBCoverPackDownload {
     $script:lastGameTdbPlatform = $Platform
     $artPlat = if ($Platform -eq "gamecube") { "wii" } else { $Platform }
     $artInfo = $script:gameTdbPlatforms[$artPlat]
-    $ext = Get-GameTDBCoverExt $artPlat $CoverType
-    $outDir = Join-Path $OutBase (Join-Path $info.Label (Join-Path $CoverType $Region))
-    if (-not (Test-Path $outDir)) {
-        New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+
+    $col = $null
+    if ($CollectionOnly -or $SaveIntoMedia -or $WriteAssets) {
+        $col = Get-Col
+        if (-not $col) {
+            Log-Message "No collection selected." "Red"
+            return
+        }
+    }
+
+    $regionsToTry = New-Object System.Collections.ArrayList
+    [void]$regionsToTry.Add($Region)
+    if ($RegionFallback) {
+        $prefer = @("US", "EN", "AU", "JP", "JA", "FR", "DE", "ES", "IT", "NL", "PT", "SE", "DK", "NO", "FI", "RU", "KO", "ZH", "CA")
+        foreach ($r in $prefer) {
+            if ($r -ne $Region -and -not $regionsToTry.Contains($r)) { [void]$regionsToTry.Add($r) }
+        }
+        foreach ($r in $script:gameTdbRegions) {
+            if (-not $regionsToTry.Contains($r)) { [void]$regionsToTry.Add($r) }
+        }
     }
 
     Log-Message "========================================" "Cyan"
-    Log-Message "GAMETDB COVER PACK - $($info.Label) / $CoverType / $Region" "Cyan"
-    Log-Message (Get-GameTDBCoverTypeDescription $CoverType) "White"
+    Log-Message "GAMETDB COVER PACK - $($info.Label)" "Cyan"
+    Log-Message ("Types: " + ($CoverTypes -join ", ")) "White"
+    Log-Message ("Region: $Region" + $(if ($RegionFallback) { " (+ fallback)" } else { "" })) "White"
+    if ($CollectionOnly) { Log-Message "Scope: current collection only" "Cyan" }
+    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
+    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
+    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
+    if ($UseBoxFull) { Log-Message "Full covers folder: boxFull (assets.boxFull)" "Cyan" }
+    if ($RenameToTitle) { Log-Message "Rename to game titles: on" "Cyan" }
+    if ($ConvertToPng) { Log-Message "Convert to PNG: on" "Cyan" }
     Log-Message "========================================" "Cyan"
-    Log-Message "Output: $outDir" "White"
 
     $prog = $null
+    $assetUpdates = @{}
+    $failRows = New-Object System.Collections.ArrayList
+    $pct = 0
+
     try {
-        $prog = Show-GameTDBProgressWindow -Title "GameTDB: $($info.Label) / $CoverType"
+        $prog = Show-GameTDBProgressWindow -Title "GameTDB: $($info.Label)"
         Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching titles list..."
 
         $wc = New-Object System.Net.WebClient
@@ -7095,74 +7498,296 @@ function Start-GameTDBCoverPackDownload {
         Log-Message "Fetching titles: $($info.TitlesUrl)" "White"
         $data = $wc.DownloadString($info.TitlesUrl)
         $lines = @($data -split "`r?`n" | Where-Object { $_ -match '^\s*[A-Z0-9]+\s*=' })
-        $ids = New-Object System.Collections.ArrayList
+        $allIds = New-Object System.Collections.ArrayList
+        $titleById = @{}
         foreach ($line in $lines) {
-            if ($line -match '^\s*([A-Z0-9]+)\s*=') {
+            if ($line -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
+                $id = $matches[1].Trim()
+                $title = $matches[2].Trim()
+                if ($info.IdFilter -eq "gamecube") {
+                    if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
+                } elseif ($Platform -eq "wii") {
+                    if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
+                }
+                [void]$allIds.Add($id)
+                if ($title) { $titleById[$id.ToUpperInvariant()] = $title }
+            } elseif ($line -match '^\s*([A-Z0-9]+)\s*=') {
                 $id = $matches[1].Trim()
                 if ($info.IdFilter -eq "gamecube") {
                     if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
                 } elseif ($Platform -eq "wii") {
                     if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
                 }
-                [void]$ids.Add($id)
+                [void]$allIds.Add($id)
             }
         }
-        $total = $ids.Count
-        Log-Message "IDs to process: $total" "Cyan"
-        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $total  (starting downloads...)"
+        Log-Message "Titles list IDs: $($allIds.Count) (names: $($titleById.Count))" "Cyan"
+
+        $collectionMap = @{}
+        if ($CollectionOnly -or $OnlyMissing -or $WriteAssets) {
+            $collectionMap = Get-CollectionGameIdMap
+            Log-Message "Collection game_id entries: $($collectionMap.Count)" "Cyan"
+        }
+
+        $ids = New-Object System.Collections.ArrayList
+        if ($CollectionOnly) {
+            if ($collectionMap.Count -eq 0) {
+                Log-Message "No game_id fields in this collection. Add IDs first or uncheck Collection only." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No game_id in collection" -Aborted
+                $wc.Dispose()
+                return
+            }
+            $titleSet = @{}
+            foreach ($id in $allIds) { $titleSet[$id.ToUpperInvariant()] = $true }
+            foreach ($sid in @($collectionMap.Keys)) {
+                [void]$ids.Add($sid)
+            }
+            $ids = [System.Collections.ArrayList]@($ids | Sort-Object -Unique)
+        } else {
+            foreach ($id in $allIds) { [void]$ids.Add($id) }
+        }
+
+        $total = $ids.Count * $CoverTypes.Count
+        if ($total -eq 0) {
+            Log-Message "Nothing to download." "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Nothing to download" -Aborted
+            $wc.Dispose()
+            return
+        }
+        Log-Message "Jobs: $($ids.Count) ID(s) x $($CoverTypes.Count) type(s) = $total" "Cyan"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $total  (starting...)"
 
         $ok = 0; $skip = 0; $fail = 0; $n = 0
         $aborted = $false
+
         foreach ($id in $ids) {
             if ($script:gtdbCoverPackAbort) {
                 $aborted = $true
                 Log-Message "Abort requested - stopping cover pack download." "Yellow"
                 break
             }
-            $n++
-            $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
-            if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
-                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status ("{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
-            }
-            if ($n % 50 -eq 0) {
-                Log-Message "Progress: $n / $total (ok=$ok skip=$skip fail=$fail)" "White"
-            }
-            [System.Windows.Forms.Application]::DoEvents()
 
-            $dest = Join-Path $outDir "$id.$ext"
-            if (Test-Path $dest) { $skip++; continue }
-            $url = "https://art.gametdb.com/$($artInfo.ArtPath)/$CoverType/$Region/$id.$ext"
-            try {
-                $wc.DownloadFile($url, $dest)
-                if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
-                    $ok++
-                } else {
-                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                    $fail++
+            $idUpper = $id.ToUpperInvariant()
+            $entry = $null
+            if ($collectionMap.ContainsKey($idUpper)) { $entry = $collectionMap[$idUpper] }
+
+            foreach ($coverType in $CoverTypes) {
+                if ($script:gtdbCoverPackAbort) {
+                    $aborted = $true
+                    break
                 }
-            } catch {
-                if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                $fail++
+                $n++
+                $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
+                if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
+                    Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status (
+                        "{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
+                }
+                if ($n % 50 -eq 0) {
+                    Log-Message "Progress: $n / $total (ok=$ok skip=$skip fail=$fail)" "White"
+                }
+                [System.Windows.Forms.Application]::DoEvents()
+
+                $ext = Get-GameTDBCoverExt $artPlat $coverType
+                $folderName = Get-GameTDBCoverTypeFolder -CoverType $coverType -UseBoxFull:$UseBoxFull
+                $assetKey = Get-GameTDBCoverTypeAssetKey -CoverType $coverType -UseBoxFull:$UseBoxFull
+
+                if ($OnlyMissing -and $entry -and $assetKey -eq "assets.box_front" -and $entry.HasBoxFront) {
+                    $skip++
+                    continue
+                }
+
+                if ($SaveIntoMedia -and $col -and $col.mediaPath) {
+                    $outDir = Join-Path $col.mediaPath $folderName
+                } else {
+                    $outDir = Join-Path $OutBase (Join-Path $info.Label (Join-Path $coverType $Region))
+                }
+                if (-not (Test-Path $outDir)) {
+                    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+                }
+
+                $dest = Join-Path $outDir "$id.$ext"
+                if (Test-Path $dest) {
+                    $skip++
+                    if ($WriteAssets -and $col) {
+                        if (-not $assetUpdates.ContainsKey($idUpper)) { $assetUpdates[$idUpper] = @{} }
+                        $rel = $dest
+                        try {
+                            $metaParent = Split-Path $col.metadataPath -Parent
+                            if ($dest.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
+                                $rel = $dest.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
+                            }
+                        } catch {}
+                        $assetUpdates[$idUpper][$assetKey] = $rel
+                    }
+                    continue
+                }
+
+                $saved = $false
+                $lastUrl = ""
+                foreach ($reg in $regionsToTry) {
+                    $url = "https://art.gametdb.com/$($artInfo.ArtPath)/$coverType/$reg/$id.$ext"
+                    $lastUrl = $url
+                    try {
+                        $wc.DownloadFile($url, $dest)
+                        if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
+                            $ok++
+                            $saved = $true
+                            # Optional: rename to game title, then convert to PNG
+                            $finalPath = $dest
+                            try {
+                                $gameTitle = $null
+                                if ($titleById.ContainsKey($idUpper)) { $gameTitle = $titleById[$idUpper] }
+                                elseif ($entry -and $entry.Title) { $gameTitle = $entry.Title }
+                                if ($RenameToTitle -and $gameTitle) {
+                                    $safe = Get-SafeGameFileName $gameTitle
+                                    if ($safe) {
+                                        $renamed = Join-Path $outDir ($safe + [System.IO.Path]::GetExtension($finalPath))
+                                        if (-not (Test-Path -LiteralPath $renamed)) {
+                                            Move-Item -LiteralPath $finalPath -Destination $renamed -Force
+                                            $finalPath = $renamed
+                                        } elseif ($renamed -ne $finalPath) {
+                                            # Title file exists - keep ID name unless same path
+                                        }
+                                    }
+                                }
+                                if ($ConvertToPng) {
+                                    $finalPath = Convert-ImageFileToPng -Path $finalPath
+                                }
+                                $dest = $finalPath
+                            } catch {
+                                Log-Message ("Post-process failed for {0}: {1}" -f $id, $_.Exception.Message) "Yellow"
+                            }
+                            if ($WriteAssets -and $col) {
+                                if (-not $assetUpdates.ContainsKey($idUpper)) { $assetUpdates[$idUpper] = @{} }
+                                $rel = $dest
+                                try {
+                                    $metaParent = Split-Path $col.metadataPath -Parent
+                                    if ($dest.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
+                                        $rel = $dest.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
+                                    }
+                                } catch {}
+                                $assetUpdates[$idUpper][$assetKey] = $rel
+                            }
+                            break
+                        } else {
+                            if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        }
+                    } catch {
+                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                    }
+                }
+                if (-not $saved) {
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{
+                        Id     = $id
+                        Type   = $coverType
+                        Region = $Region
+                        Url    = $lastUrl
+                    })
+                }
             }
         }
         $wc.Dispose()
 
+        $reportDir = $null
+        if ($SaveIntoMedia -and $col -and $col.mediaPath) {
+            $reportDir = Get-ToolsFolder $col.mediaPath
+        } elseif ($OutBase) {
+            $reportDir = $OutBase
+        }
+        if ($failRows.Count -gt 0 -and $reportDir) {
+            try {
+                if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
+                $csvPath = Join-Path $reportDir "failed_covers.csv"
+                $failRows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+                Log-Message "Fail report: $csvPath ($($failRows.Count) rows)" "Yellow"
+            } catch {
+                Log-Message "Could not write fail report: $_" "Yellow"
+            }
+        }
+
+        if ($WriteAssets -and $col -and $assetUpdates.Count -gt 0) {
+            try {
+                Apply-GameTDBAssetUpdates -Updates $assetUpdates
+            } catch {
+                Log-Message "Asset path write error: $_" "Red"
+            }
+        }
+
         $summary = "Downloaded: $ok   Skipped: $skip   Missing: $fail"
         if ($aborted) {
             Log-Message "Aborted. $summary" "Yellow"
-            Log-Message "Folder: $outDir" "Cyan"
             Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
         } else {
             Log-Message "Done. $summary" "Green"
-            Log-Message "Folder: $outDir" "Cyan"
+            if ($SaveIntoMedia -and $col) {
+                Log-Message "Media: $($col.mediaPath)" "Cyan"
+            } elseif ($OutBase) {
+                Log-Message "Folder: $OutBase" "Cyan"
+            }
             Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
         }
+        UpdateStats
     } catch {
         Log-Message "ERROR: $_" "Red"
         if ($prog -and -not $prog.IsDisposed) {
             Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
         }
     }
+}
+
+function Apply-GameTDBAssetUpdates {
+    param([hashtable]$Updates)
+    $c = Get-Col
+    if (-not $c -or -not $Updates -or $Updates.Count -eq 0) { return }
+
+    $p = $c.metadataPath
+    if (-not (Test-Path $p)) { return }
+
+    CreateBackup
+    $content = Get-Content $p -Raw -ErrorAction Stop
+    $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
+    $sb = New-Object System.Text.StringBuilder
+    $count = 0
+
+    foreach ($part in $parts) {
+        if ([string]::IsNullOrWhiteSpace($part)) { continue }
+        if ($part -match '(?m)^game:\s*') {
+            $gid = $null
+            if ($part -match '(?m)^game_id:\s*(\S+)') { $gid = $matches[1].Trim() }
+            $short = $null
+            if ($gid) {
+                $short = Get-GameTDBShortId $gid
+                if ($short) { $short = $short.ToUpperInvariant() }
+            }
+            if ($short -and $Updates.ContainsKey($short)) {
+                $paths = $Updates[$short]
+                foreach ($ak in @($paths.Keys)) {
+                    $val = $paths[$ak]
+                    if ([string]::IsNullOrWhiteSpace($val)) { continue }
+                    $escapedKey = [regex]::Escape($ak)
+                    if ($part -match "(?m)^${escapedKey}:\s*") {
+                        $part = [regex]::Replace($part, "(?m)^${escapedKey}:\s*.*$", "${ak}: $val", 1)
+                    } else {
+                        if ($part -match '(?m)^game_id:\s*.+$') {
+                            $part = [regex]::Replace($part, '((?m)^game_id:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
+                        } else {
+                            $part = [regex]::Replace($part, '((?m)^game:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
+                        }
+                    }
+                    $count++
+                }
+            }
+        }
+        [void]$sb.Append($part.TrimEnd())
+        [void]$sb.Append("`n")
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($p, ($sb.ToString().TrimEnd() + "`n"), $utf8)
+    Log-Message "Wrote $count asset path field(s) for $($Updates.Count) game(s)" "Green"
+    UpdateEditor
 }
 
 function Download-GameTDBCovers {
