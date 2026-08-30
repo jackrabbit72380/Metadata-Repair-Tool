@@ -1,6 +1,6 @@
 ﻿# ============================================================================
 # METADATA REPAIR TOOL
-# Version: 2.5.8 - Cover Pack: collection-only, missing, region fallback, assets
+# Version: 2.5.10 - Cover Pack: only-missing for boxFull/box_full, platform filter, collection required docs
 # (Steam/Light/HighContrast/Windows); UTF-8 BOM for Windows PowerShell 5.1;
 # Remove Games w/ No File; SNES guide; Sort A-Z; Games list height fix.
 # ============================================================================
@@ -43,7 +43,7 @@ public static class MrtCrc32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.9"
+$script:version = "2.5.10"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
@@ -1998,6 +1998,15 @@ function Get-DeveloperLogText {
     return @"
 Developer Log
 Policy: All changes and updates must always be listed here.
+
+2.5.10 - 2026-08-30
+- Cover Pack Only-missing: also checks assets.boxFull / assets.box_full / assets.box_back
+  (not only assets.box_front) so Unicovers / Box Full themes work
+- Collection-only: filter game_ids against the chosen platform titles list
+  (stops Wii collection IDs driving DS downloads, etc.)
+- Cover Pack dialog shows the currently selected collection name
+- Guide: when a collection is required vs optional for Cover Pack
+- Guide: only-missing covers front / boxFull / box_full / back
 
 2.5.9 - 2026-08-30
 - Cover Pack: boxFull (Unicovers), rename to game title, convert PNG
@@ -4476,12 +4485,33 @@ Download Covers by ID
 
 Download Cover Pack...
   - System + multi cover types + primary region
-  - Options: current collection only (game_id), only missing art,
-    region fallback, save into media folders, write asset paths
-  - Media folders: box2dfront / box2dback / disc by cover type
-  - Writes assets.box_front / box_back / box_full / cartridge
+  - Dialog shows the currently selected collection name
+  - Options: current collection only (game_id on this platform),
+    only missing art (front / boxFull / box_full / back),
+    region fallback, save into media folders, write asset paths,
+    full covers -> boxFull (Unicovers) or box2dfull
+  - Media folders: box2dfront / boxFull or box2dfull / box2dback / disc
+  - Writes assets.box_front / boxFull or box_full / box_back / cartridge
   - Failures logged to failed_covers.csv (media/Tools or out folder)
   - Skips files that already exist; abortable progress window
+
+  When is a collection required?
+  - YES if any of these are checked (defaults are on):
+      Current collection only
+      Save into media folders
+      Write asset paths into metadata
+  - NO if all three are unchecked: downloads the full platform
+    list into the Output folder you choose
+  - Only missing art uses the selected collection's metadata
+    to decide what is already present. With no collection,
+    it cannot skip by metadata (still skips if the image file
+    already exists on disk).
+
+  Collection only + platform
+  - Only game_id values that also appear in the chosen system's
+    titles list are downloaded. A Wii collection will not drive
+    Nintendo DS downloads. Pick the system that matches the
+    selected collection.
 
 Lookup Title by ID / Open GameTDB Page / Apply Titles
 Fill Missing Box Art Paths / DL Covers from Game List
@@ -6856,8 +6886,36 @@ function Convert-ImageFileToPng {
     return $Path
 }
 
+function Test-CollectionAssetPathExists {
+    # Resolve a metadata asset path (absolute or relative) against the collection.
+    param(
+        [string]$AssetPath,
+        $Collection
+    )
+    if ([string]::IsNullOrWhiteSpace($AssetPath) -or -not $Collection) { return $false }
+    $p = $AssetPath.Trim().Trim('"')
+    if ([string]::IsNullOrWhiteSpace($p)) { return $false }
+    try {
+        if ([System.IO.Path]::IsPathRooted($p)) {
+            return (Test-Path -LiteralPath $p)
+        }
+        $try1 = Join-Path (Split-Path $Collection.metadataPath -Parent) $p
+        if (Test-Path -LiteralPath $try1) { return $true }
+        if ($Collection.mediaPath) {
+            $try2 = Join-Path $Collection.mediaPath $p
+            if (Test-Path -LiteralPath $try2) { return $true }
+            $try3 = Join-Path (Split-Path $Collection.mediaPath -Parent) $p
+            if (Test-Path -LiteralPath $try3) { return $true }
+        }
+    } catch {}
+    return $false
+}
+
 function Get-CollectionGameIdMap {
-    # Returns hashtable: shortId (upper) -> @{ Title; HasBoxFront; BoxFrontPath; GameId }
+    # Returns hashtable: shortId (upper) -> @{
+    #   Title; GameId; HasBoxFront; HasBoxFull; HasBox_Full; HasBoxBack;
+    #   BoxFrontPath; PresentAssets (hashtable of assetKey -> $true when file exists)
+    # }
     $map = @{}
     $c = Get-Col
     if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
@@ -6874,26 +6932,43 @@ function Get-CollectionGameIdMap {
             $short = Get-GameTDBShortId $gid
             if (-not $short) { $short = $gid }
             $short = $short.ToUpperInvariant()
-            $hasFront = $false
+
+            $present = @{}
             $frontPath = ""
-            if ($g -match '(?m)^assets\.box_front:\s*(.+)$') {
-                $frontPath = $matches[1].Trim().Trim('"')
-                if (-not [string]::IsNullOrWhiteSpace($frontPath)) {
-                    if ([System.IO.Path]::IsPathRooted($frontPath)) {
-                        $hasFront = Test-Path -LiteralPath $frontPath
-                    } else {
-                        $try1 = Join-Path (Split-Path $c.metadataPath -Parent) $frontPath
-                        $try2 = if ($c.mediaPath) { Join-Path $c.mediaPath $frontPath } else { $null }
-                        $hasFront = (Test-Path -LiteralPath $try1) -or ($try2 -and (Test-Path -LiteralPath $try2))
+            $hasFront = $false
+            $hasBoxFull = $false
+            $hasBox_Full = $false
+            $hasBack = $false
+
+            foreach ($m in [regex]::Matches($g, '(?m)^(assets\.[^:]+):\s*(.+)$')) {
+                $akey = $m.Groups[1].Value.Trim()
+                $aval = $m.Groups[2].Value.Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($aval)) { continue }
+                if (Test-CollectionAssetPathExists -AssetPath $aval -Collection $c) {
+                    $present[$akey] = $true
+                    if ($akey -eq "assets.box_front") {
+                        $hasFront = $true
+                        $frontPath = $aval
+                    } elseif ($akey -eq "assets.boxFull") {
+                        $hasBoxFull = $true
+                    } elseif ($akey -eq "assets.box_full") {
+                        $hasBox_Full = $true
+                    } elseif ($akey -eq "assets.box_back") {
+                        $hasBack = $true
                     }
                 }
             }
+
             if (-not $map.ContainsKey($short)) {
                 $map[$short] = @{
-                    Title        = $title
-                    GameId       = $gid
-                    HasBoxFront  = $hasFront
-                    BoxFrontPath = $frontPath
+                    Title         = $title
+                    GameId        = $gid
+                    HasBoxFront   = $hasFront
+                    HasBoxFull    = $hasBoxFull
+                    HasBox_Full   = $hasBox_Full
+                    HasBoxBack    = $hasBack
+                    BoxFrontPath  = $frontPath
+                    PresentAssets = $present
                 }
             }
         }
@@ -7085,15 +7160,32 @@ function Show-GameTDBCoverPackDialog {
         $grpOpt = New-Object System.Windows.Forms.GroupBox
         $grpOpt.Text = " Options "
         $grpOpt.Location = New-Object System.Drawing.Point($secX, 184)
-        $grpOpt.Size = New-Object System.Drawing.Size($secW, 178)
+        $grpOpt.Size = New-Object System.Drawing.Size($secW, 198)
         $grpOpt.ForeColor = $script:theme.text
         $grpOpt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $grpOpt.BackColor = $script:theme.background
         $dlg.Controls.Add($grpOpt)
 
+        $colName = "(none selected)"
+        try {
+            $selCol = Get-Col
+            if ($selCol -and $selCol.name) { $colName = [string]$selCol.name }
+            elseif ($script:collectionList -and $script:collectionList.SelectedItem) {
+                $colName = [string]$script:collectionList.SelectedItem
+            }
+        } catch {}
+
+        $lblCol = New-Object System.Windows.Forms.Label
+        $lblCol.Text = "Selected collection: $colName"
+        $lblCol.Location = New-Object System.Drawing.Point(12, 18)
+        $lblCol.Size = New-Object System.Drawing.Size(430, 16)
+        $lblCol.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblCol.ForeColor = $script:theme.accent
+        $grpOpt.Controls.Add($lblCol)
+
         $chkCollection = New-Object System.Windows.Forms.CheckBox
-        $chkCollection.Text = "Current collection only (requires game_id)"
-        $chkCollection.Location = New-Object System.Drawing.Point(12, 20)
+        $chkCollection.Text = "Current collection only (requires game_id on this platform)"
+        $chkCollection.Location = New-Object System.Drawing.Point(12, 36)
         $chkCollection.Size = New-Object System.Drawing.Size(430, 18)
         $chkCollection.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkCollection.ForeColor = $script:theme.text
@@ -7102,8 +7194,8 @@ function Show-GameTDBCoverPackDialog {
         $grpOpt.Controls.Add($chkCollection)
 
         $chkMissing = New-Object System.Windows.Forms.CheckBox
-        $chkMissing.Text = "Only missing art"
-        $chkMissing.Location = New-Object System.Drawing.Point(12, 40)
+        $chkMissing.Text = "Only missing art (front / boxFull / back)"
+        $chkMissing.Location = New-Object System.Drawing.Point(12, 56)
         $chkMissing.Size = New-Object System.Drawing.Size(200, 18)
         $chkMissing.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkMissing.ForeColor = $script:theme.text
@@ -7113,7 +7205,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkFallback = New-Object System.Windows.Forms.CheckBox
         $chkFallback.Text = "Region fallback"
-        $chkFallback.Location = New-Object System.Drawing.Point(220, 40)
+        $chkFallback.Location = New-Object System.Drawing.Point(220, 56)
         $chkFallback.Size = New-Object System.Drawing.Size(200, 18)
         $chkFallback.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkFallback.ForeColor = $script:theme.text
@@ -7123,7 +7215,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkMedia = New-Object System.Windows.Forms.CheckBox
         $chkMedia.Text = "Save into media folders"
-        $chkMedia.Location = New-Object System.Drawing.Point(12, 60)
+        $chkMedia.Location = New-Object System.Drawing.Point(12, 76)
         $chkMedia.Size = New-Object System.Drawing.Size(200, 18)
         $chkMedia.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkMedia.ForeColor = $script:theme.text
@@ -7133,7 +7225,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkWrite = New-Object System.Windows.Forms.CheckBox
         $chkWrite.Text = "Write asset paths into metadata"
-        $chkWrite.Location = New-Object System.Drawing.Point(220, 60)
+        $chkWrite.Location = New-Object System.Drawing.Point(220, 76)
         $chkWrite.Size = New-Object System.Drawing.Size(220, 18)
         $chkWrite.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkWrite.ForeColor = $script:theme.text
@@ -7143,7 +7235,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkBoxFull = New-Object System.Windows.Forms.CheckBox
         $chkBoxFull.Text = "Full covers -> boxFull (Unicovers / theme)"
-        $chkBoxFull.Location = New-Object System.Drawing.Point(12, 80)
+        $chkBoxFull.Location = New-Object System.Drawing.Point(12, 96)
         $chkBoxFull.Size = New-Object System.Drawing.Size(430, 18)
         $chkBoxFull.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkBoxFull.ForeColor = $script:theme.text
@@ -7153,7 +7245,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkRename = New-Object System.Windows.Forms.CheckBox
         $chkRename.Text = "Rename images to game titles"
-        $chkRename.Location = New-Object System.Drawing.Point(12, 100)
+        $chkRename.Location = New-Object System.Drawing.Point(12, 116)
         $chkRename.Size = New-Object System.Drawing.Size(250, 18)
         $chkRename.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkRename.ForeColor = $script:theme.text
@@ -7163,7 +7255,7 @@ function Show-GameTDBCoverPackDialog {
 
         $chkPng = New-Object System.Windows.Forms.CheckBox
         $chkPng.Text = "Convert to PNG"
-        $chkPng.Location = New-Object System.Drawing.Point(270, 100)
+        $chkPng.Location = New-Object System.Drawing.Point(270, 116)
         $chkPng.Size = New-Object System.Drawing.Size(160, 18)
         $chkPng.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $chkPng.ForeColor = $script:theme.text
@@ -7173,7 +7265,7 @@ function Show-GameTDBCoverPackDialog {
 
         $lblOptHint = New-Object System.Windows.Forms.Label
         $lblOptHint.Text = "boxFull for coverfullHQ. Rename/PNG run after each successful download."
-        $lblOptHint.Location = New-Object System.Drawing.Point(12, 124)
+        $lblOptHint.Location = New-Object System.Drawing.Point(12, 140)
         $lblOptHint.Size = New-Object System.Drawing.Size(430, 16)
         $lblOptHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
         $lblOptHint.ForeColor = $script:theme.textDim
@@ -7190,7 +7282,7 @@ function Show-GameTDBCoverPackDialog {
         # ========== Output ==========
         $grpOut = New-Object System.Windows.Forms.GroupBox
         $grpOut.Text = " Output folder "
-        $grpOut.Location = New-Object System.Drawing.Point($secX, 368)
+        $grpOut.Location = New-Object System.Drawing.Point($secX, 388)
         $grpOut.Size = New-Object System.Drawing.Size($secW, 72)
         $grpOut.ForeColor = $script:theme.text
         $grpOut.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -7229,7 +7321,7 @@ function Show-GameTDBCoverPackDialog {
         $grpOut.Controls.Add($btnBrowse)
 
         # ========== Buttons ==========
-        $btnStart = Create-Button "Start" 155 452 100 $btnH
+        $btnStart = Create-Button "Start" 155 470 100 $btnH
         $btnStart.Add_Click({
             try {
                 $idx = $cmbSys.SelectedIndex
@@ -7287,12 +7379,12 @@ function Show-GameTDBCoverPackDialog {
         })
         $dlg.Controls.Add($btnStart)
 
-        $btnCancel = Create-Button "Cancel" 267 452 $btnW $btnH
+        $btnCancel = Create-Button "Cancel" 267 470 $btnW $btnH
         $btnCancel.Add_Click({ $dlg.Close() })
         $dlg.Controls.Add($btnCancel)
 
         # Fit dialog to bottom of buttons
-        $dlg.ClientSize = New-Object System.Drawing.Size(484, 492)
+        $dlg.ClientSize = New-Object System.Drawing.Size(484, 510)
 
         $result = $dlg.ShowDialog($script:mainForm)
         if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
@@ -7537,12 +7629,29 @@ function Start-GameTDBCoverPackDownload {
                 $wc.Dispose()
                 return
             }
+            # Only keep collection game_ids that exist in THIS platform's titles list.
+            # Prevents e.g. a Wii collection driving Nintendo DS cover downloads.
             $titleSet = @{}
             foreach ($id in $allIds) { $titleSet[$id.ToUpperInvariant()] = $true }
+            $matched = 0
+            $skippedPlat = 0
             foreach ($sid in @($collectionMap.Keys)) {
-                [void]$ids.Add($sid)
+                $key = $sid.ToUpperInvariant()
+                if ($titleSet.ContainsKey($key)) {
+                    [void]$ids.Add($key)
+                    $matched++
+                } else {
+                    $skippedPlat++
+                }
             }
             $ids = [System.Collections.ArrayList]@($ids | Sort-Object -Unique)
+            Log-Message ("Collection IDs on this platform: {0}  |  skipped (wrong platform / not in titles): {1}" -f $matched, $skippedPlat) "Cyan"
+            if ($ids.Count -eq 0) {
+                Log-Message "No collection game_id values match the selected platform ($Platform). Pick the matching system, or uncheck Collection only." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No matching IDs for platform" -Aborted
+                $wc.Dispose()
+                return
+            }
         } else {
             foreach ($id in $allIds) { [void]$ids.Add($id) }
         }
@@ -7591,9 +7700,26 @@ function Start-GameTDBCoverPackDownload {
                 $folderName = Get-GameTDBCoverTypeFolder -CoverType $coverType -UseBoxFull:$UseBoxFull
                 $assetKey = Get-GameTDBCoverTypeAssetKey -CoverType $coverType -UseBoxFull:$UseBoxFull
 
-                if ($OnlyMissing -and $entry -and $assetKey -eq "assets.box_front" -and $entry.HasBoxFront) {
-                    $skip++
-                    continue
+                # Only-missing: skip when this cover type's asset already exists for the game.
+                # Supports box2dfront (assets.box_front), Unicovers boxFull (assets.boxFull),
+                # alternate Box Full (assets.box_full), and box backs.
+                if ($OnlyMissing -and $entry) {
+                    $alreadyHas = $false
+                    if ($entry.PresentAssets -and $entry.PresentAssets.ContainsKey($assetKey)) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.box_front" -and $entry.HasBoxFront) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.boxFull" -and $entry.HasBoxFull) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.box_full" -and $entry.HasBox_Full) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.box_back" -and $entry.HasBoxBack) {
+                        $alreadyHas = $true
+                    }
+                    if ($alreadyHas) {
+                        $skip++
+                        continue
+                    }
                 }
 
                 if ($SaveIntoMedia -and $col -and $col.mediaPath) {
