@@ -1,8 +1,7 @@
 ﻿# ============================================================================
 # METADATA REPAIR TOOL
-# Version: 2.5.10 - Cover Pack: only-missing for boxFull/box_full, platform filter, collection required docs
-# (Steam/Light/HighContrast/Windows); UTF-8 BOM for Windows PowerShell 5.1;
-# Remove Games w/ No File; SNES guide; Sort A-Z; Games list height fix.
+# Version: 2.5.13 - Cover type descriptions include resolutions; single-game Cover Pack download
+# with searchable game dropdown; Libretro Tools + shared Cover Downloader (2.5.12).
 # ============================================================================
 
 
@@ -43,7 +42,7 @@ public static class MrtCrc32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.10"
+$script:version = "2.5.13"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
@@ -148,6 +147,48 @@ $script:gameTdbPlatforms = @{
 $script:gameTdbRegions = @("US", "EN", "AU", "FR", "DE", "JP", "JA", "CA", "RU", "ZH", "KO", "IT", "NL", "PT", "ES", "SE", "DK", "NO", "FI")
 $script:gameTdbTitlesCache = @{}
 $script:lastGameTdbPlatform = "wii"
+
+# Libretro-Thumbnails source (github.com/libretro-thumbnails org).
+# RepoName must match the GitHub repo exactly (verified live against the org).
+# Only boxart is supported (Named_Boxarts folder) - Libretro-Thumbnails has no
+# separate "back cover" category, only Boxarts / Snaps / Titles.
+$script:libretroPlatforms = @{
+    "nes"          = @{ Label = "Nintendo Entertainment System"; RepoName = "Nintendo_-_Nintendo_Entertainment_System" }
+    "snes"         = @{ Label = "Super Nintendo Entertainment System"; RepoName = "Nintendo_-_Super_Nintendo_Entertainment_System" }
+    "n64"          = @{ Label = "Nintendo 64"; RepoName = "Nintendo_-_Nintendo_64" }
+    "gb"           = @{ Label = "Game Boy"; RepoName = "Nintendo_-_Game_Boy" }
+    "gbc"          = @{ Label = "Game Boy Color"; RepoName = "Nintendo_-_Game_Boy_Color" }
+    "gba"          = @{ Label = "Game Boy Advance"; RepoName = "Nintendo_-_Game_Boy_Advance" }
+    "nds"          = @{ Label = "Nintendo DS"; RepoName = "Nintendo_-_Nintendo_DS" }
+    "n3ds"         = @{ Label = "Nintendo 3DS"; RepoName = "Nintendo_-_Nintendo_3DS" }
+    "gamecube_lr"  = @{ Label = "GameCube"; RepoName = "Nintendo_-_GameCube" }
+    "wii_lr"       = @{ Label = "Wii"; RepoName = "Nintendo_-_Wii" }
+    "wiiu_lr"      = @{ Label = "Wii U"; RepoName = "Nintendo_-_Wii_U" }
+    "ps1"          = @{ Label = "PlayStation"; RepoName = "Sony_-_PlayStation" }
+    "ps2"          = @{ Label = "PlayStation 2"; RepoName = "Sony_-_PlayStation_2" }
+    "psp"          = @{ Label = "PlayStation Portable"; RepoName = "Sony_-_PlayStation_Portable" }
+    "psvita"       = @{ Label = "PlayStation Vita"; RepoName = "Sony_-_PlayStation_Vita" }
+    "xbox"         = @{ Label = "Xbox"; RepoName = "Microsoft_-_Xbox" }
+    "genesis"      = @{ Label = "Sega Mega Drive / Genesis"; RepoName = "Sega_-_Mega_Drive_-_Genesis" }
+    "mastersystem" = @{ Label = "Sega Master System"; RepoName = "Sega_-_Master_System_-_Mark_III" }
+    "saturn"       = @{ Label = "Sega Saturn"; RepoName = "Sega_-_Saturn" }
+    "dreamcast"    = @{ Label = "Sega Dreamcast"; RepoName = "Sega_-_Dreamcast" }
+    "gamegear"     = @{ Label = "Sega Game Gear"; RepoName = "Sega_-_Game_Gear" }
+    "sega32x"      = @{ Label = "Sega 32X"; RepoName = "Sega_-_32X" }
+    "segacd"       = @{ Label = "Sega CD"; RepoName = "Sega_-_Mega-CD_-_Sega_CD" }
+    "atari2600"    = @{ Label = "Atari 2600"; RepoName = "Atari_-_2600" }
+    "atari5200"    = @{ Label = "Atari 5200"; RepoName = "Atari_-_5200" }
+    "atari7800"    = @{ Label = "Atari 7800"; RepoName = "Atari_-_7800" }
+    "lynx"         = @{ Label = "Atari Lynx"; RepoName = "Atari_-_Lynx" }
+    "jaguar"       = @{ Label = "Atari Jaguar"; RepoName = "Atari_-_Jaguar" }
+    "pcengine"     = @{ Label = "PC Engine / TurboGrafx-16"; RepoName = "NEC_-_PC_Engine_-_TurboGrafx_16" }
+    "neogeo"       = @{ Label = "Neo Geo"; RepoName = "SNK_-_Neo_Geo" }
+    "ngpocket"     = @{ Label = "Neo Geo Pocket"; RepoName = "SNK_-_Neo_Geo_Pocket" }
+    "ngpocketc"    = @{ Label = "Neo Geo Pocket Color"; RepoName = "SNK_-_Neo_Geo_Pocket_Color" }
+    "amiga"        = @{ Label = "Commodore Amiga"; RepoName = "Commodore_-_Amiga" }
+    "mame"         = @{ Label = "MAME (Arcade)"; RepoName = "MAME" }
+}
+$script:libretroTreeCache = @{}
 
 # Create config directory
 $configDir = Split-Path $script:configPath -Parent
@@ -1999,6 +2040,33 @@ function Get-DeveloperLogText {
 Developer Log
 Policy: All changes and updates must always be listed here.
 
+2.5.13 - 2026-08-31
+- Cover type descriptions (blue text) now include typical resolutions and quality tier
+  (LOW / MEDIUM / HIGH) so you can avoid low-res covers overwriting HQ box art
+- Cover Pack: "One game only" checkbox + searchable game dropdown (from selected collection)
+  - When checked, downloads only the selected game's art (GameTDB by game_id, Libretro by title)
+  - Search box filters the dropdown as you type
+- Still supports full collection / all-titles pack downloads when the checkbox is off
+- Cover Pack dialog: removed blank wasted space under Source description and Options
+
+2.5.12 - 2026-08-30
+- New "Libretro Tools" left-panel section, separate from GameTDB Tools
+- Both GameTDB Tools and Libretro Tools have their own "Cover Downloader..."
+  button that opens the same shared Cover Pack dialog, preset to the
+  matching "Download from" option (GameTDB or Libretro-Thumbnails)
+- Show-GameTDBCoverPackDialog now takes -PreselectSource "gametdb"/"libretro"
+
+2.5.11 - 2026-08-30
+- Cover Pack: new "Download from" source - Libretro-Thumbnails (github.com/libretro-thumbnails),
+  in addition to GameTDB. Free, no login/API key. Boxart only for now.
+- Libretro source matches games by normalized title (no GameTDB-style ID on this source);
+  region tags like (USA)/(Europe) in filenames are ignored automatically when matching
+- Same Only missing / Save into media / Write asset paths / boxFull / Rename / Convert to PNG
+  options work for both sources
+- Uses one GitHub API call per system (not per game) to list available boxart, cached
+  for the session - unauthenticated GitHub API calls are rate-limited (~60/hour/IP)
+- Local folder / ZIP import source: not in this build yet (planned next)
+
 2.5.10 - 2026-08-30
 - Cover Pack Only-missing: also checks assets.boxFull / assets.box_full / assets.box_back
   (not only assets.box_front) so Unicovers / Box Full themes work
@@ -3197,7 +3265,7 @@ function Show-MainWindow {
     $gty += 30
     $btnGtPack = Create-Button "Download Cover Pack..." 8 $gty $gtBw 26
     $btnGtPack.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnGtPack.Add_Click({ Show-GameTDBCoverPackDialog })
+    $btnGtPack.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "gametdb" })
     $gtdbGroup.Controls.Add($btnGtPack)
     
     $btnGt3 = Create-Button "Lookup Title by ID" $gtCol2 $gty $gtBw 26
@@ -3223,6 +3291,27 @@ function Show-MainWindow {
     $btnGt8.Add_Click({ Download-CoversFromGameList })
     $gtdbGroup.Controls.Add($btnGt8)
     
+    # ============================================================
+    # SECTION 5b: LIBRETRO-THUMBNAILS TOOLS
+    # ============================================================
+    # Separate from GameTDB Tools since it's a different source (no ID
+    # lookup, boxart only) - both just open the shared Cover Downloader
+    # dialog, preset to the matching "Download from" option.
+    $libretroExpandedH = 56
+    $libretroGroup = New-Object System.Windows.Forms.GroupBox
+    $libretroGroup.Text = " Libretro Tools "
+    $libretroGroup.Location = New-Object System.Drawing.Point(5, 1350)
+    $libretroGroup.Size = New-Object System.Drawing.Size($leftW, $libretroExpandedH)
+    $libretroGroup.ForeColor = $script:theme.text
+    $libretroGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($libretroGroup)
+
+    $lry = 22
+    $btnLr1 = Create-Button "Cover Downloader (Libretro)..." 8 $lry ($leftW - 16) 26
+    $btnLr1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnLr1.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "libretro" })
+    $libretroGroup.Controls.Add($btnLr1)
+
     # ============================================================
     # SECTION 6: BUILDER / REPAIR TOOLS
     # ============================================================
@@ -3362,6 +3451,7 @@ function Show-MainWindow {
     Register-LeftSection -Group $snsGroup -ExpandedHeight $snsExpandedH -Collapsible $true -StartExpanded $false -Title "SNS Code Tools"
     Register-LeftSection -Group $gameIDGroup -ExpandedHeight 90 -Collapsible $true -StartExpanded $false -Title "Game ID Tools"
     Register-LeftSection -Group $gtdbGroup -ExpandedHeight $gtdbExpandedH -Collapsible $true -StartExpanded $false -Title "GameTDB Tools"
+    Register-LeftSection -Group $libretroGroup -ExpandedHeight $libretroExpandedH -Collapsible $true -StartExpanded $false -Title "Libretro Tools"
     Register-LeftSection -Group $builderGroup -ExpandedHeight $builderExpandedH -Collapsible $true -StartExpanded $true -Title "Build & Repair Tools"
     
     # Delay relayout until after form is shown to avoid layout issues
@@ -4512,6 +4602,25 @@ Download Cover Pack...
     titles list are downloaded. A Wii collection will not drive
     Nintendo DS downloads. Pick the system that matches the
     selected collection.
+
+Download Cover Pack... - "Download from" dropdown
+  - GameTDB (default, described above) or Libretro-Thumbnails
+  - Libretro-Thumbnails: free box art from
+    github.com/libretro-thumbnails, no login or API key
+      - Boxart only for now (no back covers on this source)
+      - No GameTDB-style ID - games are matched by title.
+        Region tags in filenames, e.g. (USA)/(Europe)/(Japan),
+        are ignored automatically when matching
+      - Same Only missing / Save into media / Write asset paths /
+        boxFull / Rename to title / Convert to PNG options apply
+      - Uses one GitHub API call per system to list available
+        files (not one per game), cached for the session.
+        Unauthenticated GitHub API calls are rate-limited to
+        about 60/hour per IP - if a system's list comes back
+        empty, wait a bit and try again
+      - Collection only: matches by normalized game title against
+        this collection's "game:" entries (game_id is not needed
+        or used for this source)
 
 Lookup Title by ID / Open GameTDB Page / Apply Titles
 Fill Missing Box Art Paths / DL Covers from Game List
@@ -6799,20 +6908,22 @@ function Build-GameTDBCoverUrl {
 
 function Get-GameTDBCoverTypeDescription {
     param([string]$CoverType)
+    # Resolutions are GameTDB's typical served sizes (exact pixels vary by platform/scan).
+    # Prefer HQ / fullHQ when you already have high-quality local art - avoid overwriting with "cover"/"coverM".
     $map = @{
-        "cover"        = "Standard box front covers (typical ~512px). Use for Box Front / box2dfront entries."
-        "coverHQ"      = "High quality box front covers (768x680). Use for Box Front / box2dfront entries."
-        "coverfullHQ"  = "High quality full box art (front + spine + back wrap). Best for boxFull / box2dfull."
-        "coverM"       = "Medium-size box front covers. Lighter downloads; fine for thumbs or box2dfront."
-        "cover3D"      = "3D rendered game box images (PNG). Decorative; not a flat 2D box front."
-        "back"         = "Standard box back covers. Use for Box Back / box2dback entries."
-        "backHQ"       = "High quality box back covers. Use for Box Back / box2dback entries."
-        "backM"        = "Medium-size box back covers. Use for Box Back / box2dback entries."
-        "disc"         = "Official disc / disc-label art (PNG). Use for disc / cartridge-style assets."
-        "discCustom"   = "Custom / alternate disc art (PNG). Use for disc assets when official disc is missing."
+        "cover"        = "Standard res (~512x340). Good for boxFront / box2dfront."
+        "coverHQ"      = "High res (~768x680+). Good for boxFront / box2dfront."
+        "coverfullHQ"  = "High-res full wrap (1500px+). Good for boxFull / box2dfull."
+        "coverM"       = "Medium res (~350-450px). Good for thumbnails only."
+        "cover3D"      = "3D box render (~512-768px). Decorative, not a flat scan."
+        "back"         = "Standard res (~512x340). Good for boxBack / box2dback."
+        "backHQ"       = "High res (~768x680+). Good for boxBack / box2dback."
+        "backM"        = "Medium res, smaller file. Good for boxBack (lighter)."
+        "disc"         = "Disc/label art (~512-1000px). Good for disc art."
+        "discCustom"   = "Custom disc art. Use if the official disc art is missing."
     }
     if ($map.ContainsKey($CoverType)) { return $map[$CoverType] }
-    return "GameTDB art type '$CoverType' from art.gametdb.com."
+    return "GameTDB art type from art.gametdb.com."
 }
 
 function Get-GameTDBCoverTypeFolder {
@@ -6978,12 +7089,211 @@ function Get-CollectionGameIdMap {
     return $map
 }
 
+function Get-NormalizedGameTitle {
+    # Fuzzy match key: strip parenthetical/bracketed tags (region, lang, disc, WiiWare...),
+    # lowercase, drop punctuation, collapse whitespace. Used to match Libretro filenames
+    # (which carry No-Intro region tags) against plain collection game titles.
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return "" }
+    $t = $Title
+    $t = [regex]::Replace($t, '\s*\([^)]*\)', '')
+    $t = [regex]::Replace($t, '\s*\[[^\]]*\]', '')
+    $t = $t.ToLowerInvariant()
+    $t = $t -replace '[^a-z0-9]+', ' '
+    $t = $t.Trim() -replace '\s+', ' '
+    return $t
+}
+
+function Get-CollectionGameTitleMap {
+    # Returns hashtable: normalized title -> @{
+    #   Title; HasBoxFront; HasBoxFull; HasBox_Full; HasBoxBack; PresentAssets
+    # }
+    # Same asset-presence logic as Get-CollectionGameIdMap, but keyed by title
+    # instead of game_id, for sources (like Libretro-Thumbnails) that have no ID.
+    $map = @{}
+    $c = Get-Col
+    if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
+    try {
+        $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($content)) { return $map }
+        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
+        foreach ($g in $games) {
+            $title = ""
+            if ($g -match '(?m)^game:\s*(.+)$') { $title = $matches[1].Trim() }
+            if (-not $title) { continue }
+            $norm = Get-NormalizedGameTitle $title
+            if (-not $norm) { continue }
+
+            $present = @{}
+            $hasFront = $false
+            $hasBoxFull = $false
+            $hasBox_Full = $false
+            $hasBack = $false
+
+            foreach ($m in [regex]::Matches($g, '(?m)^(assets\.[^:]+):\s*(.+)$')) {
+                $akey = $m.Groups[1].Value.Trim()
+                $aval = $m.Groups[2].Value.Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($aval)) { continue }
+                if (Test-CollectionAssetPathExists -AssetPath $aval -Collection $c) {
+                    $present[$akey] = $true
+                    if ($akey -eq "assets.box_front") { $hasFront = $true }
+                    elseif ($akey -eq "assets.boxFull") { $hasBoxFull = $true }
+                    elseif ($akey -eq "assets.box_full") { $hasBox_Full = $true }
+                    elseif ($akey -eq "assets.box_back") { $hasBack = $true }
+                }
+            }
+
+            if (-not $map.ContainsKey($norm)) {
+                $map[$norm] = @{
+                    Title         = $title
+                    HasBoxFront   = $hasFront
+                    HasBoxFull    = $hasBoxFull
+                    HasBox_Full   = $hasBox_Full
+                    HasBoxBack    = $hasBack
+                    PresentAssets = $present
+                }
+            }
+        }
+    } catch {
+        Log-Message "Get-CollectionGameTitleMap: $_" "Yellow"
+    }
+    return $map
+}
+
+function Get-LibretroRepoTree {
+    # One GitHub API call per repo (git trees, recursive) - cached for the session.
+    # Unauthenticated GitHub API calls are rate-limited (~60/hour per IP), so this
+    # is only fetched once per repo per run, not once per game.
+    param([string]$RepoName)
+    if ($script:libretroTreeCache.ContainsKey($RepoName)) {
+        return $script:libretroTreeCache[$RepoName]
+    }
+    $url = "https://api.github.com/repos/libretro-thumbnails/$RepoName/git/trees/master?recursive=1"
+    $wc = New-Object System.Net.WebClient
+    $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+    $wc.Headers.Add("Accept", "application/vnd.github+json")
+    try {
+        $json = $wc.DownloadString($url)
+        $obj = $json | ConvertFrom-Json
+        $tree = @()
+        if ($obj -and $obj.tree) { $tree = @($obj.tree) }
+        $script:libretroTreeCache[$RepoName] = $tree
+        return $tree
+    } catch {
+        Log-Message "Libretro repo listing failed for ${RepoName}: $($_.Exception.Message)" "Yellow"
+        $script:libretroTreeCache[$RepoName] = @()
+        return @()
+    } finally {
+        $wc.Dispose()
+    }
+}
+
+function Get-LibretroAssetMapping {
+    # Returns hashtable: normalized title -> relative path within the repo
+    # (e.g. "Named_Boxarts/Metroid Prime (USA).png"), for the given folder
+    # (currently only "Named_Boxarts" is used - box art / cover front).
+    # When multiple region variants exist for the same title, prefers
+    # USA > World > Europe > Japan > first match, matching the region
+    # preference order used elsewhere in this tool.
+    param(
+        [string]$RepoName,
+        [string]$Folder = "Named_Boxarts"
+    )
+    $result = @{}
+    $tree = Get-LibretroRepoTree -RepoName $RepoName
+    if (-not $tree -or $tree.Count -eq 0) { return $result }
+
+    $prefix = "$Folder/"
+    $candidates = @{}
+    foreach ($node in $tree) {
+        if ($node.type -ne "blob") { continue }
+        $path = [string]$node.path
+        if (-not $path.StartsWith($prefix)) { continue }
+        $fileName = $path.Substring($prefix.Length)
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+        $norm = Get-NormalizedGameTitle $baseName
+        if (-not $norm) { continue }
+        if (-not $candidates.ContainsKey($norm)) { $candidates[$norm] = New-Object System.Collections.ArrayList }
+        [void]$candidates[$norm].Add($path)
+    }
+
+    $regionPref = @("(USA)", "(World)", "(Europe)", "(Japan)")
+    foreach ($norm in @($candidates.Keys)) {
+        $paths = $candidates[$norm]
+        if ($paths.Count -eq 1) {
+            $result[$norm] = $paths[0]
+            continue
+        }
+        $chosen = $null
+        foreach ($r in $regionPref) {
+            $chosen = $paths | Where-Object { $_ -match [regex]::Escape($r) } | Select-Object -First 1
+            if ($chosen) { break }
+        }
+        if (-not $chosen) { $chosen = $paths[0] }
+        $result[$norm] = $chosen
+    }
+    return $result
+}
+
+function Apply-TitleKeyedAssetUpdates {
+    # Same as Apply-GameTDBAssetUpdates, but matches games by normalized title
+    # instead of game_id. Used for sources (Libretro-Thumbnails) with no ID scheme.
+    param([hashtable]$Updates)
+    $c = Get-Col
+    if (-not $c -or -not $Updates -or $Updates.Count -eq 0) { return }
+
+    $p = $c.metadataPath
+    if (-not (Test-Path $p)) { return }
+
+    CreateBackup
+    $content = Get-Content $p -Raw -ErrorAction Stop
+    $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
+    $sb = New-Object System.Text.StringBuilder
+    $count = 0
+
+    foreach ($part in $parts) {
+        if ([string]::IsNullOrWhiteSpace($part)) { continue }
+        if ($part -match '(?m)^game:\s*(.+)$') {
+            $title = $matches[1].Trim()
+            $key = Get-NormalizedGameTitle $title
+            if ($key -and $Updates.ContainsKey($key)) {
+                $paths = $Updates[$key]
+                foreach ($ak in @($paths.Keys)) {
+                    $val = $paths[$ak]
+                    if ([string]::IsNullOrWhiteSpace($val)) { continue }
+                    $escapedKey = [regex]::Escape($ak)
+                    if ($part -match "(?m)^${escapedKey}:\s*") {
+                        $part = [regex]::Replace($part, "(?m)^${escapedKey}:\s*.*$", "${ak}: $val", 1)
+                    } else {
+                        $part = [regex]::Replace($part, '((?m)^game:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
+                    }
+                    $count++
+                }
+            }
+        }
+        [void]$sb.Append($part.TrimEnd())
+        [void]$sb.Append("`n")
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($p, ($sb.ToString().TrimEnd() + "`n"), $utf8)
+    Log-Message "Wrote $count asset path field(s) for $($Updates.Count) game(s) (title-matched)" "Green"
+    UpdateEditor
+}
+
 function Show-GameTDBCoverPackDialog {
     # Matches Settings-style dialogs: GroupBoxes, tight layout, PS 5.1 safe
+    param(
+        # "gametdb" or "libretro" - which source the "Download from" dropdown
+        # opens on. Lets the GameTDB Tools / Libretro Tools buttons both open
+        # this same shared dialog, preset to the right source.
+        [string]$PreselectSource = "gametdb"
+    )
     try {
         $dlg = New-Object System.Windows.Forms.Form
         $dlg.Text = "GameTDB Cover Pack"
-        $dlg.Size = New-Object System.Drawing.Size(500, 470)
+        $dlg.Size = New-Object System.Drawing.Size(500, 640)
         $dlg.StartPosition = "CenterParent"
         $dlg.FormBorderStyle = "FixedDialog"
         $dlg.MaximizeBox = $false
@@ -7003,75 +7313,109 @@ function Show-GameTDBCoverPackDialog {
         $grpSrc = New-Object System.Windows.Forms.GroupBox
         $grpSrc.Text = " Source "
         $grpSrc.Location = New-Object System.Drawing.Point($secX, 10)
-        $grpSrc.Size = New-Object System.Drawing.Size($secW, 168)
+        $grpSrc.Size = New-Object System.Drawing.Size($secW, 196)
         $grpSrc.ForeColor = $script:theme.text
         $grpSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $grpSrc.BackColor = $script:theme.background
         $dlg.Controls.Add($grpSrc)
 
+        # Row 1: Site, System, and Region - all three label+dropdown pairs on
+        # one row, left to right, so nothing takes up extra vertical space.
+        $lblFrom = New-Object System.Windows.Forms.Label
+        $lblFrom.Text = "Site"
+        $lblFrom.Location = New-Object System.Drawing.Point(12, 24)
+        $lblFrom.Size = New-Object System.Drawing.Size(28, 16)
+        $lblFrom.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblFrom.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblFrom)
+
+        $cmbSrc = New-Object System.Windows.Forms.ComboBox
+        $cmbSrc.Location = New-Object System.Drawing.Point(42, 20)
+        $cmbSrc.Size = New-Object System.Drawing.Size(100, 24)
+        $cmbSrc.DropDownStyle = "DropDownList"
+        $cmbSrc.BackColor = $script:theme.editor
+        $cmbSrc.ForeColor = $script:theme.text
+        $cmbSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        [void]$cmbSrc.Items.Add("GameTDB")
+        [void]$cmbSrc.Items.Add("Libretro")
+        $grpSrc.Controls.Add($cmbSrc)
+
         $lblSys = New-Object System.Windows.Forms.Label
         $lblSys.Text = "System"
-        $lblSys.Location = New-Object System.Drawing.Point(12, 22)
-        $lblSys.Size = New-Object System.Drawing.Size(200, 16)
+        $lblSys.Location = New-Object System.Drawing.Point(148, 24)
+        $lblSys.Size = New-Object System.Drawing.Size(44, 16)
         $lblSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $lblSys.ForeColor = $script:theme.text
         $grpSrc.Controls.Add($lblSys)
 
-        $lblTypes = New-Object System.Windows.Forms.Label
-        $lblTypes.Text = "Cover types"
-        $lblTypes.Location = New-Object System.Drawing.Point(230, 22)
-        $lblTypes.Size = New-Object System.Drawing.Size(200, 16)
-        $lblTypes.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblTypes.ForeColor = $script:theme.text
-        $grpSrc.Controls.Add($lblTypes)
-
         $cmbSys = New-Object System.Windows.Forms.ComboBox
-        $cmbSys.Location = New-Object System.Drawing.Point(12, 40)
-        $cmbSys.Size = New-Object System.Drawing.Size(200, 24)
+        $cmbSys.Location = New-Object System.Drawing.Point(194, 20)
+        $cmbSys.Size = New-Object System.Drawing.Size(122, 24)
         $cmbSys.DropDownStyle = "DropDownList"
         $cmbSys.BackColor = $script:theme.editor
         $cmbSys.ForeColor = $script:theme.text
         $cmbSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $grpSrc.Controls.Add($cmbSys)
 
-        $clbCover = New-Object System.Windows.Forms.CheckedListBox
-        $clbCover.Location = New-Object System.Drawing.Point(230, 40)
-        $clbCover.Size = New-Object System.Drawing.Size(210, 86)
-        $clbCover.BackColor = $script:theme.editor
-        $clbCover.ForeColor = $script:theme.text
-        $clbCover.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $clbCover.CheckOnClick = $true
-        $clbCover.BorderStyle = "FixedSingle"
-        $clbCover.IntegralHeight = $true
-        $grpSrc.Controls.Add($clbCover)
-
         $lblReg = New-Object System.Windows.Forms.Label
         $lblReg.Text = "Region"
-        $lblReg.Location = New-Object System.Drawing.Point(12, 70)
-        $lblReg.Size = New-Object System.Drawing.Size(200, 16)
+        $lblReg.Location = New-Object System.Drawing.Point(322, 24)
+        $lblReg.Size = New-Object System.Drawing.Size(42, 16)
         $lblReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $lblReg.ForeColor = $script:theme.text
         $grpSrc.Controls.Add($lblReg)
 
         $cmbReg = New-Object System.Windows.Forms.ComboBox
-        $cmbReg.Location = New-Object System.Drawing.Point(12, 88)
-        $cmbReg.Size = New-Object System.Drawing.Size(90, 24)
+        $cmbReg.Location = New-Object System.Drawing.Point(366, 20)
+        $cmbReg.Size = New-Object System.Drawing.Size(66, 24)
         $cmbReg.DropDownStyle = "DropDownList"
         $cmbReg.BackColor = $script:theme.editor
         $cmbReg.ForeColor = $script:theme.text
         $cmbReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $grpSrc.Controls.Add($cmbReg)
 
-        # Description under system/region (full width of left column + wraps under list)
-        $lblDesc = New-Object System.Windows.Forms.Label
-        $lblDesc.Location = New-Object System.Drawing.Point(12, 120)
-        $lblDesc.Size = New-Object System.Drawing.Size(428, 36)
+        # Row 2: Cover types, full width now that Region moved up onto row 1.
+        $lblTypes = New-Object System.Windows.Forms.Label
+        $lblTypes.Text = "Cover types (check one or more)"
+        $lblTypes.Location = New-Object System.Drawing.Point(12, 50)
+        $lblTypes.Size = New-Object System.Drawing.Size(300, 16)
+        $lblTypes.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblTypes.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblTypes)
+
+        $clbCover = New-Object System.Windows.Forms.CheckedListBox
+        $clbCover.Location = New-Object System.Drawing.Point(12, 68)
+        $clbCover.Size = New-Object System.Drawing.Size(432, 72)
+        $clbCover.BackColor = $script:theme.editor
+        $clbCover.ForeColor = $script:theme.text
+        $clbCover.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $clbCover.CheckOnClick = $true
+        $clbCover.BorderStyle = "FixedSingle"
+        $clbCover.IntegralHeight = $true
+        $clbCover.MultiColumn = $false
+        $grpSrc.Controls.Add($clbCover)
+
+        # Description box - blue helper text below the list. Updates for every
+        # checked cover type (one line per checked item, prefixed with its name)
+        # so with multiple types checked you can still read all of them; it
+        # scrolls internally instead of growing or overlapping other controls.
+        $lblDesc = New-Object System.Windows.Forms.TextBox
+        $lblDesc.Location = New-Object System.Drawing.Point(12, 144)
+        $lblDesc.Size = New-Object System.Drawing.Size(432, 40)
         $lblDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
         $lblDesc.ForeColor = $script:theme.accent
-        $lblDesc.Text = "Select a cover type to see its description."
+        $lblDesc.BackColor = $script:theme.editor
+        $lblDesc.BorderStyle = "FixedSingle"
+        $lblDesc.Multiline = $true
+        $lblDesc.ReadOnly = $true
+        $lblDesc.ScrollBars = "Vertical"
+        $lblDesc.TabStop = $false
+        $lblDesc.Text = "Check one or more cover types above to see what they're for."
         $grpSrc.Controls.Add($lblDesc)
 
-        $platKeys = @($script:gameTdbPlatforms.Keys | Sort-Object)
+        $gtdbPlatKeys = @($script:gameTdbPlatforms.Keys | Sort-Object)
+        $libretroPlatKeys = @($script:libretroPlatforms.Keys | Sort-Object { $script:libretroPlatforms[$_].Label })
+        $platKeys = $gtdbPlatKeys
         foreach ($k in $platKeys) {
             [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label)
         }
@@ -7079,6 +7423,7 @@ function Show-GameTDBCoverPackDialog {
             [void]$cmbReg.Items.Add($r)
         }
         $cmbReg.SelectedItem = "US"
+        $cmbSrc.SelectedIndex = $(if ($PreselectSource -eq "libretro") { 1 } else { 0 })
 
         $script:__gtdbPackPlatKeys = $platKeys
         $script:__gtdbPackClb = $clbCover
@@ -7091,47 +7436,97 @@ function Show-GameTDBCoverPackDialog {
             $clb.Items.Clear()
             $idx = $script:__gtdbPackCmb.SelectedIndex
             if ($idx -lt 0 -or $idx -ge $keys.Count) { return }
-            $types = $script:gameTdbPlatforms[$keys[$idx]].CoverTypes
-            if (-not $types) { $types = @("cover") }
-            foreach ($t in $types) { [void]$clb.Items.Add([string]$t) }
-            # Prefer a front cover type
-            for ($i = 0; $i -lt $clb.Items.Count; $i++) {
-                $t = [string]$clb.Items[$i]
-                if ($t -eq "cover" -or $t -eq "coverHQ" -or $t -eq "coverfullHQ") {
-                    $clb.SetItemChecked($i, $true)
-                    $clb.SelectedIndex = $i
-                    break
-                }
-            }
-            if ($clb.CheckedItems.Count -eq 0 -and $clb.Items.Count -gt 0) {
+            if ($script:__gtdbPackIsLibretro) {
+                # Libretro-Thumbnails only offers boxart via this dialog.
+                [void]$clb.Items.Add("Boxart")
                 $clb.SetItemChecked(0, $true)
                 $clb.SelectedIndex = 0
+            } else {
+                $types = $script:gameTdbPlatforms[$keys[$idx]].CoverTypes
+                if (-not $types) { $types = @("cover") }
+                foreach ($t in $types) { [void]$clb.Items.Add([string]$t) }
+                # Prefer a front cover type
+                for ($i = 0; $i -lt $clb.Items.Count; $i++) {
+                    $t = [string]$clb.Items[$i]
+                    if ($t -eq "cover" -or $t -eq "coverHQ" -or $t -eq "coverfullHQ") {
+                        $clb.SetItemChecked($i, $true)
+                        $clb.SelectedIndex = $i
+                        break
+                    }
+                }
+                if ($clb.CheckedItems.Count -eq 0 -and $clb.Items.Count -gt 0) {
+                    $clb.SetItemChecked(0, $true)
+                    $clb.SelectedIndex = 0
+                }
             }
-            # Shrink list height to content (max ~6 rows)
+            # Size list to content, but never let it grow tall enough to
+            # overlap the description label below it — longer lists (e.g.
+            # Wii U's 9 types) simply scroll within the available space.
             $rowH = 18
             try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
-            $rows = [Math]::Min(6, [Math]::Max(3, $clb.Items.Count))
-            $clb.Height = ($rows * $rowH) + 4
+            $rows = [Math]::Min(4, [Math]::Max(3, $clb.Items.Count))
+            $desiredHeight = ($rows * $rowH) + 4
+            $maxHeight = $desiredHeight
+            $descLbl = $script:__gtdbPackDesc
+            if ($descLbl) {
+                $maxHeight = $descLbl.Location.Y - $clb.Location.Y - 6
+            }
+            $clb.Height = [Math]::Max($rowH + 4, [Math]::Min($desiredHeight, $maxHeight))
         }
 
         $updateDesc = {
             $clb = $script:__gtdbPackClb
             $lbl = $script:__gtdbPackDesc
             if (-not $clb -or -not $lbl) { return }
-            $t = $null
-            if ($clb.SelectedIndex -ge 0) {
-                $t = [string]$clb.Items[$clb.SelectedIndex]
-            } elseif ($clb.CheckedItems.Count -gt 0) {
-                $t = [string]$clb.CheckedItems[0]
+            if ($script:__gtdbPackIsLibretro) {
+                $lbl.Text = "Boxart: Box FRONT cover art (PNG, max ~512px wide). Saved to box2dfront. Matched by game title - no full-wrap or back art is available from this source, and region tags in filenames are ignored automatically when matching."
+                return
             }
-            if ($t) {
-                $lbl.Text = Get-GameTDBCoverTypeDescription $t
+            if ($clb.CheckedItems.Count -eq 0) {
+                $lbl.Text = "Check one or more cover types above to see what they're for."
+                return
+            }
+            $lines = New-Object System.Collections.ArrayList
+            foreach ($item in $clb.CheckedItems) {
+                $tn = [string]$item
+                [void]$lines.Add("$tn`: $(Get-GameTDBCoverTypeDescription $tn)")
+            }
+            $lbl.Text = ($lines -join "`r`n")
+        }
+
+        $switchSource = {
+            $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
+            $script:__gtdbPackIsLibretro = $isLibretro
+            $cmbSys.Items.Clear()
+            if ($isLibretro) {
+                $script:__gtdbPackPlatKeys = $libretroPlatKeys
+                foreach ($k in $libretroPlatKeys) { [void]$cmbSys.Items.Add($script:libretroPlatforms[$k].Label) }
+                $cmbReg.Enabled = $false
+                $lblReg.ForeColor = $script:theme.textDim
+                $clbCover.Enabled = $false
+                if ($chkBoxFull) {
+                    $chkBoxFull.Enabled = $false
+                    $chkBoxFull.ForeColor = $script:theme.textDim
+                }
             } else {
-                $lbl.Text = "Select a cover type to see its description."
+                $script:__gtdbPackPlatKeys = $gtdbPlatKeys
+                foreach ($k in $gtdbPlatKeys) { [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label) }
+                $cmbReg.Enabled = $true
+                $lblReg.ForeColor = $script:theme.text
+                $clbCover.Enabled = $true
+                if ($chkBoxFull) {
+                    $chkBoxFull.Enabled = $true
+                    $chkBoxFull.ForeColor = $script:theme.text
+                }
             }
+            if ($cmbSys.Items.Count -gt 0) { $cmbSys.SelectedIndex = 0 }
         }
 
         $script:__gtdbPackCmb = $cmbSys
+        $script:__gtdbPackIsLibretro = $false
+        $cmbSrc.Add_SelectedIndexChanged({
+            try { & $switchSource } catch {}
+        })
         $cmbSys.Add_SelectedIndexChanged({
             try {
                 & $script:__gtdbPackFill
@@ -7141,26 +7536,40 @@ function Show-GameTDBCoverPackDialog {
         $clbCover.Add_SelectedIndexChanged({
             try { & $script:__gtdbPackUpdateDesc } catch {}
         })
+        $clbCover.Add_ItemCheck({
+            param($sender, $e)
+            # ItemCheck fires before the check state is applied, so defer the
+            # description refresh until after this click finishes processing.
+            try {
+                $sender.BeginInvoke([System.Action]{ try { & $script:__gtdbPackUpdateDesc } catch {} }) | Out-Null
+            } catch {}
+        })
         $script:__gtdbPackFill = $fillTypes
         $script:__gtdbPackUpdateDesc = $updateDesc
 
-        $selIdx = 0
-        for ($i = 0; $i -lt $platKeys.Count; $i++) {
-            if ($platKeys[$i] -eq $script:lastGameTdbPlatform) { $selIdx = $i; break }
-        }
-        if ($cmbSys.Items.Count -gt 0) {
-            $cmbSys.SelectedIndex = $selIdx
-            if ($clbCover.Items.Count -eq 0) {
-                & $fillTypes
-                & $updateDesc
+        if ($PreselectSource -eq "libretro") {
+            # cmbSrc.SelectedIndex was set to 1 above, before this event handler
+            # existed, so it didn't fire - run it once by hand to sync cmbSys/etc.
+            & $switchSource
+        } else {
+            $selIdx = 0
+            for ($i = 0; $i -lt $platKeys.Count; $i++) {
+                if ($platKeys[$i] -eq $script:lastGameTdbPlatform) { $selIdx = $i; break }
+            }
+            if ($cmbSys.Items.Count -gt 0) {
+                $cmbSys.SelectedIndex = $selIdx
+                if ($clbCover.Items.Count -eq 0) {
+                    & $fillTypes
+                    & $updateDesc
+                }
             }
         }
 
         # ========== Options ==========
         $grpOpt = New-Object System.Windows.Forms.GroupBox
         $grpOpt.Text = " Options "
-        $grpOpt.Location = New-Object System.Drawing.Point($secX, 184)
-        $grpOpt.Size = New-Object System.Drawing.Size($secW, 198)
+        $grpOpt.Location = New-Object System.Drawing.Point($secX, 214)
+        $grpOpt.Size = New-Object System.Drawing.Size($secW, 158)
         $grpOpt.ForeColor = $script:theme.text
         $grpOpt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $grpOpt.BackColor = $script:theme.background
@@ -7241,6 +7650,10 @@ function Show-GameTDBCoverPackDialog {
         $chkBoxFull.ForeColor = $script:theme.text
         $chkBoxFull.BackColor = $script:theme.background
         $chkBoxFull.Checked = $true
+        if ($script:__gtdbPackIsLibretro) {
+            $chkBoxFull.Enabled = $false
+            $chkBoxFull.ForeColor = $script:theme.textDim
+        }
         $grpOpt.Controls.Add($chkBoxFull)
 
         $chkRename = New-Object System.Windows.Forms.CheckBox
@@ -7265,7 +7678,7 @@ function Show-GameTDBCoverPackDialog {
 
         $lblOptHint = New-Object System.Windows.Forms.Label
         $lblOptHint.Text = "boxFull for coverfullHQ. Rename/PNG run after each successful download."
-        $lblOptHint.Location = New-Object System.Drawing.Point(12, 140)
+        $lblOptHint.Location = New-Object System.Drawing.Point(12, 134)
         $lblOptHint.Size = New-Object System.Drawing.Size(430, 16)
         $lblOptHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
         $lblOptHint.ForeColor = $script:theme.textDim
@@ -7279,11 +7692,108 @@ function Show-GameTDBCoverPackDialog {
             }
         })
 
+        # ========== Single game ==========
+        $grpOne = New-Object System.Windows.Forms.GroupBox
+        $grpOne.Text = " Single game "
+        $grpOne.Location = New-Object System.Drawing.Point($secX, 380)
+        $grpOne.Size = New-Object System.Drawing.Size($secW, 96)
+        $grpOne.ForeColor = $script:theme.text
+        $grpOne.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpOne.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpOne)
+
+        $chkOneGame = New-Object System.Windows.Forms.CheckBox
+        $chkOneGame.Text = "One game only (from selected collection)"
+        $chkOneGame.Location = New-Object System.Drawing.Point(12, 20)
+        $chkOneGame.Size = New-Object System.Drawing.Size(420, 18)
+        $chkOneGame.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkOneGame.ForeColor = $script:theme.text
+        $chkOneGame.BackColor = $script:theme.background
+        $chkOneGame.Checked = $false
+        $grpOne.Controls.Add($chkOneGame)
+
+        $lblGameSearch = New-Object System.Windows.Forms.Label
+        $lblGameSearch.Text = "Search"
+        $lblGameSearch.Location = New-Object System.Drawing.Point(12, 44)
+        $lblGameSearch.Size = New-Object System.Drawing.Size(48, 18)
+        $lblGameSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $lblGameSearch.ForeColor = $script:theme.textDim
+        $grpOne.Controls.Add($lblGameSearch)
+
+        $txtGameSearch = New-Object System.Windows.Forms.TextBox
+        $txtGameSearch.Location = New-Object System.Drawing.Point(62, 42)
+        $txtGameSearch.Size = New-Object System.Drawing.Size(380, 22)
+        $txtGameSearch.BackColor = $script:theme.editor
+        $txtGameSearch.ForeColor = $script:theme.text
+        $txtGameSearch.BorderStyle = "FixedSingle"
+        $txtGameSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $txtGameSearch.Enabled = $false
+        $grpOne.Controls.Add($txtGameSearch)
+
+        $cmbOneGame = New-Object System.Windows.Forms.ComboBox
+        $cmbOneGame.Location = New-Object System.Drawing.Point(12, 68)
+        $cmbOneGame.Size = New-Object System.Drawing.Size(430, 24)
+        $cmbOneGame.DropDownStyle = "DropDownList"
+        $cmbOneGame.BackColor = $script:theme.editor
+        $cmbOneGame.ForeColor = $script:theme.text
+        $cmbOneGame.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $cmbOneGame.Enabled = $false
+        $grpOne.Controls.Add($cmbOneGame)
+
+        # Build list of games from selected collection: display "Title  [game_id]" when ID exists
+        $script:__coverPackGameList = New-Object System.Collections.ArrayList
+        $script:__coverPackGameItems = @()  # parallel objects: Title, GameId
+        try {
+            $colForGames = Get-Col
+            if ($colForGames -and $colForGames.metadataPath -and (Test-Path $colForGames.metadataPath)) {
+                $rawG = Get-Content $colForGames.metadataPath -Raw -ErrorAction SilentlyContinue
+                if ($rawG) {
+                    foreach ($gb in ($rawG -split '(?=game: )' | Where-Object { $_ -match '^game: ' })) {
+                        $gt = $null; $gid = $null
+                        if ($gb -match '(?m)^game:\s*(.+)$') { $gt = $matches[1].Trim() }
+                        if ($gb -match '(?m)^game_id:\s*(.+)$') { $gid = $matches[1].Trim() }
+                        if (-not $gt) { continue }
+                        $disp = if ($gid) { "{0}  [{1}]" -f $gt, $gid } else { $gt }
+                        [void]$script:__coverPackGameList.Add($disp)
+                        $script:__coverPackGameItems += [PSCustomObject]@{ Display = $disp; Title = $gt; GameId = $gid }
+                    }
+                }
+            }
+        } catch {}
+        foreach ($d in $script:__coverPackGameList) { [void]$cmbOneGame.Items.Add([string]$d) }
+        if ($cmbOneGame.Items.Count -gt 0) { $cmbOneGame.SelectedIndex = 0 }
+
+        $filterOneGameList = {
+            $filter = ""
+            try { $filter = $txtGameSearch.Text.Trim().ToLowerInvariant() } catch {}
+            $cmbOneGame.BeginUpdate()
+            $cmbOneGame.Items.Clear()
+            $selKeep = $null
+            foreach ($item in $script:__coverPackGameItems) {
+                if ([string]::IsNullOrWhiteSpace($filter) -or $item.Display.ToLowerInvariant().Contains($filter)) {
+                    [void]$cmbOneGame.Items.Add([string]$item.Display)
+                }
+            }
+            if ($cmbOneGame.Items.Count -gt 0) { $cmbOneGame.SelectedIndex = 0 }
+            $cmbOneGame.EndUpdate()
+        }
+        $txtGameSearch.Add_TextChanged({ & $filterOneGameList })
+
+        $chkOneGame.Add_CheckedChanged({
+            $on = $chkOneGame.Checked
+            $txtGameSearch.Enabled = $on
+            $cmbOneGame.Enabled = $on
+            if ($on) {
+                # Single-game implies collection scope for matching / writing paths
+                $chkCollection.Checked = $true
+            }
+        })
+
         # ========== Output ==========
         $grpOut = New-Object System.Windows.Forms.GroupBox
         $grpOut.Text = " Output folder "
-        $grpOut.Location = New-Object System.Drawing.Point($secX, 388)
-        $grpOut.Size = New-Object System.Drawing.Size($secW, 72)
+        $grpOut.Location = New-Object System.Drawing.Point($secX, 484)
+        $grpOut.Size = New-Object System.Drawing.Size($secW, 68)
         $grpOut.ForeColor = $script:theme.text
         $grpOut.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $grpOut.BackColor = $script:theme.background
@@ -7321,89 +7831,161 @@ function Show-GameTDBCoverPackDialog {
         $grpOut.Controls.Add($btnBrowse)
 
         # ========== Buttons ==========
-        $btnStart = Create-Button "Start" 155 470 100 $btnH
+        $btnStart = Create-Button "Start" 155 562 100 $btnH
         $btnStart.Add_Click({
             try {
                 $idx = $cmbSys.SelectedIndex
-                if ($idx -lt 0 -or $idx -ge $platKeys.Count) { return }
-                $types = @()
-                foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
-                if ($types.Count -eq 0) {
-                    [System.Windows.Forms.MessageBox]::Show("Select at least one cover type.", "GameTDB", "OK", "Warning") | Out-Null
-                    return
-                }
-                $region = [string]$cmbReg.SelectedItem
+                $activeKeys = $script:__gtdbPackPlatKeys
+                if (-not $activeKeys -or $idx -lt 0 -or $idx -ge $activeKeys.Count) { return }
+                $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
+
                 $outBase = $txtOut.Text.Trim()
                 $useMedia = [bool]$chkMedia.Checked
                 $collectionOnly = [bool]$chkCollection.Checked
                 $writeAssets = [bool]$chkWrite.Checked
-                if ($writeAssets -or $useMedia -or $collectionOnly) {
+                $oneGameOnly = [bool]$chkOneGame.Checked
+                $oneGameTitle = $null
+                $oneGameId = $null
+                if ($oneGameOnly) {
+                    if ($cmbOneGame.SelectedIndex -lt 0 -or $cmbOneGame.Items.Count -eq 0) {
+                        [System.Windows.Forms.MessageBox]::Show(
+                            "Select a game from the dropdown (or clear Search).`nA collection with games must be selected.",
+                            "Cover Pack", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $dispSel = [string]$cmbOneGame.SelectedItem
+                    $found = $script:__coverPackGameItems | Where-Object { $_.Display -eq $dispSel } | Select-Object -First 1
+                    if ($found) {
+                        $oneGameTitle = [string]$found.Title
+                        if ($found.GameId) { $oneGameId = [string]$found.GameId }
+                    } else {
+                        $oneGameTitle = $dispSel
+                    }
+                    # Force collection scope so media/asset paths resolve
+                    $collectionOnly = $true
+                }
+                if ($writeAssets -or $useMedia -or $collectionOnly -or $oneGameOnly) {
                     $col = Get-Col
                     if (-not $col) {
                         [System.Windows.Forms.MessageBox]::Show(
-                            "Select a collection first.", "GameTDB", "OK", "Warning") | Out-Null
+                            "Select a collection first.", "Cover Pack", "OK", "Warning") | Out-Null
                         return
                     }
                     if ($useMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
-                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "GameTDB", "OK", "Warning") | Out-Null
+                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "Cover Pack", "OK", "Warning") | Out-Null
                         return
                     }
                 }
                 if (-not $useMedia -and [string]::IsNullOrWhiteSpace($outBase)) {
-                    [System.Windows.Forms.MessageBox]::Show("Choose an output folder.", "GameTDB", "OK", "Warning") | Out-Null
+                    [System.Windows.Forms.MessageBox]::Show("Choose an output folder.", "Cover Pack", "OK", "Warning") | Out-Null
                     return
                 }
-                if ([string]::IsNullOrWhiteSpace($region)) {
-                    [System.Windows.Forms.MessageBox]::Show("Choose a region.", "GameTDB", "OK", "Warning") | Out-Null
-                    return
-                }
-                $dlg.Tag = @{
-                    Platform       = $platKeys[$idx]
-                    CoverTypes     = $types
-                    Region         = $region
-                    OutBase        = $outBase
-                    CollectionOnly = $collectionOnly
-                    OnlyMissing    = [bool]$chkMissing.Checked
-                    RegionFallback = [bool]$chkFallback.Checked
-                    SaveIntoMedia  = $useMedia
-                    WriteAssets    = $writeAssets
-                    UseBoxFull     = [bool]$chkBoxFull.Checked
-                    RenameToTitle  = [bool]$chkRename.Checked
-                    ConvertToPng   = [bool]$chkPng.Checked
+
+                if ($isLibretro) {
+                    $dlg.Tag = @{
+                        Source         = "libretro"
+                        Platform       = $activeKeys[$idx]
+                        OutBase        = $outBase
+                        CollectionOnly = $collectionOnly
+                        OnlyMissing    = [bool]$chkMissing.Checked
+                        SaveIntoMedia  = $useMedia
+                        WriteAssets    = $writeAssets
+                        UseBoxFull     = [bool]$chkBoxFull.Checked
+                        RenameToTitle  = [bool]$chkRename.Checked
+                        ConvertToPng   = [bool]$chkPng.Checked
+                        OneGameOnly    = $oneGameOnly
+                        OneGameTitle   = $oneGameTitle
+                        OneGameId      = $oneGameId
+                    }
+                } else {
+                    $types = @()
+                    foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
+                    if ($types.Count -eq 0) {
+                        [System.Windows.Forms.MessageBox]::Show("Select at least one cover type.", "GameTDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $region = [string]$cmbReg.SelectedItem
+                    if ([string]::IsNullOrWhiteSpace($region)) {
+                        [System.Windows.Forms.MessageBox]::Show("Choose a region.", "GameTDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    if ($oneGameOnly -and [string]::IsNullOrWhiteSpace($oneGameId)) {
+                        [System.Windows.Forms.MessageBox]::Show(
+                            "This game has no game_id in metadata.`n`nGameTDB downloads require a game_id (e.g. RMGE01).`nAdd game_id first, or use Libretro-Thumbnails (title match).",
+                            "Cover Pack", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $dlg.Tag = @{
+                        Source         = "gametdb"
+                        Platform       = $activeKeys[$idx]
+                        CoverTypes     = $types
+                        Region         = $region
+                        OutBase        = $outBase
+                        CollectionOnly = $collectionOnly
+                        OnlyMissing    = [bool]$chkMissing.Checked
+                        RegionFallback = [bool]$chkFallback.Checked
+                        SaveIntoMedia  = $useMedia
+                        WriteAssets    = $writeAssets
+                        UseBoxFull     = [bool]$chkBoxFull.Checked
+                        RenameToTitle  = [bool]$chkRename.Checked
+                        ConvertToPng   = [bool]$chkPng.Checked
+                        OneGameOnly    = $oneGameOnly
+                        OneGameTitle   = $oneGameTitle
+                        OneGameId      = $oneGameId
+                    }
                 }
                 $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
                 $dlg.Close()
             } catch {
-                [System.Windows.Forms.MessageBox]::Show("Error: $($_.Exception.Message)", "GameTDB", "OK", "Error") | Out-Null
+                [System.Windows.Forms.MessageBox]::Show("Error: $($_.Exception.Message)", "Cover Pack", "OK", "Error") | Out-Null
             }
         })
         $dlg.Controls.Add($btnStart)
 
-        $btnCancel = Create-Button "Cancel" 267 470 $btnW $btnH
+        $btnCancel = Create-Button "Cancel" 267 562 $btnW $btnH
         $btnCancel.Add_Click({ $dlg.Close() })
         $dlg.Controls.Add($btnCancel)
 
-        # Fit dialog to bottom of buttons
-        $dlg.ClientSize = New-Object System.Drawing.Size(484, 510)
+        # Fit dialog to bottom of buttons (with room to spare so Start/Cancel
+        # are never clipped, even with Windows display scaling).
+        $dlg.ClientSize = New-Object System.Drawing.Size(484, 606)
 
         $result = $dlg.ShowDialog($script:mainForm)
         if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
         $opts = $dlg.Tag
         if (-not $opts) { return }
 
-        Start-GameTDBCoverPackDownload `
-            -Platform $opts.Platform `
-            -CoverTypes $opts.CoverTypes `
-            -Region $opts.Region `
-            -OutBase $opts.OutBase `
-            -CollectionOnly:$opts.CollectionOnly `
-            -OnlyMissing:$opts.OnlyMissing `
-            -RegionFallback:$opts.RegionFallback `
-            -SaveIntoMedia:$opts.SaveIntoMedia `
-            -WriteAssets:$opts.WriteAssets `
-            -UseBoxFull:$opts.UseBoxFull `
-            -RenameToTitle:$opts.RenameToTitle `
-            -ConvertToPng:$opts.ConvertToPng
+        if ($opts.Source -eq "libretro") {
+            Start-LibretroCoverPackDownload `
+                -Platform $opts.Platform `
+                -OutBase $opts.OutBase `
+                -CollectionOnly:$opts.CollectionOnly `
+                -OnlyMissing:$opts.OnlyMissing `
+                -SaveIntoMedia:$opts.SaveIntoMedia `
+                -WriteAssets:$opts.WriteAssets `
+                -UseBoxFull:$opts.UseBoxFull `
+                -RenameToTitle:$opts.RenameToTitle `
+                -ConvertToPng:$opts.ConvertToPng `
+                -OneGameOnly:$opts.OneGameOnly `
+                -OneGameTitle $opts.OneGameTitle
+        } else {
+            Start-GameTDBCoverPackDownload `
+                -Platform $opts.Platform `
+                -CoverTypes $opts.CoverTypes `
+                -Region $opts.Region `
+                -OutBase $opts.OutBase `
+                -CollectionOnly:$opts.CollectionOnly `
+                -OnlyMissing:$opts.OnlyMissing `
+                -RegionFallback:$opts.RegionFallback `
+                -SaveIntoMedia:$opts.SaveIntoMedia `
+                -WriteAssets:$opts.WriteAssets `
+                -UseBoxFull:$opts.UseBoxFull `
+                -RenameToTitle:$opts.RenameToTitle `
+                -ConvertToPng:$opts.ConvertToPng `
+                -OneGameOnly:$opts.OneGameOnly `
+                -OneGameId $opts.OneGameId `
+                -OneGameTitle $opts.OneGameTitle
+        }
     } catch {
         $msg = "Cover Pack dialog error: $($_.Exception.Message)"
         try { Log-Message $msg "Red" } catch {}
@@ -7526,7 +8108,10 @@ function Start-GameTDBCoverPackDownload {
         [switch]$WriteAssets,
         [switch]$UseBoxFull,
         [switch]$RenameToTitle,
-        [switch]$ConvertToPng
+        [switch]$ConvertToPng,
+        [switch]$OneGameOnly,
+        [string]$OneGameId,
+        [string]$OneGameTitle
     )
     if (-not $CoverTypes -or $CoverTypes.Count -eq 0) {
         Log-Message "No cover types selected." "Red"
@@ -7654,6 +8239,28 @@ function Start-GameTDBCoverPackDownload {
             }
         } else {
             foreach ($id in $allIds) { [void]$ids.Add($id) }
+        }
+
+        # One-game-only: keep just the selected game_id
+        if ($OneGameOnly) {
+            $want = if ($OneGameId) { $OneGameId.Trim().ToUpperInvariant() } else { $null }
+            if (-not $want) {
+                Log-Message "One game only: no game_id provided for the selected game." "Red"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No game_id for selected game" -Aborted
+                $wc.Dispose()
+                return
+            }
+            $filtered = New-Object System.Collections.ArrayList
+            foreach ($id in $ids) {
+                if ($id.ToUpperInvariant() -eq $want) { [void]$filtered.Add($id) }
+            }
+            if ($filtered.Count -eq 0) {
+                [void]$filtered.Add($want)
+                Log-Message ("One game only: ID {0} not in filtered list - trying direct download" -f $want) "Yellow"
+            }
+            $ids = $filtered
+            $label = if ($OneGameTitle) { $OneGameTitle } else { $want }
+            Log-Message ("One game only: {0} [{1}]" -f $label, $want) "Cyan"
         }
 
         $total = $ids.Count * $CoverTypes.Count
@@ -7860,6 +8467,265 @@ function Start-GameTDBCoverPackDownload {
             Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
         }
     }
+}
+
+function Start-LibretroCoverPackDownload {
+    # Boxart-only (Named_Boxarts) download from the libretro-thumbnails GitHub org.
+    # Matches by normalized game title (no ID scheme on this source), one GitHub
+    # API call per platform (git trees, recursive) rather than per game.
+    param(
+        [string]$Platform,
+        [string]$OutBase,
+        [switch]$CollectionOnly,
+        [switch]$OnlyMissing,
+        [switch]$SaveIntoMedia,
+        [switch]$WriteAssets,
+        [switch]$UseBoxFull,
+        [switch]$RenameToTitle,
+        [switch]$ConvertToPng,
+        [switch]$OneGameOnly,
+        [string]$OneGameTitle
+    )
+    $info = $script:libretroPlatforms[$Platform]
+    if (-not $info) {
+        Log-Message "Unknown Libretro-Thumbnails platform: $Platform" "Red"
+        return
+    }
+
+    $col = $null
+    if ($CollectionOnly -or $SaveIntoMedia -or $WriteAssets) {
+        $col = Get-Col
+        if (-not $col) {
+            Log-Message "No collection selected." "Red"
+            return
+        }
+    }
+
+    # Named_Boxarts on libretro-thumbnails is always box FRONT art (PNG, scaled
+    # down to a max of 512px wide if larger) - there is no full box-wrap source
+    # here, so this always writes box front, unlike the GameTDB path where
+    # -UseBoxFull chooses between box2dfront and boxFull.
+    $assetKey = "assets.box_front"
+    $folderName = "box2dfront"
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "LIBRETRO-THUMBNAILS COVER PACK - $($info.Label)" "Cyan"
+    Log-Message "Source: github.com/libretro-thumbnails/$($info.RepoName)" "White"
+    Log-Message "Type: Boxart (matched by title)" "White"
+    if ($CollectionOnly) { Log-Message "Scope: current collection only" "Cyan" }
+    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
+    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
+    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
+    Log-Message "========================================" "Cyan"
+
+    $prog = $null
+    $assetUpdates = @{}
+    $pct = 0
+
+    try {
+        $prog = Show-GameTDBProgressWindow -Title "Libretro-Thumbnails: $($info.Label)"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching repo file list (1 API call)..."
+
+        $mapping = Get-LibretroAssetMapping -RepoName $info.RepoName -Folder "Named_Boxarts"
+        Log-Message "Boxart files found in repo: $($mapping.Count)" "Cyan"
+        if ($mapping.Count -eq 0) {
+            Log-Message "No boxart files found (or the GitHub API rate limit was hit - unauthenticated requests are limited to ~60/hour per IP)." "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No files found" -Aborted
+            return
+        }
+
+        $titleMap = @{}
+        if ($CollectionOnly -or $OnlyMissing -or $WriteAssets) {
+            $titleMap = Get-CollectionGameTitleMap
+            Log-Message "Collection titles: $($titleMap.Count)" "Cyan"
+        }
+
+        # Build the work list of normalized titles to fetch.
+        $keys = New-Object System.Collections.ArrayList
+        if ($CollectionOnly) {
+            if ($titleMap.Count -eq 0) {
+                Log-Message "No games in this collection. Add games first or uncheck Collection only." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No games in collection" -Aborted
+                return
+            }
+            $matched = 0
+            $noArt = 0
+            $noArtTitles = New-Object System.Collections.ArrayList
+            foreach ($tk in @($titleMap.Keys)) {
+                if ($mapping.ContainsKey($tk)) { [void]$keys.Add($tk); $matched++ }
+                else {
+                    $noArt++
+                    $shownTitle = $tk
+                    if ($titleMap[$tk] -and $titleMap[$tk].Title) { $shownTitle = [string]$titleMap[$tk].Title }
+                    [void]$noArtTitles.Add($shownTitle)
+                }
+            }
+            Log-Message ("Collection titles matched to Libretro boxart: {0}  |  no match: {1}" -f $matched, $noArt) "Cyan"
+            if ($noArt -gt 0) {
+                Log-Message "Titles with no matching boxart in this repo (name doesn't line up closely enough - try renaming to match No-Intro style, e.g. 'Game Title (USA)'):" "Yellow"
+                $noArtTitles | Select-Object -First 15 | ForEach-Object { Log-Message "  [$_]" "Yellow" }
+                if ($noArtTitles.Count -gt 15) {
+                    Log-Message "  ... and $($noArtTitles.Count - 15) more" "Yellow"
+                }
+            }
+            if ($keys.Count -eq 0) {
+                Log-Message "No collection titles matched boxart in this repo. Titles must match closely (region tags are ignored automatically)." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No title matches" -Aborted
+                return
+            }
+        } else {
+            foreach ($k in $mapping.Keys) { [void]$keys.Add($k) }
+        }
+
+        # One-game-only: keep the normalized title for the selected collection game
+        if ($OneGameOnly) {
+            if ([string]::IsNullOrWhiteSpace($OneGameTitle)) {
+                Log-Message "One game only: no title provided." "Red"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No title for selected game" -Aborted
+                return
+            }
+            $wantKey = Get-NormalizedGameTitle $OneGameTitle
+            $filtered = New-Object System.Collections.ArrayList
+            foreach ($k in $keys) {
+                if ($k -eq $wantKey) { [void]$filtered.Add($k) }
+            }
+            if ($filtered.Count -eq 0 -and $mapping.ContainsKey($wantKey)) {
+                [void]$filtered.Add($wantKey)
+            }
+            if ($filtered.Count -eq 0) {
+                Log-Message ("One game only: no Libretro boxart match for '{0}' (key={1})" -f $OneGameTitle, $wantKey) "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No boxart match for game" -Aborted
+                return
+            }
+            $keys = $filtered
+            Log-Message ("One game only: {0}" -f $OneGameTitle) "Cyan"
+        }
+
+        $total = $keys.Count
+        if ($total -eq 0) {
+            Log-Message "Nothing to download." "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Nothing to download" -Aborted
+            return
+        }
+        Log-Message "Jobs: $total" "Cyan"
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+
+        $ok = 0; $skip = 0; $fail = 0; $n = 0
+        $aborted = $false
+
+        foreach ($tk in $keys) {
+            if ($script:gtdbCoverPackAbort) {
+                $aborted = $true
+                Log-Message "Abort requested - stopping cover pack download." "Yellow"
+                break
+            }
+            $n++
+            $pct = [Math]::Min(100, [int](($n / [double]$total) * 100))
+            if (($n % 5) -eq 0 -or $n -eq $total) {
+                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "$n / $total"
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+
+            $entry = $null
+            if ($titleMap.ContainsKey($tk)) { $entry = $titleMap[$tk] }
+
+            if ($OnlyMissing -and $entry) {
+                $alreadyHas = $false
+                if ($entry.PresentAssets -and $entry.PresentAssets.ContainsKey($assetKey)) { $alreadyHas = $true }
+                elseif ($assetKey -eq "assets.box_front" -and $entry.HasBoxFront) { $alreadyHas = $true }
+                elseif ($assetKey -eq "assets.boxFull" -and $entry.HasBoxFull) { $alreadyHas = $true }
+                if ($alreadyHas) { $skip++; continue }
+            }
+
+            $relPath = $mapping[$tk]
+            $ext = [System.IO.Path]::GetExtension($relPath)
+            if (-not $ext) { $ext = ".png" }
+            $displayTitle = if ($entry -and $entry.Title) { $entry.Title } else { [System.IO.Path]::GetFileNameWithoutExtension($relPath) }
+            $safeName = Get-SafeGameFileName $displayTitle
+            if (-not $safeName) { $safeName = [System.IO.Path]::GetFileNameWithoutExtension($relPath) }
+
+            if ($SaveIntoMedia -and $col -and $col.mediaPath) {
+                $outDir = Join-Path $col.mediaPath $folderName
+            } else {
+                $outDir = Join-Path $OutBase (Join-Path $info.Label "boxart")
+            }
+            if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+
+            $dest = Join-Path $outDir "$safeName$ext"
+            if (Test-Path $dest) {
+                $skip++
+                if ($WriteAssets -and $col) {
+                    if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
+                    $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $dest -Collection $col
+                }
+                continue
+            }
+
+            $url = "https://raw.githubusercontent.com/libretro-thumbnails/$($info.RepoName)/master/$relPath"
+            try {
+                $wc.DownloadFile($url, $dest)
+                if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
+                    $ok++
+                    $finalPath = $dest
+                    try {
+                        if ($ConvertToPng) { $finalPath = Convert-ImageFileToPng -Path $finalPath }
+                    } catch {
+                        Log-Message ("Post-process failed for {0}: {1}" -f $displayTitle, $_.Exception.Message) "Yellow"
+                    }
+                    if ($WriteAssets -and $col) {
+                        if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
+                        $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $finalPath -Collection $col
+                    }
+                } else {
+                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                    $fail++
+                }
+            } catch {
+                if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                $fail++
+            }
+        }
+        $wc.Dispose()
+
+        if ($WriteAssets -and $col -and $assetUpdates.Count -gt 0) {
+            try {
+                Apply-TitleKeyedAssetUpdates -Updates $assetUpdates
+            } catch {
+                Log-Message "Asset path write error: $_" "Red"
+            }
+        }
+
+        $summary = "Downloaded: $ok   Skipped: $skip   Missing: $fail"
+        if ($aborted) {
+            Log-Message "Aborted. $summary" "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
+        } else {
+            Log-Message "Done. $summary" "Green"
+            if ($SaveIntoMedia -and $col) { Log-Message "Media: $($col.mediaPath)" "Cyan" }
+            elseif ($OutBase) { Log-Message "Folder: $OutBase" "Cyan" }
+            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
+        }
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+        if ($prog -and -not $prog.IsDisposed) {
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
+        }
+    }
+}
+
+function Get-RelativeAssetPath {
+    param([string]$Path, $Collection)
+    $rel = $Path
+    try {
+        $metaParent = Split-Path $Collection.metadataPath -Parent
+        if ($Path.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
+            $rel = $Path.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
+        }
+    } catch {}
+    return $rel
 }
 
 function Apply-GameTDBAssetUpdates {
