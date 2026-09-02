@@ -1,7 +1,138 @@
 ﻿# ============================================================================
 # METADATA REPAIR TOOL
-# Version: 2.5.13 - Cover type descriptions include resolutions; single-game Cover Pack download
-# with searchable game dropdown; Libretro Tools + shared Cover Downloader (2.5.12).
+# Version: 2.5.36 - TheCoverProject "Assign Saved Cover" now offers to crop
+#   the full wrap you just picked into Box Front, Box Back, AND Box Thumb
+#   right away. A popup shows the image with two draggable divider lines
+#   (auto-fit to a 45/10/45 back/spine/front split, shaded band marks the
+#   spine) - drag to line them up with the actual spine edges, then Save
+#   Crops writes assets.box_front (box2dfront/), assets.box_back
+#   (box2dback/), and assets.box_front_thumb (box2dThumb/ - a max-512px-
+#   wide downscale of the front crop, same convention used elsewhere in
+#   this app) alongside the full wrap. Skip leaves just the full wrap,
+#   same as before. Fixed a search miss for titles like "Legend of Zelda,
+#   The - Minish Cap, The (GBA)": a new Format-TCPSearchTitle helper strips
+#   the trailing system/region tag and un-swaps comma-articles ("X, The"
+#   -> "The X") on each segment so the query's word order matches how
+#   TheCoverProject phrases its own titles.
+# Version: 2.5.35 - Close shouldn't have gotten its own row - moved it back
+#   onto the same row as the other five buttons, right after Match &
+#   Import. Widened the dialog (791 -> 869px) and everything in it to fit
+#   all six side by side, and dropped the height back down (715 -> 679)
+#   since the extra row is gone.
+# Version: 2.5.34 - Skipped the "what kind of cover is this?" prompt for
+#   Assign Saved Cover: TheCoverProject only lists full box scans
+#   (front+back+spine), never front-only art, so it's always Box Full -
+#   asking was pointless. Now writes straight to assets.box_full/boxFull
+#   with no dialog in between. The filename-matching fallback in Match &
+#   Import (for files saved but not explicitly assigned) got the same
+#   change, since those files come from the same site. Also fixed a bug
+#   from earlier layout passes: a "Close" button was left behind at its
+#   original position (496, 458) while the dialog grew around it, so it's
+#   been sitting on top of the game list - moved it to its own row under
+#   the other buttons, which needed the dialog to grow by 36px to fit.
+# Version: 2.5.33 - Rebalanced the dialog now that the Status text is
+#   shorter: shrank the Status column (330 -> 260) and tightened the five
+#   bottom buttons to their actual text width instead of the more generous
+#   padding used before, which brought the dialog back down from 909 to
+#   791px wide. Put that width savings into height instead - the game list
+#   is now tall enough (520px) to show all missing games at once without
+#   scrolling for a typical run.
+# Version: 2.5.32 - Shortened the status column's timestamp text: "No cover
+#   available (last check 6:44 PM 9/1/2026)" -> "Not Available As of 6:44 PM
+#   9/1/2026", so the Status column doesn't need as much room.
+# Version: 2.5.31 - The dialog's buttons were 32px tall, but every other
+#   button in the app (toolbar, sidebar, all other dialogs) uses 26px via
+#   Create-Button's standard height. Matched that here, and matched the
+#   "..." folder-browse button to the 35x25 size used by the other browse
+#   buttons in the app instead of the one-off 40x26 it had. Dialog height
+#   trimmed by 6px to follow the shorter button row.
+# Version: 2.5.30 - The uniform 200px-wide buttons from 2.5.29 fit their
+#   text but left big blank gaps around short labels like "Retry". Buttons
+#   are now individually sized to their own text instead of forced to match
+#   the widest one, which let the dialog shrink back down (1064 -> 909px).
+#   Made the dialog taller instead (428 -> 584px) and gave that extra room
+#   to the game list, which used to need scrolling to see more than ~9 of
+#   the missing games at once.
+# Version: 2.5.29 - The single button row from 2.5.28 was wrapping onto two
+#   lines because the buttons were too narrow for their labels. Widened the
+#   whole dialog (674 -> 1064px) so all five buttons fit their text on one
+#   line at a shorter, single-row height (32px instead of 40) - everything
+#   else (list, hint text, folder field) widened to match.
+# Version: 2.5.28 - Reworked the TheCoverProject dialog layout: widened the
+#   window so the hint text no longer gets cut off, put all five buttons
+#   (Open Selected, Assign Saved Cover, Mark No Cover Available, Retry,
+#   Match & Import) in a single row of equal width at the bottom of the
+#   panel with no leftover blank space, restored the longer "Assign Saved
+#   Cover" / "Mark No Cover Available" labels now that there's room for
+#   them, and removed Match & Import's accent highlight so it matches the
+#   other buttons instead of standing out in light blue.
+# Version: 2.5.27 - Shortened two button labels that were clipping under
+#   bold Segoe UI: "Assign Saved File..." -> "Assign Cover" (also dropped
+#   the trailing "..." - not a submenu, no reason to imply one), "Mark No
+#   Cover Available" -> "No Cover". Widths adjusted so nothing truncates.
+# Version: 2.5.26 - "No cover available" marks now store a timestamp
+#   (tcp_no_cover_marks.json changed from a plain list to title->timestamp
+#   map) and the greyed-out status line shows it, e.g. "No cover available
+#   (last check 6:44 PM 9/1/2026)". Added a "Retry" button: clears the mark
+#   on selected rows and reopens the search right away, for cases where a
+#   cover might have shown up on the site since you last checked. Dialog
+#   widened slightly to fit the longer status text.
+# Version: 2.5.25 - Added "Mark No Cover Available" for the TheCoverProject
+#   assist window. The site blocks scripted access, so the app genuinely
+#   can't tell when a search comes back empty - but you can now select a
+#   game after checking it yourself and mark it, and that's remembered
+#   per-collection (tcp_no_cover_marks.json next to the metadata file) so
+#   it shows greyed-out instead of nagging you to re-check it every time
+#   this window reopens. Assigning a file later automatically clears the
+#   mark again.
+# Version: 2.5.24 - "TheCoverProject" was still clipped in the closed Site
+#   box itself (DropDownWidth from 2.5.21 only fixed the open list). Since
+#   System/Region are completely unused in TheCoverProject mode, they're
+#   now hidden outright and Site expands into that freed space instead -
+#   so the full text fits without needing a wider fixed layout for every
+#   other source.
+# Version: 2.5.23 - Reverted 2.5.22: confirmed from a screenshot of the
+#   actual site that TheCoverProject has no region filter at all - just a
+#   plain title search box. Each result row shows a flag for that cover's
+#   own region, but the search itself can't be filtered by region. So
+#   Region is disabled again for TheCoverProject mode (matching System),
+#   with a "(not filterable - see results)" placeholder instead of being
+#   left on based on an unverified guess.
+# Version: 2.5.22 - Region dropdown is no longer disabled/grayed out for
+#   TheCoverProject mode (System still is - its search is title-only).
+#   Region genuinely is used on the actual site, but since scripted access
+#   is blocked there's no confirmed URL parameter to encode it with yet, so
+#   for now it's left usable for reference while filtering by region has to
+#   be done by hand once you're on the site.
+# Version: 2.5.21 - Fixed the Site dropdown clipping "TheCoverProject" in
+#   its open list (box itself stays narrow, dropdown list is now wider -
+#   same fix already used for the System dropdown). Also fixed the System
+#   dropdown going empty/blank when TheCoverProject is selected - it now
+#   shows a grayed-out "(not used for TheCoverProject)" placeholder instead
+#   of looking broken, since System/Region genuinely don't apply there.
+# Version: 2.5.20 - "Assign Saved File..." Box Full option now writes BOTH
+#   assets.box_full (box2dfull/) and assets.boxFull (boxFull/), copying the
+#   PNG into both folders - matching the dual-key convention already used
+#   elsewhere in this app, since many Pegasus themes look for boxFull
+#   specifically rather than box_full.
+# Version: 2.5.19 - Fixed two bugs in "Assign Saved File...": (1) it now
+#   always converts the saved image to PNG on import, same as every other
+#   art source in this app, instead of leaving it as .jpg; (2) it now asks
+#   what kind of cover you saved (Box Front / Box Full / Box Back) and
+#   files it into the matching folder (box2dfront / box2dfull / box2dback)
+#   under the matching assets key, instead of always assuming box_front.
+# Version: 2.5.18 - TheCoverProject assist window: covers folder is now
+#   auto-created on open, and each row has an "Assign Saved File..." option
+#   to link a saved cover straight to that game (no filename matching or
+#   renaming needed). Filename matching is now just a fallback for anything
+#   saved without assigning, and also tries space-stripped titles. Buttons
+#   in this window now use the app's themed Create-Button style so their
+#   text is readable instead of default black-on-dark.
+# Version: 2.5.17 - "TheCoverProject" added as a 3rd Site option. No API/
+# scripted access there (Cloudflare-blocked), so it scans your collection for
+# missing box_front art, generates direct search links per game, and lets you
+# match+import whatever you save into a folder (Show-TCPAssistDialog).
+# Cover Pack dialog description box auto-sizes, no scrollbar (2.5.16).
 # ============================================================================
 
 
@@ -42,10 +173,11 @@ public static class MrtCrc32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.13"
+$script:version = "2.5.17"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
+$script:upscaylPath = ""
 $script:currentCollection = $null
 $script:logBox = $null
 $script:editorBox = $null
@@ -515,6 +647,9 @@ function Load-Config {
             if ($null -ne $config.pegasusPath -and -not [string]::IsNullOrWhiteSpace([string]$config.pegasusPath)) {
                 $script:pegasusPath = [string]$config.pegasusPath
             }
+            if ($null -ne $config.upscaylPath -and -not [string]::IsNullOrWhiteSpace([string]$config.upscaylPath)) {
+                $script:upscaylPath = [string]$config.upscaylPath
+            }
             $script:collections = @{}
             if ($null -ne $config.collections) {
                 $config.collections.PSObject.Properties | ForEach-Object {
@@ -550,6 +685,7 @@ function Save-Config {
             collections = $script:collections
             themeMode   = $(if ($script:themeMode) { $script:themeMode } else { "Default" })
             pegasusPath = $(if ($script:pegasusPath) { [string]$script:pegasusPath } else { "" })
+            upscaylPath = $(if ($script:upscaylPath) { [string]$script:upscaylPath } else { "" })
         }
         $json = $config | ConvertTo-Json -Depth 6
         $json | Out-File $script:configPath -Encoding UTF8 -Force
@@ -7293,7 +7429,7 @@ function Show-GameTDBCoverPackDialog {
     try {
         $dlg = New-Object System.Windows.Forms.Form
         $dlg.Text = "GameTDB Cover Pack"
-        $dlg.Size = New-Object System.Drawing.Size(500, 640)
+        $dlg.Size = New-Object System.Drawing.Size(500, 680)
         $dlg.StartPosition = "CenterParent"
         $dlg.FormBorderStyle = "FixedDialog"
         $dlg.MaximizeBox = $false
@@ -7313,7 +7449,7 @@ function Show-GameTDBCoverPackDialog {
         $grpSrc = New-Object System.Windows.Forms.GroupBox
         $grpSrc.Text = " Source "
         $grpSrc.Location = New-Object System.Drawing.Point($secX, 10)
-        $grpSrc.Size = New-Object System.Drawing.Size($secW, 196)
+        $grpSrc.Size = New-Object System.Drawing.Size($secW, 236)
         $grpSrc.ForeColor = $script:theme.text
         $grpSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
         $grpSrc.BackColor = $script:theme.background
@@ -7331,27 +7467,36 @@ function Show-GameTDBCoverPackDialog {
 
         $cmbSrc = New-Object System.Windows.Forms.ComboBox
         $cmbSrc.Location = New-Object System.Drawing.Point(42, 20)
-        $cmbSrc.Size = New-Object System.Drawing.Size(100, 24)
+        $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
         $cmbSrc.DropDownStyle = "DropDownList"
+        # The closed box stays narrow to leave room for System/Region on the
+        # same row, but the dropdown LIST doesn't have to match that width -
+        # without this, "TheCoverProject" gets clipped in the open list.
+        $cmbSrc.DropDownWidth = 140
         $cmbSrc.BackColor = $script:theme.editor
         $cmbSrc.ForeColor = $script:theme.text
         $cmbSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         [void]$cmbSrc.Items.Add("GameTDB")
         [void]$cmbSrc.Items.Add("Libretro")
+        [void]$cmbSrc.Items.Add("TheCoverProject")
         $grpSrc.Controls.Add($cmbSrc)
 
         $lblSys = New-Object System.Windows.Forms.Label
         $lblSys.Text = "System"
-        $lblSys.Location = New-Object System.Drawing.Point(148, 24)
+        $lblSys.Location = New-Object System.Drawing.Point(126, 24)
         $lblSys.Size = New-Object System.Drawing.Size(44, 16)
         $lblSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $lblSys.ForeColor = $script:theme.text
         $grpSrc.Controls.Add($lblSys)
 
         $cmbSys = New-Object System.Windows.Forms.ComboBox
-        $cmbSys.Location = New-Object System.Drawing.Point(194, 20)
-        $cmbSys.Size = New-Object System.Drawing.Size(122, 24)
+        $cmbSys.Location = New-Object System.Drawing.Point(172, 20)
+        $cmbSys.Size = New-Object System.Drawing.Size(158, 24)
         $cmbSys.DropDownStyle = "DropDownList"
+        # The closed box is narrow to leave room for Site/Region on the same
+        # row, but the dropdown LIST doesn't have to match that width - this
+        # is the actual fix for long system names getting cut off when open.
+        $cmbSys.DropDownWidth = 260
         $cmbSys.BackColor = $script:theme.editor
         $cmbSys.ForeColor = $script:theme.text
         $cmbSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
@@ -7359,15 +7504,15 @@ function Show-GameTDBCoverPackDialog {
 
         $lblReg = New-Object System.Windows.Forms.Label
         $lblReg.Text = "Region"
-        $lblReg.Location = New-Object System.Drawing.Point(322, 24)
+        $lblReg.Location = New-Object System.Drawing.Point(336, 24)
         $lblReg.Size = New-Object System.Drawing.Size(42, 16)
         $lblReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
         $lblReg.ForeColor = $script:theme.text
         $grpSrc.Controls.Add($lblReg)
 
         $cmbReg = New-Object System.Windows.Forms.ComboBox
-        $cmbReg.Location = New-Object System.Drawing.Point(366, 20)
-        $cmbReg.Size = New-Object System.Drawing.Size(66, 24)
+        $cmbReg.Location = New-Object System.Drawing.Point(380, 20)
+        $cmbReg.Size = New-Object System.Drawing.Size(52, 24)
         $cmbReg.DropDownStyle = "DropDownList"
         $cmbReg.BackColor = $script:theme.editor
         $cmbReg.ForeColor = $script:theme.text
@@ -7401,14 +7546,15 @@ function Show-GameTDBCoverPackDialog {
         # scrolls internally instead of growing or overlapping other controls.
         $lblDesc = New-Object System.Windows.Forms.TextBox
         $lblDesc.Location = New-Object System.Drawing.Point(12, 144)
-        $lblDesc.Size = New-Object System.Drawing.Size(432, 40)
+        $lblDesc.Size = New-Object System.Drawing.Size(432, 80)
         $lblDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
         $lblDesc.ForeColor = $script:theme.accent
         $lblDesc.BackColor = $script:theme.editor
         $lblDesc.BorderStyle = "FixedSingle"
         $lblDesc.Multiline = $true
+        $lblDesc.WordWrap = $true
         $lblDesc.ReadOnly = $true
-        $lblDesc.ScrollBars = "Vertical"
+        $lblDesc.ScrollBars = "None"
         $lblDesc.TabStop = $false
         $lblDesc.Text = "Check one or more cover types above to see what they're for."
         $grpSrc.Controls.Add($lblDesc)
@@ -7474,16 +7620,58 @@ function Show-GameTDBCoverPackDialog {
             $clb.Height = [Math]::Max($rowH + 4, [Math]::Min($desiredHeight, $maxHeight))
         }
 
+        $relayout = {
+            # Grows/shrinks the description box to fit exactly however many
+            # lines are needed - no scrollbar, ever - then shifts every
+            # control below it (and the dialog itself) down or up to match.
+            try {
+                $lbl = $script:__gtdbPackDesc
+                if (-not $lbl -or -not $grpSrc) { return }
+                $width = $lbl.ClientSize.Width
+                if ($width -le 0) { $width = $lbl.Width - 6 }
+                $flags = [System.Windows.Forms.TextFormatFlags]::WordBreak -bor `
+                         [System.Windows.Forms.TextFormatFlags]::TextBoxControl
+                $sz = [System.Windows.Forms.TextRenderer]::MeasureText(
+                    $lbl.Text, $lbl.Font, (New-Object System.Drawing.Size($width, 0)), $flags)
+                $needed = [Math]::Max(20, $sz.Height + 12)
+                $delta = $needed - $lbl.Height
+                if ($delta -eq 0) { return }
+                $lbl.Height = $needed
+                $grpSrc.Height = ($lbl.Location.Y + $needed + 12) - $grpSrc.Location.Y
+
+                if ($grpOpt) {
+                    $grpOpt.Location = New-Object System.Drawing.Point($grpOpt.Location.X, ($grpSrc.Location.Y + $grpSrc.Height + 8))
+                }
+                if ($grpOpt -and $grpOne) {
+                    $grpOne.Location = New-Object System.Drawing.Point($grpOne.Location.X, ($grpOpt.Location.Y + $grpOpt.Height + 8))
+                }
+                if ($grpOne -and $grpOut) {
+                    $grpOut.Location = New-Object System.Drawing.Point($grpOut.Location.X, ($grpOne.Location.Y + $grpOne.Height + 8))
+                }
+                if ($grpOut -and $btnStart) {
+                    $btnStart.Location = New-Object System.Drawing.Point($btnStart.Location.X, ($grpOut.Location.Y + $grpOut.Height + 10))
+                }
+                if ($btnStart -and $btnCancel) {
+                    $btnCancel.Location = New-Object System.Drawing.Point($btnCancel.Location.X, $btnStart.Location.Y)
+                }
+                if ($btnStart -and $dlg) {
+                    $dlg.ClientSize = New-Object System.Drawing.Size($dlg.ClientSize.Width, ($btnStart.Location.Y + $btnStart.Height + 14))
+                }
+            } catch { }
+        }
+
         $updateDesc = {
             $clb = $script:__gtdbPackClb
             $lbl = $script:__gtdbPackDesc
             if (-not $clb -or -not $lbl) { return }
             if ($script:__gtdbPackIsLibretro) {
-                $lbl.Text = "Boxart: Box FRONT cover art (PNG, max ~512px wide). Saved to box2dfront. Matched by game title - no full-wrap or back art is available from this source, and region tags in filenames are ignored automatically when matching."
+                $lbl.Text = "Boxart: thumbnail-res cover art (PNG, max ~512px wide). Saved to box2dThumb. Check 'Upscale thumbs -> boxFront' below to auto-upscale these to box2dfront (4x, Digital Art) via Upscayl. Matched by game title, region tags ignored automatically."
+                & $relayout
                 return
             }
             if ($clb.CheckedItems.Count -eq 0) {
                 $lbl.Text = "Check one or more cover types above to see what they're for."
+                & $relayout
                 return
             }
             $lines = New-Object System.Collections.ArrayList
@@ -7492,32 +7680,75 @@ function Show-GameTDBCoverPackDialog {
                 [void]$lines.Add("$tn`: $(Get-GameTDBCoverTypeDescription $tn)")
             }
             $lbl.Text = ($lines -join "`r`n")
+            & $relayout
         }
 
         $switchSource = {
             $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
+            $isTCP = ($cmbSrc.SelectedIndex -eq 2)
             $script:__gtdbPackIsLibretro = $isLibretro
+            $script:__gtdbPackIsTCP = $isTCP
             $cmbSys.Items.Clear()
-            if ($isLibretro) {
+            $cmbReg.Items.Clear()
+            if ($isTCP) {
+                # TheCoverProject has no scriptable API (Cloudflare-blocked)
+                # and, it turns out, no region filter either - just a plain
+                # title search box. Each result row shows a flag for THAT
+                # cover's own region, but there's no way to filter the
+                # search itself by region. Since System/Region are entirely
+                # unused here, hide them outright and let Site take the
+                # freed width - otherwise "TheCoverProject" clips even in
+                # the closed box, not just the open dropdown list.
+                $lblSys.Visible = $false
+                $cmbSys.Visible = $false
+                $lblReg.Visible = $false
+                $cmbReg.Visible = $false
+                $cmbSrc.Size = New-Object System.Drawing.Size(390, 24)
+                [void]$cmbSys.Items.Add("(not used for TheCoverProject)")
+                $cmbSys.SelectedIndex = 0
+                $cmbSys.Enabled = $false
+                [void]$cmbReg.Items.Add("(not filterable - see results)")
+                $cmbReg.SelectedIndex = 0
+                $cmbReg.Enabled = $false
+                $clbCover.Enabled = $false
+                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
+                if ($chkUpscale) { $chkUpscale.Visible = $false }
+                if ($script:__gtdbPackDesc) {
+                    $script:__gtdbPackDesc.Text = "TheCoverProject has no API, blocks scripted access, and has no region/platform filter - just a plain title search. Click Start to scan your collection for games missing box_front art, then get a ready list of direct search links to click through by hand. Each result on the site shows a flag for that cover's own region, so you pick the one you want from the list there. Once you've saved covers into a folder, the same window matches and imports them - no manual renaming needed."
+                    & $relayout
+                }
+            } elseif ($isLibretro) {
+                $lblSys.Visible = $true
+                $cmbSys.Visible = $true
+                $lblReg.Visible = $true
+                $cmbReg.Visible = $true
+                $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
+                $cmbSys.Enabled = $true
                 $script:__gtdbPackPlatKeys = $libretroPlatKeys
                 foreach ($k in $libretroPlatKeys) { [void]$cmbSys.Items.Add($script:libretroPlatforms[$k].Label) }
+                foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
+                $cmbReg.SelectedItem = "US"
                 $cmbReg.Enabled = $false
                 $lblReg.ForeColor = $script:theme.textDim
                 $clbCover.Enabled = $false
-                if ($chkBoxFull) {
-                    $chkBoxFull.Enabled = $false
-                    $chkBoxFull.ForeColor = $script:theme.textDim
-                }
+                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
+                if ($chkUpscale) { $chkUpscale.Visible = $true }
             } else {
+                $lblSys.Visible = $true
+                $cmbSys.Visible = $true
+                $lblReg.Visible = $true
+                $cmbReg.Visible = $true
+                $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
+                $cmbSys.Enabled = $true
                 $script:__gtdbPackPlatKeys = $gtdbPlatKeys
                 foreach ($k in $gtdbPlatKeys) { [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label) }
+                foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
+                $cmbReg.SelectedItem = "US"
                 $cmbReg.Enabled = $true
                 $lblReg.ForeColor = $script:theme.text
                 $clbCover.Enabled = $true
-                if ($chkBoxFull) {
-                    $chkBoxFull.Enabled = $true
-                    $chkBoxFull.ForeColor = $script:theme.text
-                }
+                if ($chkBoxFull) { $chkBoxFull.Visible = $true }
+                if ($chkUpscale) { $chkUpscale.Visible = $false }
             }
             if ($cmbSys.Items.Count -gt 0) { $cmbSys.SelectedIndex = 0 }
         }
@@ -7568,7 +7799,7 @@ function Show-GameTDBCoverPackDialog {
         # ========== Options ==========
         $grpOpt = New-Object System.Windows.Forms.GroupBox
         $grpOpt.Text = " Options "
-        $grpOpt.Location = New-Object System.Drawing.Point($secX, 214)
+        $grpOpt.Location = New-Object System.Drawing.Point($secX, 254)
         $grpOpt.Size = New-Object System.Drawing.Size($secW, 158)
         $grpOpt.ForeColor = $script:theme.text
         $grpOpt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -7651,10 +7882,24 @@ function Show-GameTDBCoverPackDialog {
         $chkBoxFull.BackColor = $script:theme.background
         $chkBoxFull.Checked = $true
         if ($script:__gtdbPackIsLibretro) {
-            $chkBoxFull.Enabled = $false
-            $chkBoxFull.ForeColor = $script:theme.textDim
+            $chkBoxFull.Visible = $false
         }
         $grpOpt.Controls.Add($chkBoxFull)
+
+        # Same row as chkBoxFull, but for Libretro: thumbnails land in
+        # box2dThumb, and this triggers a batch Upscayl pass (4x, Digital
+        # Art) into box2dfront right after download. Only one of these two
+        # checkboxes is ever visible, so the row never grows.
+        $chkUpscale = New-Object System.Windows.Forms.CheckBox
+        $chkUpscale.Text = "Upscale thumbs -> boxFront (Upscayl, 4x Digital Art)"
+        $chkUpscale.Location = New-Object System.Drawing.Point(12, 96)
+        $chkUpscale.Size = New-Object System.Drawing.Size(430, 18)
+        $chkUpscale.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $chkUpscale.ForeColor = $script:theme.text
+        $chkUpscale.BackColor = $script:theme.background
+        $chkUpscale.Checked = $true
+        $chkUpscale.Visible = [bool]$script:__gtdbPackIsLibretro
+        $grpOpt.Controls.Add($chkUpscale)
 
         $chkRename = New-Object System.Windows.Forms.CheckBox
         $chkRename.Text = "Rename to game titles"
@@ -7695,7 +7940,7 @@ function Show-GameTDBCoverPackDialog {
         # ========== Single game ==========
         $grpOne = New-Object System.Windows.Forms.GroupBox
         $grpOne.Text = " Single game "
-        $grpOne.Location = New-Object System.Drawing.Point($secX, 380)
+        $grpOne.Location = New-Object System.Drawing.Point($secX, 420)
         $grpOne.Size = New-Object System.Drawing.Size($secW, 96)
         $grpOne.ForeColor = $script:theme.text
         $grpOne.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -7792,7 +8037,7 @@ function Show-GameTDBCoverPackDialog {
         # ========== Output ==========
         $grpOut = New-Object System.Windows.Forms.GroupBox
         $grpOut.Text = " Output folder "
-        $grpOut.Location = New-Object System.Drawing.Point($secX, 484)
+        $grpOut.Location = New-Object System.Drawing.Point($secX, 524)
         $grpOut.Size = New-Object System.Drawing.Size($secW, 68)
         $grpOut.ForeColor = $script:theme.text
         $grpOut.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -7831,9 +8076,15 @@ function Show-GameTDBCoverPackDialog {
         $grpOut.Controls.Add($btnBrowse)
 
         # ========== Buttons ==========
-        $btnStart = Create-Button "Start" 155 562 100 $btnH
+        $btnStart = Create-Button "Start" 155 602 100 $btnH
         $btnStart.Add_Click({
             try {
+                if ($cmbSrc.SelectedIndex -eq 2) {
+                    $dlg.Tag = @{ Source = "tcp" }
+                    $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                    $dlg.Close()
+                    return
+                }
                 $idx = $cmbSys.SelectedIndex
                 $activeKeys = $script:__gtdbPackPlatKeys
                 if (-not $activeKeys -or $idx -lt 0 -or $idx -ge $activeKeys.Count) { return }
@@ -7896,6 +8147,7 @@ function Show-GameTDBCoverPackDialog {
                         OneGameOnly    = $oneGameOnly
                         OneGameTitle   = $oneGameTitle
                         OneGameId      = $oneGameId
+                        UpscaleAfter   = [bool]$chkUpscale.Checked
                     }
                 } else {
                     $types = @()
@@ -7942,20 +8194,22 @@ function Show-GameTDBCoverPackDialog {
         })
         $dlg.Controls.Add($btnStart)
 
-        $btnCancel = Create-Button "Cancel" 267 562 $btnW $btnH
+        $btnCancel = Create-Button "Cancel" 267 602 $btnW $btnH
         $btnCancel.Add_Click({ $dlg.Close() })
         $dlg.Controls.Add($btnCancel)
 
         # Fit dialog to bottom of buttons (with room to spare so Start/Cancel
         # are never clipped, even with Windows display scaling).
-        $dlg.ClientSize = New-Object System.Drawing.Size(484, 606)
+        $dlg.ClientSize = New-Object System.Drawing.Size(484, 646)
 
         $result = $dlg.ShowDialog($script:mainForm)
         if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
         $opts = $dlg.Tag
         if (-not $opts) { return }
 
-        if ($opts.Source -eq "libretro") {
+        if ($opts.Source -eq "tcp") {
+            Show-TCPAssistDialog
+        } elseif ($opts.Source -eq "libretro") {
             Start-LibretroCoverPackDownload `
                 -Platform $opts.Platform `
                 -OutBase $opts.OutBase `
@@ -7967,7 +8221,8 @@ function Show-GameTDBCoverPackDialog {
                 -RenameToTitle:$opts.RenameToTitle `
                 -ConvertToPng:$opts.ConvertToPng `
                 -OneGameOnly:$opts.OneGameOnly `
-                -OneGameTitle $opts.OneGameTitle
+                -OneGameTitle $opts.OneGameTitle `
+                -UpscaleAfterDownload:$opts.UpscaleAfter
         } else {
             Start-GameTDBCoverPackDownload `
                 -Platform $opts.Platform `
@@ -7993,6 +8248,754 @@ function Show-GameTDBCoverPackDialog {
             [System.Windows.Forms.MessageBox]::Show($msg, "GameTDB Cover Pack", "OK", "Error") | Out-Null
         } catch {}
     }
+}
+
+function Show-TCPAssetTypePrompt {
+    # Small picker so a saved image can be filed as Box Front, Box Full, or
+    # Box Back instead of always assuming Box Front. TheCoverProject listings
+    # often mix full covers (front+back scan) in with front-only art, and the
+    # app has no way to tell them apart from the file itself.
+    #
+    # Box Full writes to BOTH assets.box_full (box2dfull/ - scraper/Skraper
+    # convention) and assets.boxFull (boxFull/ - what many Pegasus themes,
+    # including this user's, actually look for) - same dual-key convention
+    # already used by "Add All Media Types" elsewhere in this app.
+    param([string]$DefaultType = "Box Front")
+
+    $map = [ordered]@{
+        "Box Front" = @{ Keys = @("assets.box_front"); Folders = @("box2dfront") }
+        "Box Full"  = @{ Keys = @("assets.box_full", "assets.boxFull"); Folders = @("box2dfull", "boxFull") }
+        "Box Back"  = @{ Keys = @("assets.box_back"); Folders = @("box2dback") }
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "What kind of cover is this?"
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.BackColor = $script:theme.background
+    $dlg.ClientSize = New-Object System.Drawing.Size(280, 190)
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Text = "Is the image you saved a front cover only, a full wrap (front+back+spine), or a back cover?"
+    $lbl.Location = New-Object System.Drawing.Point(12, 10)
+    $lbl.Size = New-Object System.Drawing.Size(256, 44)
+    $lbl.ForeColor = $script:theme.text
+    $dlg.Controls.Add($lbl)
+
+    $y = 60
+    $radios = @{}
+    foreach ($name in $map.Keys) {
+        $rb = New-Object System.Windows.Forms.RadioButton
+        $rb.Text = if ($name -eq "Box Full") { "Box Full (box_full + boxFull)" } else { $name }
+        $rb.Location = New-Object System.Drawing.Point(20, $y)
+        $rb.Size = New-Object System.Drawing.Size(240, 22)
+        $rb.ForeColor = $script:theme.text
+        $rb.Checked = ($name -eq $DefaultType)
+        $dlg.Controls.Add($rb)
+        $radios[$name] = $rb
+        $y += 26
+    }
+
+    $result = $null
+    $btnOK = Create-Button "OK" 84 150 100 28
+    $btnOK.Add_Click({
+        foreach ($name in $radios.Keys) { if ($radios[$name].Checked) { $script:__tcpAssetTypeChoice = $name } }
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlg.Close()
+    })
+    $dlg.Controls.Add($btnOK)
+    $dlg.AcceptButton = $btnOK
+
+    $script:__tcpAssetTypeChoice = $null
+    $r = $dlg.ShowDialog()
+    if ($r -ne [System.Windows.Forms.DialogResult]::OK -or -not $script:__tcpAssetTypeChoice) { return $null }
+    return $map[$script:__tcpAssetTypeChoice]
+}
+
+function Get-TCPNoCoverStorePath {
+    param($Collection)
+    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
+    $dir = Split-Path $Collection.metadataPath -Parent
+    if (-not $dir) { return $null }
+    return (Join-Path $dir "tcp_no_cover_marks.json")
+}
+
+function Get-TCPNoCoverMap {
+    # Games the user has confirmed (by hand, after checking the actual site)
+    # have no cover available on TheCoverProject, along with when they last
+    # checked. Persisted per-collection so this window doesn't keep nagging
+    # about the same already-checked games every time it's reopened - since
+    # the app can't detect "no results" on its own (the site blocks
+    # scripted access, so there's no page to read). Returns a hashtable of
+    # normalized title -> ISO 8601 timestamp string.
+    param($Collection)
+    $map = @{}
+    $path = Get-TCPNoCoverStorePath -Collection $Collection
+    if (-not $path -or -not (Test-Path $path)) { return $map }
+    try {
+        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($data -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($p in $data.PSObject.Properties) {
+                if ($p.Name) { $map[$p.Name] = [string]$p.Value }
+            }
+        }
+    } catch {}
+    return $map
+}
+
+function Save-TCPNoCoverMap {
+    param($Collection, [hashtable]$Map)
+    $path = Get-TCPNoCoverStorePath -Collection $Collection
+    if (-not $path) { return }
+    try {
+        ($Map | ConvertTo-Json -Depth 2) | Set-Content -Path $path -Encoding UTF8
+    } catch {
+        Log-Message "TheCoverProject: couldn't save no-cover list: $_" "Yellow"
+    }
+}
+
+function Format-TCPNoCoverStamp {
+    # Formats a stored ISO timestamp into "6:44 PM 9/1/2026" for display, or
+    # returns a generic label if it can't be parsed (e.g. an older file
+    # written before timestamps existed).
+    param([string]$Iso)
+    if (-not $Iso) { return "unknown" }
+    try {
+        $dt = [datetime]::Parse($Iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+        return "{0:h:mm tt} {0:M/d/yyyy}" -f $dt
+    } catch {
+        return "unknown"
+    }
+}
+
+function Format-TCPSearchTitle {
+    # Collection titles follow ROM-naming conventions (No-Intro/GoodTools
+    # style) that TheCoverProject's own titles don't: comma-swapped
+    # articles ("Legend of Zelda, The"), a " - " or ":" between main title
+    # and subtitle, and a trailing system/region tag. The site's search
+    # looks like plain word-matching against its own display titles (e.g.
+    # "Legend of Zelda: The Minish Cap, The"), so a query built from the
+    # raw collection title - commas, dashes, and "(GBA)" tag included -
+    # often matches nothing even though the game is listed. This unpacks
+    # the ROM-naming quirks into plain word order so the query's words
+    # line up with how the site actually phrases the title.
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return $Title }
+
+    $t = $Title.Trim()
+
+    # Strip trailing system/region/language tags in parentheses, e.g.
+    # "(GBA)", "(USA)", "(Europe) (En,Fr,De)" - can be more than one.
+    while ($t -match '\s*\([^()]*\)\s*$') {
+        $t = [regex]::Replace($t, '\s*\([^()]*\)\s*$', '')
+    }
+
+    # Split the remaining title on the separators ROM names use between a
+    # main title and subtitle (" - " or ":"), then un-swap a trailing
+    # ", The"/", A"/", An" on each piece so "Legend of Zelda, The" reads
+    # as "The Legend of Zelda" - matching normal English word order.
+    $parts = [regex]::Split($t, '\s*[-:]\s*')
+    $fixedParts = foreach ($p in $parts) {
+        $p = $p.Trim()
+        if ($p -match '^(?<base>.+),\s*(?<article>The|A|An)$') {
+            "$($Matches['article']) $($Matches['base'])".Trim()
+        } else {
+            $p
+        }
+    }
+
+    $result = ($fixedParts -join ' ').Trim()
+    $result = [regex]::Replace($result, '\s{2,}', ' ')
+    return $result
+}
+
+function Show-TCPFrontBackCropDialog {
+    # TheCoverProject files are a full wrap: back cover, spine, front cover
+    # laid out left-to-right in one image. Rather than the user having to
+    # crop that by hand in a separate program, this shows the wrap with two
+    # draggable divider lines (auto-fit to a typical 45/10/45 split) and,
+    # on save, crops out the back and front pieces and writes them straight
+    # to assets.box_back / assets.box_front - same as any other cover
+    # source. The full wrap itself is untouched; this only adds the two
+    # extra crops on top of it. Returns $true if crops were saved, $false
+    # if the user skipped/cancelled.
+    param(
+        [string]$ImagePath,
+        $Collection,
+        [string]$Title,
+        [string]$Norm
+    )
+    if (-not (Test-Path -LiteralPath $ImagePath) -or -not $Collection -or -not $Norm) { return $false }
+
+    $srcBmp = $null
+    try {
+        $fs = [System.IO.File]::Open($ImagePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        try {
+            $img = [System.Drawing.Image]::FromStream($fs)
+            $srcBmp = New-Object System.Drawing.Bitmap $img
+            $img.Dispose()
+        } finally { $fs.Close(); $fs.Dispose() }
+    } catch {
+        Log-Message "Couldn't open '$ImagePath' for cropping: $_" "Red"
+        return $false
+    }
+    if (-not $srcBmp) { return $false }
+
+    $imgW = $srcBmp.Width
+    $imgH = $srcBmp.Height
+
+    # Fit the preview into a max box, never upscaling small images.
+    $maxW = 860; $maxH = 460
+    $scale = [Math]::Min([double]$maxW / $imgW, [double]$maxH / $imgH)
+    if ($scale -gt 1) { $scale = 1 }
+    $dispW = [Math]::Max(200, [int]([Math]::Round($imgW * $scale)))
+    $dispH = [Math]::Max(120, [int]([Math]::Round($imgH * $scale)))
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Crop Front / Back - $Title"
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.BackColor = $script:theme.panel
+    $dlg.ForeColor = $script:theme.text
+    $dlg.ClientSize = New-Object System.Drawing.Size(($dispW + 40), ($dispH + 132))
+
+    $lblHint = New-Object System.Windows.Forms.Label
+    $lblHint.Text = "Drag the two lines onto the spine edges - shaded band is the spine. Left saves as Box Back, right as Box Front (plus a Box Thumb made from it)."
+    $lblHint.Location = New-Object System.Drawing.Point(20, 8)
+    $lblHint.Size = New-Object System.Drawing.Size($dispW, 32)
+    $lblHint.ForeColor = $script:theme.textDim
+    $dlg.Controls.Add($lblHint)
+
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Location = New-Object System.Drawing.Point(20, 44)
+    $panel.Size = New-Object System.Drawing.Size($dispW, $dispH)
+    $panel.BackColor = [System.Drawing.Color]::Black
+    $dlg.Controls.Add($panel)
+    try {
+        $dbProp = [System.Windows.Forms.Control].GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance,NonPublic")
+        $dbProp.SetValue($panel, $true, $null)
+    } catch {}
+
+    # Auto-fit default: back 0-45%, spine 45-55%, front 55-100%.
+    $script:__cropLine1 = [int]([Math]::Round($dispW * 0.45))
+    $script:__cropLine2 = [int]([Math]::Round($dispW * 0.55))
+    $script:__cropDrag = 0
+
+    $panel.Add_Paint({
+        param($s, $e)
+        $g = $e.Graphics
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.DrawImage($srcBmp, 0, 0, $dispW, $dispH)
+
+        $spineBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(90, 255, 200, 0))
+        $g.FillRectangle($spineBrush, $script:__cropLine1, 0, ($script:__cropLine2 - $script:__cropLine1), $dispH)
+        $spineBrush.Dispose()
+
+        $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 255, 60, 60)), 2
+        $g.DrawLine($pen, $script:__cropLine1, 0, $script:__cropLine1, $dispH)
+        $g.DrawLine($pen, $script:__cropLine2, 0, $script:__cropLine2, $dispH)
+        $pen.Dispose()
+
+        $font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+        $textBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+        $shadowBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
+        $labels = @(
+            @{ Text = "BACK";  CenterX = [int]($script:__cropLine1 / 2) },
+            @{ Text = "SPINE"; CenterX = [int](($script:__cropLine1 + $script:__cropLine2) / 2) },
+            @{ Text = "FRONT"; CenterX = [int](($script:__cropLine2 + $dispW) / 2) }
+        )
+        foreach ($lb in $labels) {
+            $sz = $g.MeasureString($lb.Text, $font)
+            $x = $lb.CenterX - ($sz.Width / 2)
+            $g.DrawString($lb.Text, $font, $shadowBrush, ($x + 1), 11)
+            $g.DrawString($lb.Text, $font, $textBrush, $x, 10)
+        }
+        $font.Dispose(); $textBrush.Dispose(); $shadowBrush.Dispose()
+    })
+
+    $hitTest = {
+        param($x)
+        if ([Math]::Abs($x - $script:__cropLine1) -le 6) { return 1 }
+        if ([Math]::Abs($x - $script:__cropLine2) -le 6) { return 2 }
+        return 0
+    }
+    $panel.Add_MouseDown({
+        param($s, $e)
+        $script:__cropDrag = & $hitTest $e.X
+    })
+    $panel.Add_MouseMove({
+        param($s, $e)
+        if ($script:__cropDrag -eq 0) {
+            $panel.Cursor = if ((& $hitTest $e.X) -ne 0) { [System.Windows.Forms.Cursors]::SizeWE } else { [System.Windows.Forms.Cursors]::Default }
+            return
+        }
+        $x = [Math]::Max(2, [Math]::Min($dispW - 2, $e.X))
+        if ($script:__cropDrag -eq 1) {
+            $script:__cropLine1 = [Math]::Min($x, $script:__cropLine2 - 4)
+        } else {
+            $script:__cropLine2 = [Math]::Max($x, $script:__cropLine1 + 4)
+        }
+        $panel.Invalidate()
+    })
+    $panel.Add_MouseUp({ $script:__cropDrag = 0 })
+
+    $btnAutoFit = Create-Button "Auto-Fit" 20 ($dispH + 54) 100 28
+    $btnAutoFit.Add_Click({
+        $script:__cropLine1 = [int]([Math]::Round($dispW * 0.45))
+        $script:__cropLine2 = [int]([Math]::Round($dispW * 0.55))
+        $panel.Invalidate()
+    })
+    $dlg.Controls.Add($btnAutoFit)
+
+    $btnSkip = Create-Button "Skip" ($dispW - 200) ($dispH + 54) 90 28
+    $btnSkip.Add_Click({
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dlg.Close()
+    })
+    $dlg.Controls.Add($btnSkip)
+
+    $btnSave = Create-Button "Save Crops" ($dispW - 100) ($dispH + 54) 140 28
+    $btnSave.Add_Click({
+        $backW  = [int]([Math]::Round($script:__cropLine1 / $scale))
+        $frontX = [int]([Math]::Round($script:__cropLine2 / $scale))
+        $backW  = [Math]::Max(1, [Math]::Min($imgW - 1, $backW))
+        $frontX = [Math]::Max(1, [Math]::Min($imgW - 1, $frontX))
+        $frontW = $imgW - $frontX
+        if ($backW -lt 10 -or $frontW -lt 10) {
+            [System.Windows.Forms.MessageBox]::Show("That crop is too thin to save - drag the lines further apart first.", "Crop Front / Back", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $safeFormat = [System.Drawing.Imaging.PixelFormat]::Format32bppArgb
+        $backRect  = New-Object System.Drawing.Rectangle 0, 0, $backW, $imgH
+        $frontRect = New-Object System.Drawing.Rectangle $frontX, 0, $frontW, $imgH
+        $backBmp  = $null; $frontBmp = $null; $thumbBmp = $null
+        try {
+            $backBmp  = $srcBmp.Clone($backRect, $safeFormat)
+            $frontBmp = $srcBmp.Clone($frontRect, $safeFormat)
+
+            $frontDir = Join-Path $Collection.mediaPath "box2dfront"
+            $backDir  = Join-Path $Collection.mediaPath "box2dback"
+            $thumbDir = Join-Path $Collection.mediaPath "box2dThumb"
+            if (-not (Test-Path $frontDir)) { New-Item -ItemType Directory -Path $frontDir -Force | Out-Null }
+            if (-not (Test-Path $backDir))  { New-Item -ItemType Directory -Path $backDir -Force | Out-Null }
+            if (-not (Test-Path $thumbDir)) { New-Item -ItemType Directory -Path $thumbDir -Force | Out-Null }
+
+            $safeTitle = $Title -replace '[\\/:*?"<>|]', '_'
+            $frontPath = Join-Path $frontDir "$safeTitle.png"
+            $backPath  = Join-Path $backDir "$safeTitle.png"
+            $thumbPath = Join-Path $thumbDir "$safeTitle.png"
+            $frontBmp.Save($frontPath, [System.Drawing.Imaging.ImageFormat]::Png)
+            $backBmp.Save($backPath, [System.Drawing.Imaging.ImageFormat]::Png)
+
+            # Box Thumb (assets.box_front_thumb / box2dThumb) - same
+            # thumbnail-res convention used elsewhere in this app: PNG,
+            # max ~512px wide, scaled down proportionally from the front
+            # crop (never upscaled if the crop is already smaller).
+            $thumbMaxW = 512
+            $thumbScale = [Math]::Min(1, [double]$thumbMaxW / $frontBmp.Width)
+            $thumbW = [Math]::Max(1, [int]([Math]::Round($frontBmp.Width * $thumbScale)))
+            $thumbH = [Math]::Max(1, [int]([Math]::Round($frontBmp.Height * $thumbScale)))
+            $thumbBmp = New-Object System.Drawing.Bitmap $thumbW, $thumbH
+            $tg = [System.Drawing.Graphics]::FromImage($thumbBmp)
+            try {
+                $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $tg.DrawImage($frontBmp, 0, 0, $thumbW, $thumbH)
+            } finally { $tg.Dispose() }
+            $thumbBmp.Save($thumbPath, [System.Drawing.Imaging.ImageFormat]::Png)
+
+            $updates = @{
+                $Norm = @{
+                    "assets.box_front"       = Get-RelativeAssetPath -Path $frontPath -Collection $Collection
+                    "assets.box_back"        = Get-RelativeAssetPath -Path $backPath -Collection $Collection
+                    "assets.box_front_thumb" = Get-RelativeAssetPath -Path $thumbPath -Collection $Collection
+                }
+            }
+            Apply-TitleKeyedAssetUpdates -Updates $updates
+            Log-Message "TheCoverProject: cropped Front/Back/Thumb for '$Title'" "Green"
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Couldn't save the crops: $_", "Crop Front / Back", "OK", "Error") | Out-Null
+            return
+        } finally {
+            if ($backBmp) { $backBmp.Dispose() }
+            if ($frontBmp) { $frontBmp.Dispose() }
+            if ($thumbBmp) { $thumbBmp.Dispose() }
+        }
+
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlg.Close()
+    })
+    $dlg.Controls.Add($btnSave)
+    $dlg.AcceptButton = $btnSave
+    $dlg.CancelButton = $btnSkip
+
+    $r = $dlg.ShowDialog($script:mainForm)
+    $srcBmp.Dispose()
+    return ($r -eq [System.Windows.Forms.DialogResult]::OK)
+}
+
+function Show-TCPAssistDialog {
+    # TheCoverProject has no API and blocks scripted access (Cloudflare), so
+    # this can't download automatically. Instead: scan the current collection
+    # for games missing assets.box_front, generate a direct search link per
+    # missing game, let the user click through and save covers into a folder,
+    # then match those saved files back to games by title and import them -
+    # same box2dfront placement + assets.box_front write as every other source.
+    $col = Get-Col
+    if (-not $col) {
+        [System.Windows.Forms.MessageBox]::Show("Select a collection first.", "TheCoverProject", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $titleMap = Get-CollectionGameTitleMap
+    $noCoverMap = Get-TCPNoCoverMap -Collection $col
+    $missing = @()
+    foreach ($norm in $titleMap.Keys) {
+        $entry = $titleMap[$norm]
+        if (-not $entry.HasBoxFront) {
+            $missing += [pscustomobject]@{
+                Norm         = $norm
+                Title        = $entry.Title
+                Url          = "https://www.thecoverproject.net/view.php?searchstring=" + [Uri]::EscapeDataString((Format-TCPSearchTitle $entry.Title))
+                AssignedFile = $null
+                AssignedKeys = $null
+                AssignedFolders = $null
+                NoCover      = $noCoverMap.ContainsKey($norm)
+                NoCoverStamp = $(if ($noCoverMap.ContainsKey($norm)) { $noCoverMap[$norm] } else { $null })
+            }
+        }
+    }
+    $missing = $missing | Sort-Object Title
+
+    if ($missing.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Nothing missing - every game already has box_front art.", "TheCoverProject", "OK", "Information") | Out-Null
+        return
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "TheCoverProject - Missing Covers ($($missing.Count))"
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.BackColor = $script:theme.background
+    $dlg.ClientSize = New-Object System.Drawing.Size(869, 679)
+
+    $lblHint = New-Object System.Windows.Forms.Label
+    $lblHint.Text = "$($missing.Count) game(s) missing box_front art. Double-click a row (or select + Open) to search for it on TheCoverProject. Save whatever you find into the folder below, then click 'Match && Import'. Greyed rows were already marked 'No cover available' - select one and click Retry to check again."
+    $lblHint.Location = New-Object System.Drawing.Point(12, 10)
+    $lblHint.Size = New-Object System.Drawing.Size(845, 40)
+    $lblHint.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblHint.ForeColor = $script:theme.text
+    $dlg.Controls.Add($lblHint)
+
+    $lst = New-Object System.Windows.Forms.ListView
+    $lst.Location = New-Object System.Drawing.Point(12, 58)
+    $lst.Size = New-Object System.Drawing.Size(845, 520)
+    $lst.View = "Details"
+    $lst.FullRowSelect = $true
+    $lst.MultiSelect = $true
+    $lst.BackColor = $script:theme.editor
+    $lst.ForeColor = $script:theme.text
+    [void]$lst.Columns.Add("Game", 568)
+    [void]$lst.Columns.Add("Status", 260)
+    foreach ($m in $missing) {
+        $li = New-Object System.Windows.Forms.ListViewItem($m.Title)
+        if ($m.NoCover) {
+            [void]$li.SubItems.Add("Not Available As of " + (Format-TCPNoCoverStamp $m.NoCoverStamp))
+            $li.ForeColor = $script:theme.textDim
+        } else {
+            [void]$li.SubItems.Add("Not opened")
+        }
+        $li.Tag = $m
+        [void]$lst.Items.Add($li)
+    }
+    $lst.Add_MouseDoubleClick({
+        foreach ($item in $lst.SelectedItems) {
+            Start-Process ([string]$item.Tag.Url)
+            $item.SubItems[1].Text = "Opened"
+        }
+    })
+    $dlg.Controls.Add($lst)
+
+    $btnOpen = Create-Button "Open Selected" 12 641 135 26
+    $btnOpen.Add_Click({
+        if ($lst.SelectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Select one or more games first.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        if ($lst.SelectedItems.Count -gt 8) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "That will open $($lst.SelectedItems.Count) browser tabs at once. Continue?",
+                "TheCoverProject", "YesNo", "Warning")
+            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        }
+        foreach ($item in $lst.SelectedItems) {
+            Start-Process ([string]$item.Tag.Url)
+            if ($item.Tag.AssignedFile) {
+                $item.SubItems[1].Text = "Assigned: " + [System.IO.Path]::GetFileName($item.Tag.AssignedFile)
+            } else {
+                $item.SubItems[1].Text = "Opened"
+            }
+        }
+    })
+    $dlg.Controls.Add($btnOpen)
+
+    $btnAssign = Create-Button "Assign Saved Cover" 155 641 175 26
+    $btnAssign.Add_Click({
+        # Lets the user point directly at the file they just saved for the
+        # currently-selected game, instead of relying on the filename to be
+        # re-parsed later. The app already knows which game this is for -
+        # no renaming needed, and no ambiguity from title-matching.
+        if ($lst.SelectedItems.Count -ne 1) {
+            [System.Windows.Forms.MessageBox]::Show("Select exactly one game to assign a file to.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        $item = $lst.SelectedItems[0]
+        $ofd = New-Object System.Windows.Forms.OpenFileDialog
+        $ofd.Title = "Select the cover you saved for: $($item.Tag.Title)"
+        $ofd.Filter = "Image files|*.png;*.jpg;*.jpeg;*.webp;*.bmp|All files|*.*"
+        $startDir = $txtFolder.Text.Trim()
+        if ($startDir -and (Test-Path $startDir)) { $ofd.InitialDirectory = $startDir }
+        if ($ofd.ShowDialog() -eq "OK") {
+            # TheCoverProject only lists full box scans (front+back+spine),
+            # never front-only art, so there's nothing to ask here - every
+            # file saved from it is Box Full. Writes to both assets.box_full
+            # (box2dfull/ - Skraper convention) and assets.boxFull (boxFull/
+            # - what this user's Pegasus theme looks for), same dual-key
+            # convention "Add All Media Types" uses elsewhere in this app.
+            $typeInfo = @{ Keys = @("assets.box_full", "assets.boxFull"); Folders = @("box2dfull", "boxFull") }
+            $item.Tag.AssignedFile = $ofd.FileName
+            $item.Tag.AssignedKeys = $typeInfo.Keys
+            $item.Tag.AssignedFolders = $typeInfo.Folders
+            if ($item.Tag.NoCover) {
+                # They'd previously marked this as having no cover, but found
+                # one after all - clear the mark so it doesn't come back
+                # grayed-out next time.
+                $item.Tag.NoCover = $false
+                $item.Tag.NoCoverStamp = $null
+                $noCoverMap.Remove($item.Tag.Norm)
+                Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+            }
+            $item.ForeColor = $lst.ForeColor
+            $label = ($typeInfo.Keys -join " + ") -replace 'assets\.', ''
+            $item.SubItems[1].Text = "Assigned ($label): " + [System.IO.Path]::GetFileName($ofd.FileName)
+
+            # TheCoverProject files are always a full wrap, so offer to crop
+            # the front and back covers out of it right now instead of
+            # leaving that for later - saves a trip to another program.
+            $cropped = Show-TCPFrontBackCropDialog -ImagePath $ofd.FileName -Collection $col -Title $item.Tag.Title -Norm $item.Tag.Norm
+            if ($cropped) {
+                $item.SubItems[1].Text += " (+ Front/Back/Thumb cropped)"
+            }
+        }
+    })
+    $dlg.Controls.Add($btnAssign)
+
+    $btnNoCover = Create-Button "Mark No Cover Available" 338 641 210 26
+    $btnNoCover.Add_Click({
+        # For games you've actually checked and confirmed have nothing on
+        # TheCoverProject. Persisted to disk (per collection) so this window
+        # stops re-listing them as open work every time you reopen it - the
+        # app can't detect "no results" itself since the site blocks
+        # scripted access, so this is the manual equivalent. Timestamped so
+        # you can see at a glance how stale that check is.
+        if ($lst.SelectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Select one or more games first.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        $now = (Get-Date).ToString("o")
+        foreach ($item in $lst.SelectedItems) {
+            $item.Tag.NoCover = $true
+            $item.Tag.NoCoverStamp = $now
+            $item.Tag.AssignedFile = $null
+            $item.SubItems[1].Text = "Not Available As of " + (Format-TCPNoCoverStamp $now)
+            $item.ForeColor = $script:theme.textDim
+            $noCoverMap[$item.Tag.Norm] = $now
+        }
+        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+    })
+    $dlg.Controls.Add($btnNoCover)
+
+    $btnRetry = Create-Button "Retry" 556 641 70 26
+    $btnRetry.Add_Click({
+        # Clears a "No cover available" mark and re-opens the search right
+        # away, for when it might have shown up on the site since you last
+        # checked. Only touches rows that are actually marked; anything else
+        # in the selection is left alone.
+        $targets = @($lst.SelectedItems | Where-Object { $_.Tag.NoCover })
+        if ($targets.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Select one or more games marked 'No cover available' first.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        if ($targets.Count -gt 8) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "That will open $($targets.Count) browser tabs at once. Continue?",
+                "TheCoverProject", "YesNo", "Warning")
+            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        }
+        foreach ($item in $targets) {
+            $item.Tag.NoCover = $false
+            $item.Tag.NoCoverStamp = $null
+            $noCoverMap.Remove($item.Tag.Norm)
+            $item.ForeColor = $lst.ForeColor
+            $item.SubItems[1].Text = "Opened"
+            Start-Process ([string]$item.Tag.Url)
+        }
+        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+    })
+    $dlg.Controls.Add($btnRetry)
+
+    $lblFolder = New-Object System.Windows.Forms.Label
+    $lblFolder.Text = "Saved covers folder:"
+    $lblFolder.Location = New-Object System.Drawing.Point(12, 586)
+    $lblFolder.Size = New-Object System.Drawing.Size(200, 18)
+    $lblFolder.ForeColor = $script:theme.text
+    $dlg.Controls.Add($lblFolder)
+
+    $txtFolder = New-Object System.Windows.Forms.TextBox
+    $txtFolder.Location = New-Object System.Drawing.Point(12, 606)
+    $txtFolder.Size = New-Object System.Drawing.Size(798, 22)
+    $txtFolder.BackColor = $script:theme.editor
+    $txtFolder.ForeColor = $script:theme.text
+    $txtFolder.Text = [string](Join-Path $env:USERPROFILE "Downloads\TCP_Covers")
+    # Create it now so there's somewhere to save to the first time this runs -
+    # no more hitting "no cover available" and having nowhere to put the ones
+    # that DO exist because the folder was never made.
+    try {
+        if (-not (Test-Path $txtFolder.Text)) {
+            New-Item -ItemType Directory -Path $txtFolder.Text -Force | Out-Null
+        }
+    } catch {}
+    $dlg.Controls.Add($txtFolder)
+
+    $btnBrowse = Create-Button "..." 822 605 35 25
+    $btnBrowse.Add_Click({
+        $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+        $fd.Description = "Folder where you saved covers from TheCoverProject"
+        if (-not (Test-Path $txtFolder.Text)) { New-Item -ItemType Directory -Path $txtFolder.Text -Force | Out-Null }
+        $fd.SelectedPath = $txtFolder.Text
+        if ($fd.ShowDialog() -eq "OK") { $txtFolder.Text = $fd.SelectedPath }
+    })
+    $dlg.Controls.Add($btnBrowse)
+
+    $btnImport = Create-Button "Match && Import" 634 641 145 26
+    $btnImport.Add_Click({
+        $folder = $txtFolder.Text.Trim()
+        if (-not (Test-Path $folder)) {
+            [System.Windows.Forms.MessageBox]::Show("Folder doesn't exist yet - save some covers into it first.", "TheCoverProject", "OK", "Warning") | Out-Null
+            return
+        }
+        if (-not $col.mediaPath) {
+            [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "TheCoverProject", "OK", "Warning") | Out-Null
+            return
+        }
+        $fullDir = Join-Path $col.mediaPath "boxFull"
+        if (-not (Test-Path $fullDir)) { New-Item -ItemType Directory -Path $fullDir -Force | Out-Null }
+        $fullDirLegacy = Join-Path $col.mediaPath "box2dfull"
+        if (-not (Test-Path $fullDirLegacy)) { New-Item -ItemType Directory -Path $fullDirLegacy -Force | Out-Null }
+
+        $updates = @{}
+        $matched = 0; $unmatched = 0
+        $usedFiles = New-Object 'System.Collections.Generic.HashSet[string]'
+
+        # Pass 1: explicit assignments made with "Assign Saved Cover". Every
+        # file from TheCoverProject is a full wrap (front+back+spine), so
+        # this is always Box Full - written to both assets.box_full
+        # (box2dfull/ - Skraper convention) and assets.boxFull (boxFull/ -
+        # what this user's Pegasus theme looks for), same dual-key
+        # convention "Add All Media Types" uses elsewhere in this app.
+        foreach ($m in $missing) {
+            if (-not $m.AssignedFile) { continue }
+            if (-not (Test-Path $m.AssignedFile)) {
+                Log-Message "TheCoverProject: assigned file for '$($m.Title)' no longer exists: $($m.AssignedFile)" "Red"
+                continue
+            }
+            $keys = if ($m.AssignedKeys) { $m.AssignedKeys } else { @("assets.box_full", "assets.boxFull") }
+            $folders = if ($m.AssignedFolders) { $m.AssignedFolders } else { @("box2dfull", "boxFull") }
+
+            $safeTitle = $m.Title -replace '[\\/:*?""<>|]', '_'
+            $srcExt = [System.IO.Path]::GetExtension($m.AssignedFile)
+            $rowUpdates = @{}
+            for ($i = 0; $i -lt $keys.Count; $i++) {
+                $destDir = Join-Path $col.mediaPath $folders[$i]
+                if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+                $dest = Join-Path $destDir "$safeTitle$srcExt"
+                Copy-Item -Path $m.AssignedFile -Destination $dest -Force
+                $dest = Convert-ImageFileToPng -Path $dest
+                $rowUpdates[$keys[$i]] = Get-RelativeAssetPath -Path $dest -Collection $col
+            }
+            $updates[$m.Norm] = $rowUpdates
+            [void]$usedFiles.Add((Resolve-Path $m.AssignedFile).Path)
+            $matched++
+        }
+
+        # Pass 2: fallback filename matching for anything saved into the
+        # folder without being explicitly assigned. Tries both the normal
+        # normalized title and a whitespace-stripped version, since saved
+        # filenames often drop spaces entirely (e.g. "kurukurukurin.jpg").
+        # Same as Pass 1, this is always Box Full - everything saved from
+        # TheCoverProject is a full wrap, never a front-only scan.
+        $missingLookup = @{}
+        foreach ($m in $missing) {
+            if ($m.AssignedFile) { continue }
+            $missingLookup[$m.Norm] = $m
+            $missingLookup[($m.Norm -replace '\s+', '')] = $m
+        }
+        $files = Get-ChildItem -Path $folder -File -Include *.png,*.jpg,*.jpeg,*.webp,*.bmp -ErrorAction SilentlyContinue
+        foreach ($f in $files) {
+            if ($usedFiles.Contains($f.FullName)) { continue }
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            $norm = Get-NormalizedGameTitle $base
+            $normSquashed = $norm -replace '\s+', ''
+            $hit = $null
+            if ($norm -and $missingLookup.ContainsKey($norm)) { $hit = $missingLookup[$norm] }
+            elseif ($normSquashed -and $missingLookup.ContainsKey($normSquashed)) { $hit = $missingLookup[$normSquashed] }
+            if (-not $hit) {
+                $unmatched++
+                continue
+            }
+            $dest = Join-Path $fullDir $f.Name
+            Copy-Item -Path $f.FullName -Destination $dest -Force
+            $dest = Convert-ImageFileToPng -Path $dest
+            $destLegacy = Join-Path $fullDirLegacy ([System.IO.Path]::GetFileName($dest))
+            Copy-Item -Path $dest -Destination $destLegacy -Force
+            $updates[$hit.Norm] = @{
+                "assets.box_full" = Get-RelativeAssetPath -Path $destLegacy -Collection $col
+                "assets.boxFull"  = Get-RelativeAssetPath -Path $dest -Collection $col
+            }
+            if ($hit.NoCover) {
+                # A file did turn up for something previously marked "no
+                # cover available" - clear that mark so it doesn't keep
+                # showing as unavailable now that it's actually imported.
+                $hit.NoCover = $false
+                $hit.NoCoverStamp = $null
+                $noCoverMap.Remove($hit.Norm)
+            }
+            $matched++
+        }
+        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+
+        if ($updates.Count -gt 0) {
+            try { Apply-TitleKeyedAssetUpdates -Updates $updates }
+            catch { Log-Message "TheCoverProject import - asset write error: $_" "Red" }
+        }
+        [System.Windows.Forms.MessageBox]::Show(
+            "Matched && imported: $matched`nSaved files that didn't match any missing game: $unmatched`n`nTip: instead of renaming files to match, select a game and click 'Assign Saved Cover' - no matching needed. For games with nothing available on the site, select them and click 'Mark No Cover Available' so they stop showing up here.",
+            "TheCoverProject", "OK", "Information") | Out-Null
+        Log-Message "TheCoverProject: imported $matched cover(s), $unmatched file(s) unmatched." "Green"
+    })
+    $dlg.Controls.Add($btnImport)
+
+    $btnClose = Create-Button "Close" 787 641 70 26
+    $btnClose.Add_Click({ $dlg.Close() })
+    $dlg.Controls.Add($btnClose)
+
+    [void]$dlg.ShowDialog($script:mainForm)
 }
 
 function Show-GameTDBProgressWindow {
@@ -8469,6 +9472,127 @@ function Start-GameTDBCoverPackDownload {
     }
 }
 
+function Find-UpscaylBinary {
+    # Locates upscayl-bin.exe. Checks the remembered config path first, then
+    # the standard Windows install locations, then gives up (caller decides
+    # whether to prompt). Returns $null if nothing found.
+    if ($script:upscaylPath -and (Test-Path $script:upscaylPath)) {
+        return $script:upscaylPath
+    }
+    $candidates = @(
+        "$env:ProgramFiles\Upscayl\resources\bin\upscayl-bin.exe",
+        "${env:ProgramFiles(x86)}\Upscayl\resources\bin\upscayl-bin.exe",
+        "$env:LOCALAPPDATA\Programs\Upscayl\resources\bin\upscayl-bin.exe",
+        "$env:LOCALAPPDATA\Programs\upscayl\resources\bin\upscayl-bin.exe"
+    )
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) {
+            $script:upscaylPath = $c
+            Save-Config
+            return $c
+        }
+    }
+    return $null
+}
+
+function Invoke-UpscaylBatchUpscale {
+    # Batch-upscales every image in $InputFolder that doesn't already have a
+    # matching file (by base name) in $OutputFolder, using the real Upscayl
+    # CLI binary (upscayl-bin.exe, shipped inside the Upscayl app install).
+    # Only the missing files are staged and processed in one call, so images
+    # already upscaled on a previous run are never reprocessed.
+    param(
+        [Parameter(Mandatory)][string]$InputFolder,
+        [Parameter(Mandatory)][string]$OutputFolder,
+        [string]$Model = "digital-art-4x",
+        [int]$Scale = 4
+    )
+    $result = @{ Upscaled = 0; Skipped = 0; Failed = 0; Files = @() }
+
+    $bin = Find-UpscaylBinary
+    if (-not $bin) {
+        Log-Message "Upscayl not found. Install it (upscayl.org) or locate upscayl-bin.exe." "Red"
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.Title = "Locate upscayl-bin.exe (inside your Upscayl install folder)"
+        $fd.Filter = "upscayl-bin.exe|upscayl-bin.exe|All files|*.*"
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK -and (Test-Path $fd.FileName)) {
+            $bin = $fd.FileName
+            $script:upscaylPath = $bin
+            Save-Config
+        } else {
+            Log-Message "Upscayl upscaling skipped - no binary selected." "Yellow"
+            return $result
+        }
+    }
+    $modelsDir = Join-Path (Split-Path (Split-Path $bin -Parent) -Parent) "models"
+    if (-not (Test-Path $modelsDir)) {
+        Log-Message "Upscayl models folder not found at $modelsDir - upscale may fail." "Yellow"
+    }
+
+    if (-not (Test-Path $InputFolder)) {
+        Log-Message "Upscayl input folder not found: $InputFolder" "Red"
+        return $result
+    }
+    if (-not (Test-Path $OutputFolder)) {
+        New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
+    }
+
+    $srcFiles = Get-ChildItem -Path $InputFolder -File -Include *.png,*.jpg,*.jpeg,*.webp -ErrorAction SilentlyContinue
+    $todo = @()
+    foreach ($f in $srcFiles) {
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+        $existing = Get-ChildItem -Path $OutputFolder -File -Filter "$base.*" -ErrorAction SilentlyContinue
+        if ($existing -and $existing.Count -gt 0) {
+            $result.Skipped++
+        } else {
+            $todo += $f
+        }
+    }
+    if ($todo.Count -eq 0) {
+        Log-Message "Upscayl: nothing to do, all $($srcFiles.Count) already present in output." "Cyan"
+        return $result
+    }
+
+    # Stage only the missing files so upscayl-bin's single directory-batch
+    # call never touches (or re-upscales) files that already have output.
+    $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("upscayl_stage_" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $stage -Force | Out-Null
+    try {
+        foreach ($f in $todo) { Copy-Item -Path $f.FullName -Destination (Join-Path $stage $f.Name) -Force }
+
+        Log-Message "Upscayl: upscaling $($todo.Count) image(s) with $Model at ${Scale}x..." "Cyan"
+        $argList = @(
+            "-i", $stage,
+            "-o", $OutputFolder,
+            "-s", $Scale,
+            "-m", $modelsDir,
+            "-n", $Model,
+            "-f", "png",
+            "-c", "0"
+        )
+        $proc = Start-Process -FilePath $bin -ArgumentList $argList -NoNewWindow -Wait -PassThru
+        if ($proc.ExitCode -ne 0) {
+            Log-Message "Upscayl exited with code $($proc.ExitCode) - check GPU/Vulkan drivers." "Red"
+        }
+
+        foreach ($f in $todo) {
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            $outFile = Join-Path $OutputFolder "$base.png"
+            if (Test-Path $outFile) {
+                $result.Upscaled++
+                $result.Files += @{ SourceName = $f.Name; OutputPath = $outFile }
+            } else {
+                $result.Failed++
+            }
+        }
+    } finally {
+        Remove-Item -Path $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Log-Message "Upscayl done: Upscaled $($result.Upscaled)  Skipped(existing) $($result.Skipped)  Failed $($result.Failed)" "Green"
+    return $result
+}
+
 function Start-LibretroCoverPackDownload {
     # Boxart-only (Named_Boxarts) download from the libretro-thumbnails GitHub org.
     # Matches by normalized game title (no ID scheme on this source), one GitHub
@@ -8484,7 +9608,11 @@ function Start-LibretroCoverPackDownload {
         [switch]$RenameToTitle,
         [switch]$ConvertToPng,
         [switch]$OneGameOnly,
-        [string]$OneGameTitle
+        [string]$OneGameTitle,
+        # If set, after all thumbnails are downloaded, batch-upscale them
+        # (box2dThumb -> box2dfront) with the real Upscayl CLI at 4x using
+        # the Digital Art model, and write assets.box_front for the results.
+        [switch]$UpscaleAfterDownload
     )
     $info = $script:libretroPlatforms[$Platform]
     if (-not $info) {
@@ -8501,12 +9629,13 @@ function Start-LibretroCoverPackDownload {
         }
     }
 
-    # Named_Boxarts on libretro-thumbnails is always box FRONT art (PNG, scaled
-    # down to a max of 512px wide if larger) - there is no full box-wrap source
-    # here, so this always writes box front, unlike the GameTDB path where
-    # -UseBoxFull chooses between box2dfront and boxFull.
-    $assetKey = "assets.box_front"
-    $folderName = "box2dfront"
+    # Named_Boxarts on libretro-thumbnails is small/thumbnail-res (max ~512px
+    # wide), so these land in box2dThumb, not box2dfront. If -UpscaleAfterDownload
+    # is set, a batch Upscayl pass (4x, Digital Art) turns them into real
+    # box2dfront images afterward; assets.box_front_thumb is written here so
+    # you always have a record of the raw source even before upscaling.
+    $assetKey = "assets.box_front_thumb"
+    $folderName = "box2dThumb"
 
     Log-Message "========================================" "Cyan"
     Log-Message "LIBRETRO-THUMBNAILS COVER PACK - $($info.Label)" "Cyan"
@@ -8614,6 +9743,7 @@ function Start-LibretroCoverPackDownload {
 
         $ok = 0; $skip = 0; $fail = 0; $n = 0
         $aborted = $false
+        $thumbList = New-Object System.Collections.ArrayList
 
         foreach ($tk in $keys) {
             if ($script:gtdbCoverPackAbort) {
@@ -8660,6 +9790,7 @@ function Start-LibretroCoverPackDownload {
                     if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
                     $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $dest -Collection $col
                 }
+                if ($UpscaleAfterDownload) { [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $dest }) }
                 continue
             }
 
@@ -8678,6 +9809,7 @@ function Start-LibretroCoverPackDownload {
                         if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
                         $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $finalPath -Collection $col
                     }
+                    if ($UpscaleAfterDownload) { [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $finalPath }) }
                 } else {
                     if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
                     $fail++
@@ -8694,6 +9826,38 @@ function Start-LibretroCoverPackDownload {
                 Apply-TitleKeyedAssetUpdates -Updates $assetUpdates
             } catch {
                 Log-Message "Asset path write error: $_" "Red"
+            }
+        }
+
+        if ($UpscaleAfterDownload -and $thumbList.Count -gt 0 -and $col -and $col.mediaPath) {
+            Log-Message "========================================" "Cyan"
+            Log-Message "UPSCAYL: box2dThumb -> box2dfront (4x, Digital Art)" "Cyan"
+            $thumbDir = Join-Path $col.mediaPath "box2dThumb"
+            $frontDir = Join-Path $col.mediaPath "box2dfront"
+            $upResult = Invoke-UpscaylBatchUpscale -InputFolder $thumbDir -OutputFolder $frontDir -Model "digital-art-4x" -Scale 4
+
+            if ($WriteAssets -and $col -and $upResult.Files.Count -gt 0) {
+                # Map upscaled output files back to their title key via the
+                # thumb-file base name recorded in $thumbList (same base name
+                # is preserved through the upscale, only the folder changes).
+                $baseToTk = @{}
+                foreach ($item in $thumbList) {
+                    $b = [System.IO.Path]::GetFileNameWithoutExtension($item.ThumbPath)
+                    $baseToTk[$b] = $item.Tk
+                }
+                $frontUpdates = @{}
+                foreach ($f in $upResult.Files) {
+                    $b = [System.IO.Path]::GetFileNameWithoutExtension($f.SourceName)
+                    if ($baseToTk.ContainsKey($b)) {
+                        $ftk = $baseToTk[$b]
+                        if (-not $frontUpdates.ContainsKey($ftk)) { $frontUpdates[$ftk] = @{} }
+                        $frontUpdates[$ftk]["assets.box_front"] = Get-RelativeAssetPath -Path $f.OutputPath -Collection $col
+                    }
+                }
+                if ($frontUpdates.Count -gt 0) {
+                    try { Apply-TitleKeyedAssetUpdates -Updates $frontUpdates }
+                    catch { Log-Message "Asset path write error (box_front after upscale): $_" "Red" }
+                }
             }
         }
 
