@@ -1,5 +1,78 @@
 ﻿# ============================================================================
 # METADATA REPAIR TOOL
+# Version: 2.5.41 - Roadmap #6 (final item): RetroAchievements integration.
+#   New Settings -> API Keys fields for RA username + Web API key. New
+#   "Check RetroAchievements..." button in Hash Match Tools: hashes each
+#   ROM (MD5, via .NET's built-in hasher - no compiled helper needed like
+#   CRC32) and resolves it to a game via RA's hash->ID lookup
+#   (dorequest.php?r=gameid, the same endpoint emulator cores use - not
+#   part of RA's newer documented REST API, but the real long-standing
+#   mechanism), then pulls achievement count + user unlock count via the
+#   documented API_GetGameInfoAndUserProgress.php. Verified exact field
+#   names (NumAchievements/NumAwardedToUser/etc.) against RA's official
+#   api-docs before writing this, same care taken with SteamGridDB/Pegasus
+#   asset keys earlier. Flagged honestly, in both the UI log and the
+#   Workflow Guide, that plain file-MD5 only matches RA's hash for
+#   cartridge-style platforms - disc-based/NES-style systems need RA's own
+#   RAHasher tool, which this doesn't attempt to reimplement. Report-only,
+#   same non-destructive pattern as the rest of Hash Match Tools; same
+#   pacing + circuit breaker as GameTDB/SteamGridDB. This closes out the
+#   full 6-item roadmap from the PegasusBridge review.
+# Version: 2.5.40 - Roadmap #5: ROM hash-based matching, generalized from
+#   the existing SNES-only "Match ROMs by Checksum" (GameDB-SNES) to any
+#   platform via standard No-Intro/Redump/TOSEC DAT files. New sidebar
+#   section "Hash Match Tools": Import DAT File... parses a user-supplied
+#   .dat/.xml into a CRC32->title JSON cached per collection (same shape as
+#   snes_titles_raw.json); Match by Checksum hashes a ROM folder with the
+#   existing compiled MrtCrc32 engine and looks games up by exact file
+#   content instead of filename/title guessing - the actual fix for the
+#   whole "Kuru Kuru Kururin" vs "kurukurukurin.jpg" class of bug this
+#   conversation spent so long patching around. Report-only like its SNES
+#   counterpart (never writes metadata directly); if a collection is
+#   loaded it additionally flags hash-confirmed titles that disagree with
+#   current metadata as "TITLE MISMATCH" for manual review. No fetching of
+#   DAT files themselves - No-Intro/Redump require manual download, so
+#   this doesn't fabricate a scraper for them. Existing SNES-specific
+#   Match-RomsByChecksum untouched.
+# Version: 2.5.39 - Added SteamGridDB as a 4th Site option in the Cover
+#   Pack dialog (#4 in the roadmap). Fully automated, unlike TheCoverProject
+#   - real API, no browser tabs. New Settings -> API Keys section for the
+#   free API key. System/Region hidden (not applicable); the cover-types
+#   list is swapped for SteamGridDB's own Grids/Heroes/Logos/Icons, mapped
+#   to the closest real Pegasus asset keys (assets.steamgrid, assets.logo,
+#   assets.background, assets.tile - the last one's a loose fit, flagged in
+#   the description text and the Guide). Matches by title like
+#   TheCoverProject/Libretro-Thumbnails. Reuses the same pacing/circuit-
+#   breaker/persisted-no-art patterns built for GameTDB in 2.5.37-2.5.38,
+#   applied fresh since this is a different API. Workflow Guide updated
+#   with a new page covering both TheCoverProject and SteamGridDB (the
+#   former was promised in an earlier changelog entry but never actually
+#   added - fixed now). Existing GameTDB/Libretro/TheCoverProject code
+#   paths untouched.
+# Version: 2.5.38 - Extended the "confirmed missing" tracking from
+#   TheCoverProject to the GameTDB Cover Pack downloader. A game/cover-type
+#   combo where every region tried came back a clean 404 (never a network
+#   error - see 2.5.37) gets remembered per-collection in
+#   gametdb_no_art_marks.json, and skipped on future scans instead of being
+#   re-requested - the same "don't keep re-asking a settled question"
+#   principle, just automated instead of manual since GameTDB's API can
+#   actually tell the difference between failed-to-ask and confirmed-no.
+#   Marks expire after 30 days and get retried automatically (GameTDB's
+#   library does grow over time), and clear immediately the moment art for
+#   that game/type is actually found on a later scan. Summary line now
+#   breaks out how many skips were "already confirmed missing" vs already
+#   having the file. Purely additive - normal downloads unaffected.
+# Version: 2.5.37 - GameTDB Cover Pack downloader: (1) paced every real
+#   network request with a 200ms delay (RequestDelayMs param) instead of
+#   hammering art.gametdb.com as fast as the loop allows; (2) failures are
+#   now split into "confirmed not found" (clean 404 - a normal, expected
+#   answer) vs "actual error" (timeout, 5xx, connection failure) - only the
+#   latter count toward a new circuit breaker that stops the whole download
+#   after 8 consecutive real errors in a row, since that pattern means the
+#   server is unreachable/rate-limiting, not that the next 500 games all
+#   genuinely lack art. failed_covers.csv now has a Reason column showing
+#   which case each row was. Purely additive to the download loop - normal
+#   successful downloads, skips, and folder/asset behavior are unchanged.
 # Version: 2.5.36 - TheCoverProject "Assign Saved Cover" now offers to crop
 #   the full wrap you just picked into Box Front, Box Back, AND Box Thumb
 #   right away. A popup shows the image with two draggable divider lines
@@ -173,11 +246,14 @@ public static class MrtCrc32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.17"
+$script:version = "2.5.41"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
 $script:upscaylPath = ""
+$script:steamGridDbApiKey = ""
+$script:raUsername = ""
+$script:raApiKey = ""
 $script:currentCollection = $null
 $script:logBox = $null
 $script:editorBox = $null
@@ -650,6 +726,15 @@ function Load-Config {
             if ($null -ne $config.upscaylPath -and -not [string]::IsNullOrWhiteSpace([string]$config.upscaylPath)) {
                 $script:upscaylPath = [string]$config.upscaylPath
             }
+            if ($null -ne $config.steamGridDbApiKey) {
+                $script:steamGridDbApiKey = [string]$config.steamGridDbApiKey
+            }
+            if ($null -ne $config.raUsername) {
+                $script:raUsername = [string]$config.raUsername
+            }
+            if ($null -ne $config.raApiKey) {
+                $script:raApiKey = [string]$config.raApiKey
+            }
             $script:collections = @{}
             if ($null -ne $config.collections) {
                 $config.collections.PSObject.Properties | ForEach-Object {
@@ -686,6 +771,9 @@ function Save-Config {
             themeMode   = $(if ($script:themeMode) { $script:themeMode } else { "Default" })
             pegasusPath = $(if ($script:pegasusPath) { [string]$script:pegasusPath } else { "" })
             upscaylPath = $(if ($script:upscaylPath) { [string]$script:upscaylPath } else { "" })
+            steamGridDbApiKey = $(if ($script:steamGridDbApiKey) { [string]$script:steamGridDbApiKey } else { "" })
+            raUsername = $(if ($script:raUsername) { [string]$script:raUsername } else { "" })
+            raApiKey = $(if ($script:raApiKey) { [string]$script:raApiKey } else { "" })
         }
         $json = $config | ConvertTo-Json -Depth 6
         $json | Out-File $script:configPath -Encoding UTF8 -Force
@@ -2306,7 +2394,7 @@ function Show-DeveloperLogDialog {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Settings"
-    $dlg.Size = New-Object System.Drawing.Size(480, 360)
+    $dlg.Size = New-Object System.Drawing.Size(480, 560)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -2456,10 +2544,122 @@ function Show-SettingsDialog {
         $tx += $themeBw + $gap
     }
 
+    # ========== Section 4: API Keys ==========
+    $grpApi = New-Object System.Windows.Forms.GroupBox
+    $grpApi.Text = " API Keys "
+    $grpApi.Location = New-Object System.Drawing.Point($secX, 282)
+    $grpApi.Size = New-Object System.Drawing.Size($secW, 190)
+    $grpApi.ForeColor = $script:theme.text
+    $grpApi.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $grpApi.BackColor = $script:theme.background
+    $dlg.Controls.Add($grpApi)
+
+    $lblSgdbKey = New-Object System.Windows.Forms.Label
+    $lblSgdbKey.Text = "SteamGridDB API Key"
+    $lblSgdbKey.Location = New-Object System.Drawing.Point(12, 2)
+    $lblSgdbKey.Size = New-Object System.Drawing.Size(300, 16)
+    $lblSgdbKey.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblSgdbKey.ForeColor = $script:theme.textDim
+    $grpApi.Controls.Add($lblSgdbKey)
+
+    $txtSgdbKey = New-Object System.Windows.Forms.TextBox
+    $txtSgdbKey.Location = New-Object System.Drawing.Point(12, 28)
+    $txtSgdbKey.Size = New-Object System.Drawing.Size(($secW - 24), 22)
+    $txtSgdbKey.BackColor = $script:theme.editor
+    $txtSgdbKey.ForeColor = $script:theme.text
+    $txtSgdbKey.BorderStyle = "FixedSingle"
+    $txtSgdbKey.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $txtSgdbKey.UseSystemPasswordChar = $true
+    $txtSgdbKey.Text = $(if ($script:steamGridDbApiKey) { $script:steamGridDbApiKey } else { "" })
+    $grpApi.Controls.Add($txtSgdbKey)
+
+    $btnSaveSgdbKey = Create-Button "Save Key" 12 60 $btnW $btnH
+    $btnSaveSgdbKey.Add_Click({
+        $script:steamGridDbApiKey = $txtSgdbKey.Text.Trim()
+        try { Save-Config } catch {}
+        Log-Message ("SteamGridDB API key {0}." -f $(if ($script:steamGridDbApiKey) { "saved" } else { "cleared" })) "Cyan"
+    })
+    $grpApi.Controls.Add($btnSaveSgdbKey)
+
+    $lnkSgdbGet = New-Object System.Windows.Forms.LinkLabel
+    $lnkSgdbGet.Text = "Get a free key at steamgriddb.com/profile/preferences/api"
+    $lnkSgdbGet.Location = New-Object System.Drawing.Point((12 + $btnW + $gap), 66)
+    $lnkSgdbGet.Size = New-Object System.Drawing.Size(($secW - 24 - $btnW - $gap), 18)
+    $lnkSgdbGet.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lnkSgdbGet.LinkColor = $script:theme.accent
+    $lnkSgdbGet.Add_LinkClicked({
+        try { Start-Process "https://www.steamgriddb.com/profile/preferences/api" } catch {}
+    })
+    $grpApi.Controls.Add($lnkSgdbGet)
+
+    $lblRaHeader = New-Object System.Windows.Forms.Label
+    $lblRaHeader.Text = "RetroAchievements"
+    $lblRaHeader.Location = New-Object System.Drawing.Point(12, 94)
+    $lblRaHeader.Size = New-Object System.Drawing.Size(300, 16)
+    $lblRaHeader.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lblRaHeader.ForeColor = $script:theme.textDim
+    $grpApi.Controls.Add($lblRaHeader)
+
+    $raUserW = 140
+    $txtRaUser = New-Object System.Windows.Forms.TextBox
+    $txtRaUser.Location = New-Object System.Drawing.Point(12, 112)
+    $txtRaUser.Size = New-Object System.Drawing.Size($raUserW, 22)
+    $txtRaUser.BackColor = $script:theme.editor
+    $txtRaUser.ForeColor = $script:theme.text
+    $txtRaUser.BorderStyle = "FixedSingle"
+    $txtRaUser.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $txtRaUser.Text = $(if ($script:raUsername) { $script:raUsername } else { "" })
+    $grpApi.Controls.Add($txtRaUser)
+    $lblRaUserHint = New-Object System.Windows.Forms.Label
+    $lblRaUserHint.Text = "Username"
+    $lblRaUserHint.Location = New-Object System.Drawing.Point(12, 136)
+    $lblRaUserHint.Size = New-Object System.Drawing.Size($raUserW, 14)
+    $lblRaUserHint.Font = New-Object System.Drawing.Font("Segoe UI", 7)
+    $lblRaUserHint.ForeColor = $script:theme.textDim
+    $grpApi.Controls.Add($lblRaUserHint)
+
+    $txtRaKey = New-Object System.Windows.Forms.TextBox
+    $txtRaKey.Location = New-Object System.Drawing.Point((12 + $raUserW + $gap), 112)
+    $txtRaKey.Size = New-Object System.Drawing.Size(($secW - 24 - $raUserW - $gap), 22)
+    $txtRaKey.BackColor = $script:theme.editor
+    $txtRaKey.ForeColor = $script:theme.text
+    $txtRaKey.BorderStyle = "FixedSingle"
+    $txtRaKey.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $txtRaKey.UseSystemPasswordChar = $true
+    $txtRaKey.Text = $(if ($script:raApiKey) { $script:raApiKey } else { "" })
+    $grpApi.Controls.Add($txtRaKey)
+    $lblRaKeyHint = New-Object System.Windows.Forms.Label
+    $lblRaKeyHint.Text = "Web API Key"
+    $lblRaKeyHint.Location = New-Object System.Drawing.Point((12 + $raUserW + $gap), 136)
+    $lblRaKeyHint.Size = New-Object System.Drawing.Size(($secW - 24 - $raUserW - $gap), 14)
+    $lblRaKeyHint.Font = New-Object System.Drawing.Font("Segoe UI", 7)
+    $lblRaKeyHint.ForeColor = $script:theme.textDim
+    $grpApi.Controls.Add($lblRaKeyHint)
+
+    $btnSaveRaKey = Create-Button "Save RA Login" 12 156 $btnW $btnH
+    $btnSaveRaKey.Add_Click({
+        $script:raUsername = $txtRaUser.Text.Trim()
+        $script:raApiKey = $txtRaKey.Text.Trim()
+        try { Save-Config } catch {}
+        Log-Message ("RetroAchievements login {0}." -f $(if ($script:raApiKey) { "saved" } else { "cleared" })) "Cyan"
+    })
+    $grpApi.Controls.Add($btnSaveRaKey)
+
+    $lnkRaGet = New-Object System.Windows.Forms.LinkLabel
+    $lnkRaGet.Text = "Get your Web API key at retroachievements.org/settings"
+    $lnkRaGet.Location = New-Object System.Drawing.Point((12 + $btnW + $gap), 162)
+    $lnkRaGet.Size = New-Object System.Drawing.Size(($secW - 24 - $btnW - $gap), 18)
+    $lnkRaGet.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $lnkRaGet.LinkColor = $script:theme.accent
+    $lnkRaGet.Add_LinkClicked({
+        try { Start-Process "https://retroachievements.org/settings" } catch {}
+    })
+    $grpApi.Controls.Add($lnkRaGet)
+
     # ========== Close ==========
-    $btnClose = Create-Button "Close" ([Math]::Floor(($dlg.ClientSize.Width - $btnW) / 2)) 290 $btnW $btnH
+    $btnClose = Create-Button "Close" ([Math]::Floor(($dlg.ClientSize.Width - $btnW) / 2)) 482 $btnW $btnH
     # Fixed position relative to dialog content
-    $btnClose.Location = New-Object System.Drawing.Point( (16 + [Math]::Floor(($secW - $btnW) / 2)) , 290)
+    $btnClose.Location = New-Object System.Drawing.Point( (16 + [Math]::Floor(($secW - $btnW) / 2)) , 482)
     $btnClose.Tag = $txtPegasus
     $btnClose.Add_Click({
         param($sender, $e)
@@ -3449,6 +3649,39 @@ function Show-MainWindow {
     $libretroGroup.Controls.Add($btnLr1)
 
     # ============================================================
+    # SECTION 5b: HASH MATCH TOOLS
+    # ============================================================
+    # ROM-hash based title matching (#5 in the roadmap): identifies games
+    # by the exact CRC32 of the ROM file against an imported No-Intro/
+    # Redump DAT database, instead of fuzzy title/filename matching. Same
+    # underlying MrtCrc32 engine SNS Code Tools' "Match ROMs by Checksum"
+    # already uses for GameDB-SNES, generalized to any platform.
+    $hashExpandedH = 86
+    $hashGroup = New-Object System.Windows.Forms.GroupBox
+    $hashGroup.Text = " Hash Match Tools "
+    $hashGroup.Location = New-Object System.Drawing.Point(5, 1360)
+    $hashGroup.Size = New-Object System.Drawing.Size($leftW, $hashExpandedH)
+    $hashGroup.ForeColor = $script:theme.text
+    $hashGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($hashGroup)
+
+    $hashBtnW = [Math]::Floor(($leftW - 16 - $gap) / 2)
+    $btnHashImport = Create-Button "Import DAT File..." 8 22 $hashBtnW 26
+    $btnHashImport.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnHashImport.Add_Click({ Import-DatFileDatabase })
+    $hashGroup.Controls.Add($btnHashImport)
+
+    $btnHashMatch = Create-Button "Match by Checksum" (8 + $hashBtnW + $gap) 22 $hashBtnW 26
+    $btnHashMatch.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnHashMatch.Add_Click({ Match-RomsByChecksumGeneric })
+    $hashGroup.Controls.Add($btnHashMatch)
+
+    $btnHashRa = Create-Button "Check RetroAchievements..." 8 52 ($leftW - 16) 26
+    $btnHashRa.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnHashRa.Add_Click({ Start-RetroAchievementsCheck })
+    $hashGroup.Controls.Add($btnHashRa)
+
+    # ============================================================
     # SECTION 6: BUILDER / REPAIR TOOLS
     # ============================================================
     # 11 button rows: y=22, step 30, btn h=26 -> last bottom 22+10*30+26=348 -> height 386 (extra row for Sort)
@@ -3588,6 +3821,7 @@ function Show-MainWindow {
     Register-LeftSection -Group $gameIDGroup -ExpandedHeight 90 -Collapsible $true -StartExpanded $false -Title "Game ID Tools"
     Register-LeftSection -Group $gtdbGroup -ExpandedHeight $gtdbExpandedH -Collapsible $true -StartExpanded $false -Title "GameTDB Tools"
     Register-LeftSection -Group $libretroGroup -ExpandedHeight $libretroExpandedH -Collapsible $true -StartExpanded $false -Title "Libretro Tools"
+    Register-LeftSection -Group $hashGroup -ExpandedHeight $hashExpandedH -Collapsible $true -StartExpanded $false -Title "Hash Match Tools"
     Register-LeftSection -Group $builderGroup -ExpandedHeight $builderExpandedH -Collapsible $true -StartExpanded $true -Title "Build & Repair Tools"
     
     # Delay relayout until after form is shown to avoid layout issues
@@ -4447,6 +4681,8 @@ ASSET FOLDER REFERENCE:
 - fanart/      -> assets.fanart
 - cartridge/   -> assets.cartridge
 - steamgrid/   -> assets.steamgrid
+- hero/        -> assets.background (SteamGridDB "Heroes")
+- tile/        -> assets.tile (SteamGridDB "Icons" - loose fit, check your theme)
 - marquee/     -> assets.marquee
 - banner/      -> assets.banner
 "@
@@ -4765,7 +5001,118 @@ SNES (SNS-XXXX-USA) is not on GameTDB art CDN -
 use SNS Code Tools for those.
 "@
     [void]$nTools.Nodes.Add("GameTDB Tools")
-    
+
+    $script:__wfContent["Hash Match Tools"] = @"
+HASH MATCH TOOLS
+
+Identifies games by the exact CRC32 checksum of the ROM file itself,
+instead of guessing from filenames or titles. This is the same engine
+SNS Code Tools' "Match ROMs by Checksum" already uses for SNES (via
+GameDB-SNES), generalized here to any platform using standard
+No-Intro / Redump / TOSEC DAT files.
+
+Import DAT File...
+  - Pick a .dat/.xml file you've downloaded yourself from
+    datomatic.no-intro.org or redump.org (no login/API is scripted
+    here - these sites require a manual download)
+  - Parses every <game name="..."><rom crc="..."/></game> entry into
+    a CRC32 -> title lookup, saved as <name>_dat_titles.json in the
+    collection's media/Tools folder for reuse
+  - You choose the short name (e.g. "NES", "PSX") used for the file
+
+Match by Checksum
+  - Pick which imported database to use (if more than one), then a
+    folder of ROMs to check
+  - Computes each file's real CRC32 and looks it up - no filename or
+    title guessing involved at all, so mismatched/renamed files still
+    match correctly
+  - Optional: strip a 512-byte copier header before hashing (only
+    needed for platforms like SNES that have one - leave off for
+    most platforms, since No-Intro/Redump hash files as distributed)
+  - Produces rom_checksum_report_<db>.txt (every file, matched or
+    not) and checksum_titles_<db>.txt (KEY=Title, keyed by ROM
+    filename) - same non-destructive, report-first shape as the
+    SNES-specific tool
+  - If a collection is loaded: also cross-checks each hash-confirmed
+    title against that game's CURRENT metadata title (matched by the
+    file: field) and flags any mismatch as "TITLE MISMATCH" in the
+    report - catches real typos/mislabels/wrong-region titles with
+    certainty, for you to review and fix by hand. Nothing is changed
+    in metadata automatically.
+
+Check RetroAchievements...
+  - Requires a RetroAchievements username + Web API key under
+    Settings -> API Keys (free account; key at
+    retroachievements.org/settings)
+  - For each ROM: computes its MD5, resolves it to a RetroAchievements
+    game ID by hash (same "identify by exact file content" principle
+    as Match by Checksum, just against RA's own hash database instead
+    of a No-Intro DAT), then pulls that game's achievement count and
+    how many the configured user has unlocked
+  - CAVEAT: a plain file MD5 only matches RA's hash for cartridge-style
+    platforms (SNES, Genesis, GB/GBA, N64, etc.) - disc-based systems
+    and a few others (NES, PSX, Sega CD) use special hashing rules
+    this tool doesn't replicate, so expect "no match" there even for
+    games RA does support. RetroAchievements' own RAHasher tool is the
+    correct way to hash those.
+  - Report-only: writes retroachievements_report.txt (filename, md5,
+    RA game ID, title, unlocked/total, completion %) - never touches
+    metadata
+"@
+    [void]$nTools.Nodes.Add("Hash Match Tools")
+
+    $script:__wfContent["TheCoverProject & SteamGridDB"] = @"
+DOWNLOAD COVER PACK - OTHER SITES
+
+Same "Download Cover Pack..." dialog as GameTDB/Libretro, via the
+Site dropdown at the top.
+
+TheCoverProject
+  - No API, blocks scripted access (Cloudflare) - System/Region are
+    hidden since neither applies (title search only, no filters)
+  - Click Start to scan for games missing box_front art and get a
+    list of ready-made search links - opens a separate assist
+    window instead of downloading automatically
+  - Double-click a row (or select + Open Selected) to search that
+    game on the actual site in your browser
+  - Assign Saved Cover: pick the file you saved, then say whether
+    it's a Box Front, Box Full, or Box Back - no renaming needed,
+    the app already knows which game it's for. TheCoverProject
+    only lists full box scans for some platforms, so a Box Full
+    pick offers to crop it into Front/Back/Thumb right there
+  - No Cover / Retry: mark a game as checked-with-nothing-found
+    (timestamped, persisted per collection) so it stops showing up
+    as open work, or clear that mark and re-check any time
+  - Match & Import in the same window matches saved files back to
+    games by title and imports them, converting to PNG
+
+SteamGridDB
+  - Has a real API - fully automated like GameTDB, no browser tabs
+  - Requires a free API key: steamgriddb.com/profile/preferences/api,
+    entered under Settings -> API Keys
+  - System/Region are hidden (SteamGridDB has neither) - the cover
+    types list is replaced with SteamGridDB's own categories:
+      Grids  -> assets.steamgrid (steamgrid/)   [checked by default]
+      Logos  -> assets.logo (wheel/)            [checked by default]
+      Heroes -> assets.background (hero/) - closest official match,
+        not an exact equivalent to SteamGridDB's own "Hero" concept
+      Icons  -> assets.tile (tile/) - Pegasus has no dedicated icon
+        field; this is a loose fit, check your theme actually reads
+        "tile" before relying on it
+  - Matches by game title (like Libretro-Thumbnails/TheCoverProject),
+    not GameTDB's game_id - works for any collection regardless of
+    platform ID scheme
+  - Same Only missing / Save into media / Write asset paths /
+    Rename to title / Convert to PNG options apply
+  - Confirmed "no art of this type" results are remembered per
+    collection (steamgriddb_no_art_marks.json) and skipped on
+    future scans for 30 days, same idea as GameTDB's tracking
+  - Repeated real errors (not "no results") stop the whole run
+    after 8 in a row, logged clearly rather than mislabeling
+    hundreds of games as having no art
+"@
+    [void]$nTools.Nodes.Add("TheCoverProject & SteamGridDB")
+
     $script:__wfContent["Build & Repair Tools"] = @"
 BUILD & REPAIR TOOLS
 
@@ -7094,6 +7441,70 @@ function Get-GameTDBCoverTypeAssetKey {
     }
 }
 
+function Get-GameTDBNoArtStorePath {
+    param($Collection)
+    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
+    $dir = Split-Path $Collection.metadataPath -Parent
+    if (-not $dir) { return $null }
+    return (Join-Path $dir "gametdb_no_art_marks.json")
+}
+
+function Get-GameTDBNoArtMap {
+    # Same idea as TheCoverProject's no-cover tracking: a clean, confirmed
+    # 404 from GameTDB means "no art for this game/type", which is a real
+    # answer worth remembering instead of asking again on every single scan.
+    # Keyed by asset key first (box_front/box_full/box_back are tracked
+    # separately - a game can be missing one and have another), then by
+    # game_id -> ISO timestamp of when it was last confirmed missing.
+    param($Collection)
+    $map = @{}
+    $path = Get-GameTDBNoArtStorePath -Collection $Collection
+    if (-not $path -or -not (Test-Path $path)) { return $map }
+    try {
+        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($data -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($assetProp in $data.PSObject.Properties) {
+                $inner = @{}
+                if ($assetProp.Value -is [System.Management.Automation.PSCustomObject]) {
+                    foreach ($idProp in $assetProp.Value.PSObject.Properties) {
+                        $inner[$idProp.Name] = [string]$idProp.Value
+                    }
+                }
+                $map[$assetProp.Name] = $inner
+            }
+        }
+    } catch {}
+    return $map
+}
+
+function Save-GameTDBNoArtMap {
+    param($Collection, [hashtable]$Map)
+    $path = Get-GameTDBNoArtStorePath -Collection $Collection
+    if (-not $path) { return }
+    try {
+        ($Map | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
+    } catch {
+        Log-Message "GameTDB: couldn't save no-art list: $_" "Yellow"
+    }
+}
+
+function Test-GameTDBNoArtFresh {
+    # A mark older than this gets retried automatically on the next scan
+    # instead of being skipped forever - GameTDB's library does grow over
+    # time, so "missing last month" shouldn't mean "missing forever" without
+    # ever checking again.
+    param([hashtable]$Map, [string]$AssetKey, [string]$IdUpper, [int]$StalenessDays = 30)
+    if (-not $Map.ContainsKey($AssetKey)) { return $false }
+    if (-not $Map[$AssetKey].ContainsKey($IdUpper)) { return $false }
+    $iso = $Map[$AssetKey][$IdUpper]
+    try {
+        $dt = [datetime]::Parse($iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+        return ((Get-Date) - $dt).TotalDays -lt $StalenessDays
+    } catch {
+        return $false
+    }
+}
+
 function Get-SafeGameFileName {
     param([string]$Title)
     if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
@@ -7418,6 +7829,110 @@ function Apply-TitleKeyedAssetUpdates {
     UpdateEditor
 }
 
+function Get-SteamGridDBAssetTypeMap {
+    # SteamGridDB's own categories, mapped to the closest official Pegasus
+    # asset key per https://pegasus-frontend.org/docs/user-guide/meta-assets/.
+    # Grids and Logos map cleanly (steamgrid/grid and logo/wheel are exact
+    # matches). Heroes (wide background art) map to "background", Pegasus's
+    # own background-image field - a reasonable fit, not a perfect one.
+    # Icons have NO official Pegasus equivalent - "tile" is the closest
+    # square-image field that exists, but Pegasus's own docs describe tile
+    # as "not the desktop icon", so this is a loose fit at best. Included
+    # because some themes do read it for that purpose, but don't expect
+    # every theme to pick it up.
+    return [ordered]@{
+        "Grids"  = @{ Endpoint = "grids";  Keys = @("assets.steamgrid"); Folders = @("steamgrid"); Description = "Steam-style grid art (460x215 or 920x430 landscape, or 600x900 portrait) - assets.steamgrid" }
+        "Heroes" = @{ Endpoint = "heroes"; Keys = @("assets.background"); Folders = @("hero"); Description = "Wide background/hero art (1920x620) - assets.background (closest official match; not an exact Hero equivalent)" }
+        "Logos"  = @{ Endpoint = "logos";  Keys = @("assets.logo"); Folders = @("wheel"); Description = "Transparent title logo - assets.logo (wheel/)" }
+        "Icons"  = @{ Endpoint = "icons";  Keys = @("assets.tile"); Folders = @("tile"); Description = "Square icon art - assets.tile (Pegasus has no dedicated icon field; check your theme actually reads 'tile' before relying on this)" }
+    }
+}
+
+function Get-SteamGridDBNoArtStorePath {
+    param($Collection)
+    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
+    $dir = Split-Path $Collection.metadataPath -Parent
+    if (-not $dir) { return $null }
+    return (Join-Path $dir "steamgriddb_no_art_marks.json")
+}
+
+function Get-SteamGridDBNoArtMap {
+    # Same "confirmed missing, don't keep re-asking" tracking used for
+    # GameTDB and TheCoverProject, applied to SteamGridDB. Keyed by asset
+    # type label first (Grids/Heroes/Logos/Icons - a game can lack one and
+    # have another), then by normalized title -> ISO timestamp.
+    param($Collection)
+    $map = @{}
+    $path = Get-SteamGridDBNoArtStorePath -Collection $Collection
+    if (-not $path -or -not (Test-Path $path)) { return $map }
+    try {
+        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($data -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($typeProp in $data.PSObject.Properties) {
+                $inner = @{}
+                if ($typeProp.Value -is [System.Management.Automation.PSCustomObject]) {
+                    foreach ($normProp in $typeProp.Value.PSObject.Properties) {
+                        $inner[$normProp.Name] = [string]$normProp.Value
+                    }
+                }
+                $map[$typeProp.Name] = $inner
+            }
+        }
+    } catch {}
+    return $map
+}
+
+function Save-SteamGridDBNoArtMap {
+    param($Collection, [hashtable]$Map)
+    $path = Get-SteamGridDBNoArtStorePath -Collection $Collection
+    if (-not $path) { return }
+    try {
+        ($Map | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
+    } catch {
+        Log-Message "SteamGridDB: couldn't save no-art list: $_" "Yellow"
+    }
+}
+
+function Test-SteamGridDBNoArtFresh {
+    param([hashtable]$Map, [string]$TypeLabel, [string]$Norm, [int]$StalenessDays = 30)
+    if (-not $Map.ContainsKey($TypeLabel)) { return $false }
+    if (-not $Map[$TypeLabel].ContainsKey($Norm)) { return $false }
+    $iso = $Map[$TypeLabel][$Norm]
+    try {
+        $dt = [datetime]::Parse($iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+        return ((Get-Date) - $dt).TotalDays -lt $StalenessDays
+    } catch {
+        return $false
+    }
+}
+
+function Search-SteamGridDBGameId {
+    # Returns the first matching SteamGridDB game ID for a title, or $null
+    # if the search genuinely came back empty (not an error - SteamGridDB
+    # just doesn't have that game). Throws on a real network/HTTP error so
+    # the caller's circuit breaker can tell the two apart.
+    param([string]$Title, [string]$ApiKey, [System.Net.WebClient]$WebClient)
+    $url = "https://www.steamgriddb.com/api/v2/search/autocomplete/" + [Uri]::EscapeDataString($Title)
+    $raw = $WebClient.DownloadString($url)
+    $resp = $raw | ConvertFrom-Json
+    if (-not $resp.success) { return $null }
+    if (-not $resp.data -or $resp.data.Count -eq 0) { return $null }
+    return [string]$resp.data[0].id
+}
+
+function Get-SteamGridDBImageUrl {
+    # Returns the URL of the first available image of the given type for a
+    # game, or $null if SteamGridDB confirmed there simply aren't any (not
+    # an error). Throws on a real network/HTTP error.
+    param([string]$GameId, [string]$Endpoint, [string]$ApiKey, [System.Net.WebClient]$WebClient)
+    $url = "https://www.steamgriddb.com/api/v2/$Endpoint/game/$GameId"
+    $raw = $WebClient.DownloadString($url)
+    $resp = $raw | ConvertFrom-Json
+    if (-not $resp.success) { return $null }
+    if (-not $resp.data -or $resp.data.Count -eq 0) { return $null }
+    return [string]$resp.data[0].url
+}
+
 function Show-GameTDBCoverPackDialog {
     # Matches Settings-style dialogs: GroupBoxes, tight layout, PS 5.1 safe
     param(
@@ -7479,6 +7994,7 @@ function Show-GameTDBCoverPackDialog {
         [void]$cmbSrc.Items.Add("GameTDB")
         [void]$cmbSrc.Items.Add("Libretro")
         [void]$cmbSrc.Items.Add("TheCoverProject")
+        [void]$cmbSrc.Items.Add("SteamGridDB")
         $grpSrc.Controls.Add($cmbSrc)
 
         $lblSys = New-Object System.Windows.Forms.Label
@@ -7577,6 +8093,25 @@ function Show-GameTDBCoverPackDialog {
 
         $fillTypes = {
             $clb = $script:__gtdbPackClb
+            if ($script:__gtdbPackIsSGDB) {
+                $clb.Items.Clear()
+                $sgdbMap = Get-SteamGridDBAssetTypeMap
+                $i = 0
+                foreach ($label in $sgdbMap.Keys) {
+                    [void]$clb.Items.Add($label)
+                    # Grids and Logos map cleanly onto real Pegasus asset
+                    # keys, so check those by default. Heroes/Icons are
+                    # looser fits (see Get-SteamGridDBAssetTypeMap) - left
+                    # unchecked so picking them is a deliberate choice.
+                    if ($label -eq "Grids" -or $label -eq "Logos") { $clb.SetItemChecked($i, $true) }
+                    $i++
+                }
+                if ($clb.Items.Count -gt 0) { $clb.SelectedIndex = 0 }
+                $rowH = 18
+                try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
+                $clb.Height = [Math]::Max($rowH + 4, [Math]::Min((4 * $rowH) + 4, 90))
+                return
+            }
             $keys = $script:__gtdbPackPlatKeys
             if (-not $clb -or -not $keys) { return }
             $clb.Items.Clear()
@@ -7664,6 +8199,23 @@ function Show-GameTDBCoverPackDialog {
             $clb = $script:__gtdbPackClb
             $lbl = $script:__gtdbPackDesc
             if (-not $clb -or -not $lbl) { return }
+            if ($script:__gtdbPackIsSGDB) {
+                if ($clb.CheckedItems.Count -eq 0) {
+                    $lbl.Text = "Check one or more SteamGridDB asset types above to see what they're for."
+                    & $relayout
+                    return
+                }
+                $sgdbMap = Get-SteamGridDBAssetTypeMap
+                $lines = New-Object System.Collections.ArrayList
+                foreach ($item in $clb.CheckedItems) {
+                    $tn = [string]$item
+                    $d = if ($sgdbMap.Contains($tn)) { $sgdbMap[$tn].Description } else { "" }
+                    [void]$lines.Add("$tn`: $d")
+                }
+                $lbl.Text = ($lines -join "`r`n")
+                & $relayout
+                return
+            }
             if ($script:__gtdbPackIsLibretro) {
                 $lbl.Text = "Boxart: thumbnail-res cover art (PNG, max ~512px wide). Saved to box2dThumb. Check 'Upscale thumbs -> boxFront' below to auto-upscale these to box2dfront (4x, Digital Art) via Upscayl. Matched by game title, region tags ignored automatically."
                 & $relayout
@@ -7686,8 +8238,10 @@ function Show-GameTDBCoverPackDialog {
         $switchSource = {
             $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
             $isTCP = ($cmbSrc.SelectedIndex -eq 2)
+            $isSGDB = ($cmbSrc.SelectedIndex -eq 3)
             $script:__gtdbPackIsLibretro = $isLibretro
             $script:__gtdbPackIsTCP = $isTCP
+            $script:__gtdbPackIsSGDB = $isSGDB
             $cmbSys.Items.Clear()
             $cmbReg.Items.Clear()
             if ($isTCP) {
@@ -7733,6 +8287,32 @@ function Show-GameTDBCoverPackDialog {
                 $clbCover.Enabled = $false
                 if ($chkBoxFull) { $chkBoxFull.Visible = $false }
                 if ($chkUpscale) { $chkUpscale.Visible = $true }
+                if ($chkFallback) { $chkFallback.Visible = $true }
+            } elseif ($isSGDB) {
+                # SteamGridDB searches by title (its own catalog, unrelated
+                # to GameTDB's console IDs), and has no region concept at
+                # all - so System and Region are both irrelevant here, same
+                # treatment as TheCoverProject. Unlike TheCoverProject
+                # though, clbCover stays enabled: it's repurposed to show
+                # SteamGridDB's own Grids/Heroes/Logos/Icons categories
+                # instead of per-platform cover types.
+                $lblSys.Visible = $false
+                $cmbSys.Visible = $false
+                $lblReg.Visible = $false
+                $cmbReg.Visible = $false
+                $cmbSrc.Size = New-Object System.Drawing.Size(390, 24)
+                [void]$cmbSys.Items.Add("(not used for SteamGridDB)")
+                $cmbSys.SelectedIndex = 0
+                $cmbSys.Enabled = $false
+                [void]$cmbReg.Items.Add("(not used for SteamGridDB)")
+                $cmbReg.SelectedIndex = 0
+                $cmbReg.Enabled = $false
+                $clbCover.Enabled = $true
+                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
+                if ($chkUpscale) { $chkUpscale.Visible = $false }
+                if ($chkFallback) { $chkFallback.Visible = $false }
+                & $fillTypes
+                & $updateDesc
             } else {
                 $lblSys.Visible = $true
                 $cmbSys.Visible = $true
@@ -7749,12 +8329,14 @@ function Show-GameTDBCoverPackDialog {
                 $clbCover.Enabled = $true
                 if ($chkBoxFull) { $chkBoxFull.Visible = $true }
                 if ($chkUpscale) { $chkUpscale.Visible = $false }
+                if ($chkFallback) { $chkFallback.Visible = $true }
             }
             if ($cmbSys.Items.Count -gt 0) { $cmbSys.SelectedIndex = 0 }
         }
 
         $script:__gtdbPackCmb = $cmbSys
         $script:__gtdbPackIsLibretro = $false
+        $script:__gtdbPackIsSGDB = $false
         $cmbSrc.Add_SelectedIndexChanged({
             try { & $switchSource } catch {}
         })
@@ -8085,6 +8667,57 @@ function Show-GameTDBCoverPackDialog {
                     $dlg.Close()
                     return
                 }
+                if ($cmbSrc.SelectedIndex -eq 3) {
+                    $types = @()
+                    foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
+                    if ($types.Count -eq 0) {
+                        [System.Windows.Forms.MessageBox]::Show("Select at least one asset type.", "SteamGridDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $outBase = $txtOut.Text.Trim()
+                    $useMedia = [bool]$chkMedia.Checked
+                    $oneGameOnly = [bool]$chkOneGame.Checked
+                    $oneGameTitle = $null
+                    if ($oneGameOnly) {
+                        if ($cmbOneGame.SelectedIndex -lt 0 -or $cmbOneGame.Items.Count -eq 0) {
+                            [System.Windows.Forms.MessageBox]::Show(
+                                "Select a game from the dropdown (or clear Search).`nA collection with games must be selected.",
+                                "SteamGridDB", "OK", "Warning") | Out-Null
+                            return
+                        }
+                        $dispSel = [string]$cmbOneGame.SelectedItem
+                        $found = $script:__coverPackGameItems | Where-Object { $_.Display -eq $dispSel } | Select-Object -First 1
+                        $oneGameTitle = if ($found) { [string]$found.Title } else { $dispSel }
+                    }
+                    $col = Get-Col
+                    if (-not $col) {
+                        [System.Windows.Forms.MessageBox]::Show("Select a collection first - SteamGridDB matches by game title.", "SteamGridDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    if ($useMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
+                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "SteamGridDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    if (-not $useMedia -and [string]::IsNullOrWhiteSpace($outBase)) {
+                        [System.Windows.Forms.MessageBox]::Show("Choose an output folder.", "SteamGridDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $dlg.Tag = @{
+                        Source        = "steamgriddb"
+                        AssetTypes    = $types
+                        OutBase       = $outBase
+                        OnlyMissing   = [bool]$chkMissing.Checked
+                        SaveIntoMedia = $useMedia
+                        WriteAssets   = [bool]$chkWrite.Checked
+                        RenameToTitle = [bool]$chkRename.Checked
+                        ConvertToPng  = [bool]$chkPng.Checked
+                        OneGameOnly   = $oneGameOnly
+                        OneGameTitle  = $oneGameTitle
+                    }
+                    $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                    $dlg.Close()
+                    return
+                }
                 $idx = $cmbSys.SelectedIndex
                 $activeKeys = $script:__gtdbPackPlatKeys
                 if (-not $activeKeys -or $idx -lt 0 -or $idx -ge $activeKeys.Count) { return }
@@ -8209,6 +8842,17 @@ function Show-GameTDBCoverPackDialog {
 
         if ($opts.Source -eq "tcp") {
             Show-TCPAssistDialog
+        } elseif ($opts.Source -eq "steamgriddb") {
+            Start-SteamGridDBCoverPackDownload `
+                -AssetTypes $opts.AssetTypes `
+                -OutBase $opts.OutBase `
+                -OnlyMissing:$opts.OnlyMissing `
+                -SaveIntoMedia:$opts.SaveIntoMedia `
+                -WriteAssets:$opts.WriteAssets `
+                -RenameToTitle:$opts.RenameToTitle `
+                -ConvertToPng:$opts.ConvertToPng `
+                -OneGameOnly:$opts.OneGameOnly `
+                -OneGameTitle $opts.OneGameTitle
         } elseif ($opts.Source -eq "libretro") {
             Start-LibretroCoverPackDownload `
                 -Platform $opts.Platform `
@@ -9114,7 +9758,8 @@ function Start-GameTDBCoverPackDownload {
         [switch]$ConvertToPng,
         [switch]$OneGameOnly,
         [string]$OneGameId,
-        [string]$OneGameTitle
+        [string]$OneGameTitle,
+        [int]$RequestDelayMs = 200
     )
     if (-not $CoverTypes -or $CoverTypes.Count -eq 0) {
         Log-Message "No cover types selected." "Red"
@@ -9278,6 +9923,19 @@ function Start-GameTDBCoverPackDownload {
 
         $ok = 0; $skip = 0; $fail = 0; $n = 0
         $aborted = $false
+        # Consecutive-failure circuit breaker: a genuine 404 just means this
+        # game has no art on GameTDB, which is expected and shouldn't count
+        # against anything. Repeated non-404 errors in a row (timeouts,
+        # connection failures, 5xx) usually mean the server is unreachable or
+        # rate-limiting - grinding through the rest of a 500-game list in
+        # that state just wastes time and hammers a server that's already
+        # struggling. So only THOSE count toward the threshold below.
+        $consecutiveErrors = 0
+        $maxConsecutiveErrors = 8
+        $circuitBroken = $false
+        $skipKnownMissing = 0
+        $noArtMap = if ($col) { Get-GameTDBNoArtMap -Collection $col } else { @{} }
+        $noArtMapDirty = $false
 
         foreach ($id in $ids) {
             if ($script:gtdbCoverPackAbort) {
@@ -9332,6 +9990,16 @@ function Start-GameTDBCoverPackDownload {
                     }
                 }
 
+                # Skip a game/type GameTDB has already confirmed (via a clean
+                # 404, not a network hiccup) has no art, unless that check is
+                # more than 30 days old. Saves a network round-trip on every
+                # rescan for art that was already established not to exist.
+                if ($col -and (Test-GameTDBNoArtFresh -Map $noArtMap -AssetKey $assetKey -IdUpper $idUpper)) {
+                    $skip++
+                    $skipKnownMissing++
+                    continue
+                }
+
                 if ($SaveIntoMedia -and $col -and $col.mediaPath) {
                     $outDir = Join-Path $col.mediaPath $folderName
                 } else {
@@ -9360,14 +10028,27 @@ function Start-GameTDBCoverPackDownload {
 
                 $saved = $false
                 $lastUrl = ""
+                $lastFailReason = "Unknown error"
+                $allNotFound = $true
                 foreach ($reg in $regionsToTry) {
                     $url = "https://art.gametdb.com/$($artInfo.ArtPath)/$coverType/$reg/$id.$ext"
                     $lastUrl = $url
+                    # Pace every real network request - GameTDB is a small
+                    # community-run server, not something to hit as fast as
+                    # the loop allows.
+                    Start-Sleep -Milliseconds $RequestDelayMs
                     try {
                         $wc.DownloadFile($url, $dest)
                         if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
                             $ok++
                             $saved = $true
+                            $consecutiveErrors = 0
+                            if ($col -and $noArtMap.ContainsKey($assetKey) -and $noArtMap[$assetKey].ContainsKey($idUpper)) {
+                                # Art showed up on GameTDB since it was last
+                                # confirmed missing - clear the stale mark.
+                                $noArtMap[$assetKey].Remove($idUpper)
+                                $noArtMapDirty = $true
+                            }
                             # Optional: rename to game title, then convert to PNG
                             $finalPath = $dest
                             try {
@@ -9410,6 +10091,23 @@ function Start-GameTDBCoverPackDownload {
                         }
                     } catch {
                         if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        # A clean 404 means "no art for this game" - that's a
+                        # real, expected answer, not a sign anything is wrong,
+                        # so it doesn't touch the error streak. Anything else
+                        # (timeout, DNS failure, 5xx, connection reset) means
+                        # something's actually wrong with the request itself.
+                        $statusCode = $null
+                        if ($_.Exception -is [System.Net.WebException] -and $_.Exception.Response -is [System.Net.HttpWebResponse]) {
+                            $statusCode = [int]$_.Exception.Response.StatusCode
+                        }
+                        if ($statusCode -eq 404) {
+                            $lastFailReason = "Not found (404)"
+                            $consecutiveErrors = 0
+                        } else {
+                            $allNotFound = $false
+                            $lastFailReason = if ($statusCode) { "HTTP $statusCode" } else { $_.Exception.Message }
+                            $consecutiveErrors++
+                        }
                     }
                 }
                 if (-not $saved) {
@@ -9419,11 +10117,31 @@ function Start-GameTDBCoverPackDownload {
                         Type   = $coverType
                         Region = $Region
                         Url    = $lastUrl
+                        Reason = $lastFailReason
                     })
+                    if ($col -and $allNotFound) {
+                        # Every region tried came back a clean 404 - genuinely
+                        # confirmed missing, not just a network hiccup, so
+                        # it's worth remembering for next time.
+                        if (-not $noArtMap.ContainsKey($assetKey)) { $noArtMap[$assetKey] = @{} }
+                        $noArtMap[$assetKey][$idUpper] = (Get-Date).ToString("o")
+                        $noArtMapDirty = $true
+                    }
+                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                        $circuitBroken = $true
+                        $aborted = $true
+                        $script:gtdbCoverPackAbort = $true
+                        Log-Message ("Stopping: $maxConsecutiveErrors consecutive network/server errors (last: $lastFailReason). This usually means GameTDB is unreachable or rate-limiting right now, not that these games have no art - try again later.") "Red"
+                        break
+                    }
                 }
             }
         }
         $wc.Dispose()
+
+        if ($noArtMapDirty -and $col) {
+            Save-GameTDBNoArtMap -Collection $col -Map $noArtMap
+        }
 
         $reportDir = $null
         if ($SaveIntoMedia -and $col -and $col.mediaPath) {
@@ -9450,13 +10168,330 @@ function Start-GameTDBCoverPackDownload {
             }
         }
 
-        $summary = "Downloaded: $ok   Skipped: $skip   Missing: $fail"
-        if ($aborted) {
+        $summary = "Downloaded: $ok   Skipped: $skip (of which $skipKnownMissing already confirmed missing)   Missing: $fail"
+        if ($circuitBroken) {
+            Log-Message "Stopped early due to repeated network errors. $summary" "Red"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Stopped - network errors`n$summary" -Aborted
+        } elseif ($aborted) {
             Log-Message "Aborted. $summary" "Yellow"
             Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
         } else {
             Log-Message "Done. $summary" "Green"
             if ($SaveIntoMedia -and $col) {
+                Log-Message "Media: $($col.mediaPath)" "Cyan"
+            } elseif ($OutBase) {
+                Log-Message "Folder: $OutBase" "Cyan"
+            }
+            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
+        }
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+        if ($prog -and -not $prog.IsDisposed) {
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
+        }
+    }
+}
+
+function Start-SteamGridDBCoverPackDownload {
+    # Mirrors Start-GameTDBCoverPackDownload's shape (pacing, real-error vs
+    # confirmed-missing circuit breaker, persisted no-art tracking) but for
+    # SteamGridDB's title-search API instead of GameTDB's ID-based direct
+    # image URLs. Matches games by normalized title (like TheCoverProject /
+    # Libretro-Thumbnails), since SteamGridDB has no relation to GameTDB's
+    # console game_id scheme at all.
+    param(
+        [string[]]$AssetTypes,
+        [string]$OutBase,
+        [switch]$OnlyMissing,
+        [switch]$SaveIntoMedia,
+        [switch]$WriteAssets,
+        [switch]$RenameToTitle,
+        [switch]$ConvertToPng,
+        [switch]$OneGameOnly,
+        [string]$OneGameTitle,
+        [int]$RequestDelayMs = 300
+    )
+    if (-not $AssetTypes -or $AssetTypes.Count -eq 0) {
+        Log-Message "No asset types selected." "Red"
+        return
+    }
+    $apiKey = $script:steamGridDbApiKey
+    if ([string]::IsNullOrWhiteSpace($apiKey)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No SteamGridDB API key set.`n`nGet a free key at steamgriddb.com/profile/preferences/api and add it under Settings -> API Keys.",
+            "SteamGridDB", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $col = Get-Col
+    if (-not $col) {
+        [System.Windows.Forms.MessageBox]::Show("Select a collection first - SteamGridDB matches by game title, which requires a loaded collection.", "SteamGridDB", "OK", "Warning") | Out-Null
+        return
+    }
+    if ($SaveIntoMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
+        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "SteamGridDB", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $typeMap = Get-SteamGridDBAssetTypeMap
+    $titleMap = Get-CollectionGameTitleMap
+
+    $games = New-Object System.Collections.ArrayList
+    if ($OneGameOnly) {
+        if ([string]::IsNullOrWhiteSpace($OneGameTitle)) {
+            Log-Message "One game only: no title provided." "Red"
+            return
+        }
+        $norm = Get-NormalizedGameTitle $OneGameTitle
+        $present = @{}
+        if ($norm -and $titleMap.ContainsKey($norm)) { $present = $titleMap[$norm].PresentAssets }
+        [void]$games.Add([PSCustomObject]@{ Title = $OneGameTitle; Norm = $norm; PresentAssets = $present })
+    } else {
+        foreach ($norm in $titleMap.Keys) {
+            $entry = $titleMap[$norm]
+            [void]$games.Add([PSCustomObject]@{ Title = $entry.Title; Norm = $norm; PresentAssets = $entry.PresentAssets })
+        }
+    }
+    $games = @($games | Sort-Object Title)
+
+    if ($games.Count -eq 0) {
+        Log-Message "Nothing to process - no games in the collection." "Yellow"
+        return
+    }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "STEAMGRIDDB COVER PACK" "Cyan"
+    Log-Message ("Types: " + ($AssetTypes -join ", ")) "White"
+    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
+    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
+    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
+    if ($RenameToTitle) { Log-Message "Rename to game titles: on" "Cyan" }
+    if ($ConvertToPng) { Log-Message "Convert to PNG: on" "Cyan" }
+    Log-Message "========================================" "Cyan"
+
+    $prog = $null
+    $assetUpdates = @{}
+    $failRows = New-Object System.Collections.ArrayList
+    $pct = 0
+
+    try {
+        $prog = Show-GameTDBProgressWindow -Title "SteamGridDB Cover Pack"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $($games.Count)  (starting...)"
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        $wc.Headers.Add("Authorization", "Bearer $apiKey")
+
+        $noArtMap = Get-SteamGridDBNoArtMap -Collection $col
+        $noArtMapDirty = $false
+        $sgdbIdCache = @{}   # norm -> game id, or $false for "confirmed no match"
+
+        $ok = 0; $skip = 0; $fail = 0; $skipKnownMissing = 0; $n = 0
+        $aborted = $false
+        $circuitBroken = $false
+        $consecutiveErrors = 0
+        $maxConsecutiveErrors = 8
+        $total = $games.Count
+
+        foreach ($game in $games) {
+            if ($script:gtdbCoverPackAbort) {
+                $aborted = $true
+                Log-Message "Abort requested - stopping cover pack download." "Yellow"
+                break
+            }
+            $n++
+            $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
+            if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
+                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status (
+                    "{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+
+            $norm = $game.Norm
+            if (-not $norm) { continue }
+
+            # Work out which of the checked asset types this game still needs
+            # before spending a single network call on it.
+            $neededTypes = New-Object System.Collections.ArrayList
+            foreach ($typeLabel in $AssetTypes) {
+                $info = $typeMap[$typeLabel]
+                if (-not $info) { continue }
+                if ($OnlyMissing) {
+                    $already = $false
+                    foreach ($k in $info.Keys) {
+                        if ($game.PresentAssets -and $game.PresentAssets.ContainsKey($k)) { $already = $true; break }
+                    }
+                    if ($already) { $skip++; continue }
+                }
+                if (Test-SteamGridDBNoArtFresh -Map $noArtMap -TypeLabel $typeLabel -Norm $norm) {
+                    $skip++; $skipKnownMissing++; continue
+                }
+                [void]$neededTypes.Add($typeLabel)
+            }
+            if ($neededTypes.Count -eq 0) { continue }
+
+            # Resolve the SteamGridDB game ID once per game, reused across
+            # every asset type - no reason to search the same title 4 times.
+            $sgdbId = $null
+            $searchFailed = $false
+            if ($sgdbIdCache.ContainsKey($norm)) {
+                $cached = $sgdbIdCache[$norm]
+                if ($cached -eq $false) { $searchFailed = $true } else { $sgdbId = $cached }
+            } else {
+                Start-Sleep -Milliseconds $RequestDelayMs
+                try {
+                    $sgdbId = Search-SteamGridDBGameId -Title $game.Title -ApiKey $apiKey -WebClient $wc
+                    $consecutiveErrors = 0
+                    $sgdbIdCache[$norm] = $(if ($sgdbId) { $sgdbId } else { $false })
+                } catch {
+                    $consecutiveErrors++
+                    $sgdbIdCache[$norm] = $false
+                    $searchFailed = $true
+                }
+            }
+
+            if (-not $sgdbId) {
+                foreach ($typeLabel in $neededTypes) {
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{
+                        Title  = $game.Title
+                        Type   = $typeLabel
+                        Reason = $(if ($searchFailed) { "Search error" } else { "Not found on SteamGridDB" })
+                    })
+                    if (-not $searchFailed) {
+                        if (-not $noArtMap.ContainsKey($typeLabel)) { $noArtMap[$typeLabel] = @{} }
+                        $noArtMap[$typeLabel][$norm] = (Get-Date).ToString("o")
+                        $noArtMapDirty = $true
+                    }
+                }
+                if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                    $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
+                    Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row - it's likely unreachable or rate-limiting right now, not that these games all lack art. Try again later." "Red"
+                    break
+                }
+                continue
+            }
+
+            foreach ($typeLabel in $neededTypes) {
+                if ($script:gtdbCoverPackAbort) { $aborted = $true; break }
+                $info = $typeMap[$typeLabel]
+                $imgUrl = $null
+                Start-Sleep -Milliseconds $RequestDelayMs
+                try {
+                    $imgUrl = Get-SteamGridDBImageUrl -GameId $sgdbId -Endpoint $info.Endpoint -ApiKey $apiKey -WebClient $wc
+                    $consecutiveErrors = 0
+                } catch {
+                    $consecutiveErrors++
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "Fetch error" })
+                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                        $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
+                        Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row - it's likely unreachable or rate-limiting right now. Try again later." "Red"
+                        break
+                    }
+                    continue
+                }
+                if (-not $imgUrl) {
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "No $typeLabel art on SteamGridDB" })
+                    if (-not $noArtMap.ContainsKey($typeLabel)) { $noArtMap[$typeLabel] = @{} }
+                    $noArtMap[$typeLabel][$norm] = (Get-Date).ToString("o")
+                    $noArtMapDirty = $true
+                    continue
+                }
+
+                $ext = [System.IO.Path]::GetExtension($imgUrl)
+                if (-not $ext -or $ext.Length -gt 5) { $ext = ".png" }
+                $folderName = $info.Folders[0]
+                if ($SaveIntoMedia -and $col.mediaPath) {
+                    $outDir = Join-Path $col.mediaPath $folderName
+                } else {
+                    $outDir = Join-Path $OutBase (Join-Path "SteamGridDB" $folderName)
+                }
+                if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+                $safeTitle = Get-SafeGameFileName $game.Title
+                if (-not $safeTitle) { $safeTitle = $norm }
+                $dest = Join-Path $outDir "$safeTitle$ext"
+
+                if (Test-Path $dest) {
+                    $skip++
+                    if ($WriteAssets) {
+                        if (-not $assetUpdates.ContainsKey($norm)) { $assetUpdates[$norm] = @{} }
+                        $assetUpdates[$norm][$info.Keys[0]] = Get-RelativeAssetPath -Path $dest -Collection $col
+                    }
+                    continue
+                }
+
+                Start-Sleep -Milliseconds $RequestDelayMs
+                try {
+                    $wc.DownloadFile($imgUrl, $dest)
+                    if (-not (Test-Path $dest) -or (Get-Item $dest).Length -le 200) {
+                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        throw "Empty download"
+                    }
+                    $ok++
+                    $consecutiveErrors = 0
+                    if ($noArtMap.ContainsKey($typeLabel) -and $noArtMap[$typeLabel].ContainsKey($norm)) {
+                        $noArtMap[$typeLabel].Remove($norm)
+                        $noArtMapDirty = $true
+                    }
+                    $finalPath = $dest
+                    try {
+                        if ($ConvertToPng) { $finalPath = Convert-ImageFileToPng -Path $finalPath }
+                    } catch {
+                        Log-Message ("Post-process failed for {0}: {1}" -f $game.Title, $_.Exception.Message) "Yellow"
+                    }
+                    if ($WriteAssets) {
+                        if (-not $assetUpdates.ContainsKey($norm)) { $assetUpdates[$norm] = @{} }
+                        $assetUpdates[$norm][$info.Keys[0]] = Get-RelativeAssetPath -Path $finalPath -Collection $col
+                    }
+                } catch {
+                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                    $consecutiveErrors++
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "Download error" })
+                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                        $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
+                        Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row. Try again later." "Red"
+                        break
+                    }
+                }
+            }
+        }
+        $wc.Dispose()
+
+        if ($noArtMapDirty) { Save-SteamGridDBNoArtMap -Collection $col -Map $noArtMap }
+
+        if ($failRows.Count -gt 0) {
+            try {
+                $reportDir = if ($SaveIntoMedia -and $col.mediaPath) { Get-ToolsFolder $col.mediaPath } else { $OutBase }
+                if ($reportDir) {
+                    if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
+                    $csvPath = Join-Path $reportDir "failed_steamgriddb.csv"
+                    $failRows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+                    Log-Message "Fail report: $csvPath ($($failRows.Count) rows)" "Yellow"
+                }
+            } catch {
+                Log-Message "Could not write fail report: $_" "Yellow"
+            }
+        }
+
+        if ($WriteAssets -and $assetUpdates.Count -gt 0) {
+            try { Apply-TitleKeyedAssetUpdates -Updates $assetUpdates }
+            catch { Log-Message "Asset path write error: $_" "Red" }
+        }
+
+        $summary = "Downloaded: $ok   Skipped: $skip (of which $skipKnownMissing already confirmed missing)   Missing: $fail"
+        if ($circuitBroken) {
+            Log-Message "Stopped early due to repeated errors. $summary" "Red"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Stopped - errors`n$summary" -Aborted
+        } elseif ($aborted) {
+            Log-Message "Aborted. $summary" "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
+        } else {
+            Log-Message "Done. $summary" "Green"
+            if ($SaveIntoMedia) {
                 Log-Message "Media: $($col.mediaPath)" "Cyan"
             } elseif ($OutBase) {
                 Log-Message "Folder: $OutBase" "Cyan"
@@ -11133,6 +12168,439 @@ function Download-SnsTitlesDatabase {
         Log-Message "Wrote $($lines.Count) entries to: $outFile" "Green"
         Log-Message "Next: SNS Code Tools -> Map by Titles File (or Create SNS Mapping)" "Yellow"
         Log-Message "Then: Add Box Art (Mapping) or DL Covers from Mapping" "Yellow"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function ConvertFrom-NoIntroDat {
+    # Parses a No-Intro / Redump / TOSEC-style DAT file (standard
+    # <datafile><game name="..."><rom crc="..."/></game></datafile> XML)
+    # into a hashtable: lowercase 8-char CRC32 hex -> game title.
+    #
+    # These DAT files are the standard hash databases used by dedicated
+    # scrapers (Skyscraper, Steven Selph's Scraper, etc.) - freely
+    # downloadable from datomatic.no-intro.org and redump.org, but behind
+    # manual download/login flows, so this tool doesn't fetch them itself;
+    # you download one yourself and point this at the file. Once imported
+    # it's cached locally the same way GameDB-SNES's titles list is.
+    param([string]$Path)
+    $map = @{}
+    $count = 0
+    try {
+        [xml]$xml = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
+    } catch {
+        throw "Could not parse '$Path' as XML: $_"
+    }
+    # Most DAT tools use <game>, some (MAME-derived) use <machine> instead -
+    # try both root element names.
+    $gameNodes = @($xml.SelectNodes("//game"))
+    if ($gameNodes.Count -eq 0) { $gameNodes = @($xml.SelectNodes("//machine")) }
+    foreach ($g in $gameNodes) {
+        $title = [string]$g.name
+        if ([string]::IsNullOrWhiteSpace($title)) { continue }
+        $romNodes = @($g.SelectNodes("rom"))
+        foreach ($r in $romNodes) {
+            $crc = [string]$r.crc
+            if ([string]::IsNullOrWhiteSpace($crc)) { continue }
+            $key = $crc.Trim().ToLowerInvariant().PadLeft(8, '0')
+            if (-not $map.ContainsKey($key)) {
+                $map[$key] = $title
+                $count++
+            }
+        }
+    }
+    return @{ Map = $map; Count = $count }
+}
+
+function Import-DatFileDatabase {
+    # UI flow for ConvertFrom-NoIntroDat: pick a .dat/.xml file, parse it,
+    # cache it as JSON in the collection's Tools folder using the exact
+    # same crc32-hex -> title shape as snes_titles_raw.json, so
+    # Match-RomsByChecksumGeneric (and, for SNES specifically, the existing
+    # Match-RomsByChecksum) can both read it.
+    $of = New-Object System.Windows.Forms.OpenFileDialog
+    $of.Title = "Select a No-Intro / Redump / TOSEC DAT file"
+    $of.Filter = "DAT / XML files (*.dat;*.xml)|*.dat;*.xml|All files (*.*)|*.*"
+    if ($of.ShowDialog() -ne "OK") { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "IMPORT DAT FILE DATABASE" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "File: $($of.FileName)" "White"
+
+    try {
+        $result = ConvertFrom-NoIntroDat -Path $of.FileName
+        if ($result.Count -eq 0) {
+            Log-Message "No <game>/<rom crc=...> entries found - is this a DAT file?" "Red"
+            return
+        }
+        Log-Message "Parsed $($result.Count) CRC32 -> title entries" "Green"
+
+        $c = Get-Col
+        $outDir = $null
+        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
+        if (-not $outDir) {
+            $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+            $fd.Description = "Select a folder to save the imported checksum database"
+            if ($fd.ShowDialog() -ne "OK") { return }
+            $outDir = $fd.SelectedPath
+        }
+
+        $suggested = [System.IO.Path]::GetFileNameWithoutExtension($of.FileName)
+        $suggested = ($suggested -replace '[\\/:*?"<>|]', '_')
+        $name = Show-InputBox -Prompt "Short name for this database (used as the filename, e.g. 'NES' or 'PSX'):" -Title "Import DAT File" -Default $suggested
+        if ([string]::IsNullOrWhiteSpace($name)) { $name = $suggested }
+        $name = ($name -replace '[\\/:*?"<>|]', '_').Trim()
+
+        $outPath = Join-Path $outDir "$($name)_dat_titles.json"
+        ($result.Map | ConvertTo-Json -Depth 2) | Set-Content -Path $outPath -Encoding UTF8
+        Log-Message "Saved: $outPath" "Green"
+        Log-Message "Next: Match ROMs by Checksum (Any Platform) - pick this database." "Yellow"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Match-RomsByChecksumGeneric {
+    # Same idea as Match-RomsByChecksum (SNES/GameDB-SNES specific), but for
+    # any platform using an imported No-Intro/Redump DAT database instead.
+    # This is the actual fix for the class of bug this whole hash-matching
+    # effort was about: title/filename normalization ("Kuru Kuru Kururin"
+    # vs "kurukurukurin.jpg", etc.) can't go wrong here, because the game
+    # is identified by the exact bytes of the ROM, not by guessing at a
+    # filename or a fuzzy title string.
+    #
+    # Like Match-RomsByChecksum, this only ever produces a report and a
+    # KEY=Title map file - it does not touch metadata directly. If a
+    # collection is loaded, it additionally cross-checks each hash-
+    # confirmed title against that game's current metadata title (matched
+    # by filename) and flags any mismatch, so you can review real title
+    # errors (typos, wrong regions, mislabeled dumps) with certainty
+    # instead of guesswork.
+    $c = Get-Col
+    $bp = $null
+    if ($c -and $c.mediaPath) { $bp = $c.mediaPath }
+
+    $toolsDir = $null
+    if ($c -and $c.mediaPath) { $toolsDir = Get-ToolsFolder $c.mediaPath }
+    $available = @()
+    if ($toolsDir -and (Test-Path $toolsDir)) {
+        $available = @(Get-ChildItem $toolsDir -Filter "*_dat_titles.json" -File -ErrorAction SilentlyContinue)
+    }
+    if ($available.Count -eq 0) {
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "No imported DAT databases found for this collection.`n`nImport one now? (Hash Match Tools -> Import DAT File Database)",
+            "Match ROMs by Checksum", "YesNo", "Question")
+        if ($r -eq [System.Windows.Forms.DialogResult]::Yes) { Import-DatFileDatabase }
+        return
+    }
+
+    $dbNames = @($available | ForEach-Object { $_.BaseName -replace '_dat_titles$', '' })
+    $chosenName = if ($dbNames.Count -eq 1) {
+        $dbNames[0]
+    } else {
+        Show-InputBox -Prompt ("Which database? (" + ($dbNames -join ", ") + ")") -Title "Match ROMs by Checksum" -Default $dbNames[0]
+    }
+    $dbFile = $available | Where-Object { ($_.BaseName -replace '_dat_titles$', '') -eq $chosenName } | Select-Object -First 1
+    if (-not $dbFile) {
+        Log-Message "No database selected." "Yellow"
+        return
+    }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select folder with ROMs to checksum-match against $chosenName"
+    $fd.ShowNewFolderButton = $false
+    if ($bp -and (Test-Path $bp)) { $fd.SelectedPath = $bp }
+    if ($fd.ShowDialog() -ne "OK") { return }
+    $romFolder = $fd.SelectedPath
+
+    $stripHeader = [System.Windows.Forms.MessageBox]::Show(
+        "Strip a 512-byte copier header if present before hashing?`n`nOnly needed for platforms with optional copier headers (e.g. SNES). Leave this as No for most platforms - No-Intro/Redump hashes are normally computed on the file as distributed.",
+        "Match ROMs by Checksum", "YesNo", "Question") -eq [System.Windows.Forms.DialogResult]::Yes
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "MATCH ROMS BY CHECKSUM ($chosenName)" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "ROM folder: $romFolder" "White"
+    Log-Message "Database: $($dbFile.FullName)" "White"
+
+    try {
+        $jsonText = Get-Content -LiteralPath $dbFile.FullName -Raw
+        $crcMap = @{}
+        try {
+            $obj = $jsonText | ConvertFrom-Json
+            foreach ($prop in $obj.PSObject.Properties) {
+                $crcMap[$prop.Name.ToLowerInvariant()] = [string]$prop.Value
+            }
+        } catch {
+            Log-Message "ERROR: Could not parse $($dbFile.Name) - $_" "Red"
+            return
+        }
+        Log-Message "Loaded $($crcMap.Count) checksum -> title entries" "Cyan"
+        if ($crcMap.Count -eq 0) { return }
+
+        $files = @(Get-ChildItem $romFolder -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            $_.Length -gt 0 -and $_.Extension -notin @('.txt', '.json', '.csv', '.log', '.db', '.ini')
+        })
+        if ($files.Count -eq 0) {
+            Log-Message "No files found in that folder." "Yellow"
+            return
+        }
+        Log-Message "Files found: $($files.Count)" "Cyan"
+
+        $titleMap = if ($c) { Get-CollectionGameTitleMap } else { @{} }
+        $fileToGame = @{}
+        if ($c -and $c.metadataPath -and (Test-Path $c.metadataPath)) {
+            try {
+                $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
+                foreach ($block in ($content -split '(?=game: )' | Where-Object { $_ -match '^game: ' })) {
+                    $gt = $null; $gf = $null
+                    if ($block -match '(?m)^game:\s*(.+)$') { $gt = $matches[1].Trim() }
+                    if ($block -match '(?m)^file:\s*(.+)$') { $gf = $matches[1].Trim() }
+                    if ($gf -and $gt) {
+                        $fileKey = [System.IO.Path]::GetFileName($gf).ToLowerInvariant()
+                        $fileToGame[$fileKey] = $gt
+                    }
+                }
+            } catch {}
+        }
+
+        $matched = 0; $unmatched = 0; $mismatched = 0
+        $reportLines = @("# rom_filename|crc32|title (or NOMATCH)|metadata_title|status")
+        $titleMapLines = @()
+        $usedNames = @{}
+
+        foreach ($f in $files) {
+            try {
+                $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
+                $offset = 0
+                if ($stripHeader -and (($bytes.Length % 1024) -eq 512)) { $offset = 512 }
+                $len = $bytes.Length - $offset
+                if ($len -le 0) { $unmatched++; continue }
+                $hex = [MrtCrc32]::ComputeHex($bytes, $offset, $len)
+            } catch {
+                Log-Message "  Failed to read: $($f.Name) - $_" "Yellow"
+                $unmatched++
+                continue
+            }
+
+            $baseName = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            $metaTitle = $fileToGame[$f.Name.ToLowerInvariant()]
+
+            if ($crcMap.ContainsKey($hex)) {
+                $title = $crcMap[$hex]
+                $matched++
+                $status = "matched"
+                if ($metaTitle -and $metaTitle -ne $title) {
+                    $status = "TITLE MISMATCH"
+                    $mismatched++
+                    Log-Message "  $baseName  [crc32=$hex]  hash says '$title', metadata says '$metaTitle'" "Yellow"
+                } else {
+                    Log-Message "  $baseName  [crc32=$hex]  =>  $title" "Green"
+                }
+                $reportLines += "$($f.Name)|$hex|$title|$metaTitle|$status"
+                if (-not $usedNames.ContainsKey($baseName)) {
+                    $usedNames[$baseName] = $true
+                    $titleMapLines += "$baseName=$title"
+                }
+            } else {
+                $unmatched++
+                Log-Message "  $baseName  [crc32=$hex]  (no match)" "Yellow"
+                $reportLines += "$($f.Name)|$hex|NOMATCH|$metaTitle|no_match"
+            }
+        }
+
+        $outDir = if ($toolsDir) { $toolsDir } else { $romFolder }
+        $reportFile = Join-Path $outDir "rom_checksum_report_$chosenName.txt"
+        $reportLines | Out-File -FilePath $reportFile -Encoding UTF8
+
+        $mapFile = Join-Path $outDir "checksum_titles_$chosenName.txt"
+        if ($titleMapLines.Count -gt 0) {
+            $titleMapLines | Sort-Object | Out-File -FilePath $mapFile -Encoding UTF8
+        }
+
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Matched: $matched | No match: $unmatched | Title mismatches: $mismatched | Total: $($files.Count)" "Green"
+        Log-Message "Report saved: $reportFile" "Cyan"
+        if ($mismatched -gt 0) {
+            Log-Message "$mismatched game(s) have a hash-confirmed title that differs from metadata - review the report before changing anything." "Yellow"
+        }
+        if ($titleMapLines.Count -gt 0) {
+            Log-Message "Title map saved: $mapFile (KEY=Title, keyed by ROM filename without extension)" "Cyan"
+        }
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Get-Md5Hex {
+    param([string]$Path)
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $hash = $md5.ComputeHash($bytes)
+        return -join ($hash | ForEach-Object { $_.ToString("x2") })
+    } finally {
+        $md5.Dispose()
+    }
+}
+
+function Get-RetroAchievementsGameIdByHash {
+    # Resolves a ROM's MD5 to a RetroAchievements game ID via the
+    # "Connect API" endpoint emulator cores themselves use (dorequest.php
+    # with r=gameid), not the newer documented Web API - this specific
+    # lookup isn't part of the officially documented REST-style endpoints,
+    # but is the real, long-standing way hash->ID resolution works.
+    # Returns $null if there's no match (server returns "0"), or throws on
+    # a genuine network/HTTP error.
+    #
+    # IMPORTANT CAVEAT: a plain MD5 of the file only matches RA's own hash
+    # for platforms where RA hashes the ROM as-is (most cartridge-based
+    # systems: SNES, Genesis, GB/GBC/GBA, N64, etc.). Disc-based systems
+    # and a few others (NES, PSX, Sega CD...) use special hashing rules
+    # (specific sectors, headers stripped, executable extraction) that
+    # this function does NOT replicate - RetroAchievements' own RAHasher
+    # tool is the only fully correct way to hash those. Expect "no match"
+    # on those platforms even for games RA does support.
+    param([string]$Md5, [System.Net.WebClient]$WebClient)
+    $url = "https://retroachievements.org/dorequest.php?r=gameid&m=$Md5"
+    $raw = $WebClient.DownloadString($url).Trim()
+    # Response is a bare number in practice ("0" = no match), but handle a
+    # JSON-wrapped form defensively too in case that ever changes.
+    try {
+        $obj = $raw | ConvertFrom-Json -ErrorAction Stop
+        if ($obj.GameID) { $raw = [string]$obj.GameID }
+    } catch {}
+    if ($raw -match '^\d+$' -and [int]$raw -gt 0) { return $raw }
+    return $null
+}
+
+function Get-RetroAchievementsGameProgress {
+    # https://api-docs.retroachievements.org/v1/get-game-info-and-user-progress.html
+    param([string]$GameId, [string]$Username, [string]$ApiKey, [System.Net.WebClient]$WebClient)
+    $url = "https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?y=$ApiKey&u=$([Uri]::EscapeDataString($Username))&g=$GameId"
+    $raw = $WebClient.DownloadString($url)
+    return ($raw | ConvertFrom-Json)
+}
+
+function Start-RetroAchievementsCheck {
+    # Report-only tool (same non-destructive shape as the checksum
+    # matchers): for each ROM in a folder, resolve its RetroAchievements
+    # game ID by hash, then pull that game's achievement set size and how
+    # many the configured user has unlocked. Never touches metadata.
+    if ([string]::IsNullOrWhiteSpace($script:raApiKey) -or [string]::IsNullOrWhiteSpace($script:raUsername)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No RetroAchievements login set.`n`nAdd your username and Web API key under Settings -> API Keys (get the key at retroachievements.org/settings).",
+            "RetroAchievements", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $c = Get-Col
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select folder with ROMs to check against RetroAchievements"
+    $fd.ShowNewFolderButton = $false
+    if ($c -and $c.mediaPath -and (Test-Path $c.mediaPath)) { $fd.SelectedPath = $c.mediaPath }
+    if ($fd.ShowDialog() -ne "OK") { return }
+    $romFolder = $fd.SelectedPath
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "RETROACHIEVEMENTS CHECK" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "ROM folder: $romFolder" "White"
+    Log-Message "User: $($script:raUsername)" "White"
+    Log-Message "NOTE: plain-file MD5 only matches cartridge-style platforms" "Yellow"
+    Log-Message "(SNES/Genesis/GB/GBA/N64 etc.) - disc-based and a few other" "Yellow"
+    Log-Message "systems use special hashing RAHasher would be needed for." "Yellow"
+
+    try {
+        $files = @(Get-ChildItem $romFolder -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            $_.Length -gt 0 -and $_.Extension -notin @('.txt', '.json', '.csv', '.log', '.db', '.ini')
+        })
+        if ($files.Count -eq 0) {
+            Log-Message "No files found in that folder." "Yellow"
+            return
+        }
+        Log-Message "Files found: $($files.Count)" "Cyan"
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+
+        $matched = 0; $unmatched = 0; $errors = 0
+        $consecutiveErrors = 0
+        $maxConsecutiveErrors = 8
+        $circuitBroken = $false
+        $reportLines = @("# rom_filename|md5|ra_gameid|title|unlocked/total|completion")
+        $requestDelayMs = 400
+
+        foreach ($f in $files) {
+            if ($circuitBroken) { break }
+            try {
+                $md5 = Get-Md5Hex -Path $f.FullName
+            } catch {
+                Log-Message "  Failed to read: $($f.Name) - $_" "Yellow"
+                $unmatched++
+                continue
+            }
+
+            Start-Sleep -Milliseconds $requestDelayMs
+            $gameId = $null
+            try {
+                $gameId = Get-RetroAchievementsGameIdByHash -Md5 $md5 -WebClient $wc
+                $consecutiveErrors = 0
+            } catch {
+                $consecutiveErrors++
+                $errors++
+                Log-Message "  $($f.Name)  [md5=$md5]  lookup error: $_" "Red"
+                $reportLines += "$($f.Name)|$md5|error||"
+                if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                    $circuitBroken = $true
+                    Log-Message "Stopping: $maxConsecutiveErrors consecutive RetroAchievements errors in a row - it's likely unreachable right now. Try again later." "Red"
+                }
+                continue
+            }
+
+            if (-not $gameId) {
+                $unmatched++
+                Log-Message "  $($f.Name)  [md5=$md5]  (no RA match)" "Yellow"
+                $reportLines += "$($f.Name)|$md5|nomatch||"
+                continue
+            }
+
+            Start-Sleep -Milliseconds $requestDelayMs
+            try {
+                $info = Get-RetroAchievementsGameProgress -GameId $gameId -Username $script:raUsername -ApiKey $script:raApiKey -WebClient $wc
+                $consecutiveErrors = 0
+            } catch {
+                $consecutiveErrors++
+                $errors++
+                Log-Message "  $($f.Name)  RA game $gameId - progress lookup error: $_" "Red"
+                $reportLines += "$($f.Name)|$md5|$gameId|error||"
+                if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                    $circuitBroken = $true
+                    Log-Message "Stopping: $maxConsecutiveErrors consecutive RetroAchievements errors in a row. Try again later." "Red"
+                }
+                continue
+            }
+
+            $matched++
+            $title = [string]$info.Title
+            $num = [int]$info.NumAchievements
+            $awarded = [int]$info.NumAwardedToUser
+            $pct = if ($num -gt 0) { "{0:N1}%" -f (($awarded / $num) * 100) } else { "n/a" }
+            Log-Message "  $($f.Name)  =>  $title  [$awarded/$num, $pct]" "Green"
+            $reportLines += "$($f.Name)|$md5|$gameId|$title|$awarded/$num|$pct"
+        }
+        $wc.Dispose()
+
+        $outDir = if ($c -and $c.mediaPath) { Get-ToolsFolder $c.mediaPath } else { $romFolder }
+        if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+        $reportFile = Join-Path $outDir "retroachievements_report.txt"
+        $reportLines | Out-File -FilePath $reportFile -Encoding UTF8
+
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Matched: $matched | No RA match: $unmatched | Errors: $errors | Total: $($files.Count)" "Green"
+        Log-Message "Report saved: $reportFile" "Cyan"
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
