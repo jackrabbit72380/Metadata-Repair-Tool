@@ -243,6 +243,18 @@ public static class MrtCrc32 {
 }
 "@
 
+# Minimal user32 wrapper used only to pause/resume redraw (WM_SETREDRAW)
+# around bulk syntax-coloring passes on the raw editor, so recoloring a
+# large metadata.txt doesn't visibly flicker line-by-line.
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public static class MrtWin32 {
+    [DllImport("user32.dll")]
+    public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
+}
+"@
+
 # ============================================================================
 # GLOBALS
 # ============================================================================
@@ -268,6 +280,8 @@ $script:parsedHeader = ""
 $script:parsedHeaderFields = @{}
 $script:parsedGames = @()
 $script:rawMode = $false
+$script:rawEditorLastLineCount = 0
+$script:rawReplaceVisible = $false
 $script:editorSplit = $null
 $script:detailPanel = $null
 $script:metaOuter = $null
@@ -407,6 +421,54 @@ if (-not (Test-Path $configDir)) {
 # ============================================================================
 # THEME - follows Windows light/dark app mode + system accent
 # ============================================================================
+function ConvertTo-ThemeColor {
+    # Parses "#RRGGBB" or "#RGB" into a Color. Returns Magenta for anything
+    # unparsable so a bad custom-theme file is obvious rather than silently
+    # falling back to a color that looks intentional.
+    param([string]$Hex)
+    if ([string]::IsNullOrWhiteSpace($Hex)) { return [System.Drawing.Color]::Magenta }
+    $h = $Hex.Trim().TrimStart('#')
+    if ($h.Length -eq 3) {
+        $h = -join ($h.ToCharArray() | ForEach-Object { "$_$_" })
+    }
+    if ($h.Length -ne 6) { return [System.Drawing.Color]::Magenta }
+    try {
+        $r = [Convert]::ToInt32($h.Substring(0, 2), 16)
+        $g = [Convert]::ToInt32($h.Substring(2, 2), 16)
+        $b = [Convert]::ToInt32($h.Substring(4, 2), 16)
+        return [System.Drawing.Color]::FromArgb(255, $r, $g, $b)
+    } catch {
+        return [System.Drawing.Color]::Magenta
+    }
+}
+
+function Initialize-PaletteTheme {
+    # Builds $script:theme from a 14-color hex palette in $script:builtinPalettes
+    # (all defined right in this script - nothing loaded from disk).
+    param([string]$Name)
+    $pal = $script:builtinPalettes[$Name]
+    if ($null -eq $pal) { Initialize-DefaultTheme; return }
+    $script:theme = @{
+        background  = ConvertTo-ThemeColor $pal.background
+        panel       = ConvertTo-ThemeColor $pal.panel
+        border      = ConvertTo-ThemeColor $pal.border
+        text        = ConvertTo-ThemeColor $pal.text
+        textDim     = ConvertTo-ThemeColor $pal.textDim
+        accent      = ConvertTo-ThemeColor $pal.accent
+        accentDark  = ConvertTo-ThemeColor $pal.accentDark
+        success     = ConvertTo-ThemeColor $pal.success
+        error       = ConvertTo-ThemeColor $pal.error
+        warning     = ConvertTo-ThemeColor $pal.warning
+        button      = ConvertTo-ThemeColor $pal.button
+        buttonHover = ConvertTo-ThemeColor $pal.buttonHover
+        editor      = ConvertTo-ThemeColor $pal.editor
+        terminal    = ConvertTo-ThemeColor $pal.terminal
+    }
+    $bg = $script:theme.background
+    $lum = (0.299 * $bg.R) + (0.587 * $bg.G) + (0.114 * $bg.B)
+    $script:isLightTheme = ($lum -gt 150)
+}
+
 function Get-WindowsAccentColor {
     try {
         $dwm = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\DWM" -ErrorAction Stop
@@ -576,15 +638,57 @@ function Initialize-HighContrastTheme {
     }
 }
 
+# ----------------------------------------------------------------------------
+# Named palette themes - the same style of theme list Upscayl ships (it bundles
+# the daisyUI stock theme set). These are original palettes in that spirit,
+# not a pixel-for-pixel copy of any project's exact hex values. Everything is
+# defined right here in the script - no theme files, no external assets.
+# ----------------------------------------------------------------------------
+$script:builtinPalettes = [ordered]@{
+    "Dark"       = @{ background = "#1d232a"; panel = "#191e24"; border = "#2a323c"; text = "#e7ecf3"; textDim = "#97a3b4"; accent = "#5b8def"; accentDark = "#3f68b8"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#2a323c"; buttonHover = "#364256"; editor = "#151a20"; terminal = "#151a20" }
+    "Cupcake"    = @{ background = "#faf7f5"; panel = "#ffffff"; border = "#e7d7d0"; text = "#3d2b2b"; textDim = "#8a7268"; accent = "#ef9fbc"; accentDark = "#d97ba0"; success = "#78c9a2"; error = "#e0728a"; warning = "#eeaf3a"; button = "#f4e3e6"; buttonHover = "#f0d0d8"; editor = "#ffffff"; terminal = "#fbf1ee" }
+    "Bumblebee"  = @{ background = "#ffffff"; panel = "#f7f4e8"; border = "#e4dcae"; text = "#1f1300"; textDim = "#7a6a30"; accent = "#f9d72f"; accentDark = "#e0b400"; success = "#22c55e"; error = "#ef4444"; warning = "#eab308"; button = "#f3e9b0"; buttonHover = "#ecd97e"; editor = "#ffffff"; terminal = "#fbf8e8" }
+    "Emerald"    = @{ background = "#f4fbf6"; panel = "#ffffff"; border = "#cfe9d8"; text = "#16302a"; textDim = "#5f7d73"; accent = "#2bb673"; accentDark = "#1f8f59"; success = "#22c55e"; error = "#ef4444"; warning = "#f59e0b"; button = "#dcf2e4"; buttonHover = "#c2e8d1"; editor = "#ffffff"; terminal = "#eefbf3" }
+    "Corporate"  = @{ background = "#f5f6f8"; panel = "#ffffff"; border = "#d7dbe2"; text = "#1f2733"; textDim = "#6b7688"; accent = "#2563eb"; accentDark = "#1d4ed8"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#e6e9ee"; buttonHover = "#d3d9e2"; editor = "#ffffff"; terminal = "#eef0f3" }
+    "Synthwave"  = @{ background = "#241b2f"; panel = "#2d213b"; border = "#4b3466"; text = "#f4eefb"; textDim = "#b79fce"; accent = "#ff7edb"; accentDark = "#d34fb0"; success = "#72f1b8"; error = "#fe4450"; warning = "#f97e72"; button = "#3a2a52"; buttonHover = "#4b3768"; editor = "#1c1428"; terminal = "#1c1428" }
+    "Retro"      = @{ background = "#ece3ca"; panel = "#f4efdc"; border = "#d8c9a3"; text = "#2f2410"; textDim = "#7a6a4c"; accent = "#d97b3f"; accentDark = "#b85f2b"; success = "#6d9773"; error = "#c94f4f"; warning = "#e0a12e"; button = "#e2d5ab"; buttonHover = "#d6c690"; editor = "#f4efdc"; terminal = "#e7ddc0" }
+    "Cyberpunk"  = @{ background = "#100f11"; panel = "#1a181c"; border = "#33302f"; text = "#f5f5f0"; textDim = "#a7a49e"; accent = "#f6e23e"; accentDark = "#d1c11a"; success = "#3ddc97"; error = "#ff4d6d"; warning = "#ffb703"; button = "#262226"; buttonHover = "#33302f"; editor = "#0c0b0d"; terminal = "#0c0b0d" }
+    "Valentine"  = @{ background = "#fdf1f6"; panel = "#ffffff"; border = "#f3c6dc"; text = "#38182c"; textDim = "#935a76"; accent = "#e96d9b"; accentDark = "#c94c7c"; success = "#5eb98c"; error = "#e0577b"; warning = "#e8a13f"; button = "#fadce9"; buttonHover = "#f4c2d9"; editor = "#ffffff"; terminal = "#fdeef4" }
+    "Halloween"  = @{ background = "#1a1512"; panel = "#241d18"; border = "#3c2f22"; text = "#f1e5d2"; textDim = "#a08f77"; accent = "#ff7f0e"; accentDark = "#cc620a"; success = "#6f9c3d"; error = "#c1440e"; warning = "#d97706"; button = "#2e241c"; buttonHover = "#3c2f22"; editor = "#150f0c"; terminal = "#150f0c" }
+    "Garden"     = @{ background = "#f6f2ef"; panel = "#ffffff"; border = "#e3d7cf"; text = "#392f2a"; textDim = "#8a7a70"; accent = "#5c8a72"; accentDark = "#446a56"; success = "#6ea87c"; error = "#c4676a"; warning = "#d99a4e"; button = "#e8ddd0"; buttonHover = "#dccbb8"; editor = "#ffffff"; terminal = "#f2ebe1" }
+    "Forest"     = @{ background = "#131f18"; panel = "#182a20"; border = "#294436"; text = "#dff0e4"; textDim = "#82a893"; accent = "#36d399"; accentDark = "#22a876"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#1f3529"; buttonHover = "#294436"; editor = "#0f1913"; terminal = "#0f1913" }
+    "Aqua"       = @{ background = "#0c2b3d"; panel = "#123c52"; border = "#1f5a75"; text = "#eafbff"; textDim = "#86c4d8"; accent = "#22d3ee"; accentDark = "#0ea5c4"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#164a63"; buttonHover = "#1c5c79"; editor = "#082130"; terminal = "#082130" }
+    "Lofi"       = @{ background = "#ffffff"; panel = "#f7f7f7"; border = "#dedede"; text = "#0a0a0a"; textDim = "#6b6b6b"; accent = "#4b4b4b"; accentDark = "#2b2b2b"; success = "#2f855a"; error = "#c0392b"; warning = "#b7791f"; button = "#ececec"; buttonHover = "#dcdcdc"; editor = "#ffffff"; terminal = "#f2f2f2" }
+    "Pastel"     = @{ background = "#fbf7fb"; panel = "#ffffff"; border = "#e7dcf0"; text = "#3a3350"; textDim = "#948bab"; accent = "#b9a6e0"; accentDark = "#9a82cf"; success = "#a8d8b9"; error = "#f3a6a6"; warning = "#f6d6a8"; button = "#eee3f5"; buttonHover = "#e2d2ef"; editor = "#ffffff"; terminal = "#f7f1fa" }
+    "Fantasy"    = @{ background = "#f7f3fb"; panel = "#ffffff"; border = "#e2d3ef"; text = "#2c1a3d"; textDim = "#7c6690"; accent = "#a855f7"; accentDark = "#8b2fe0"; success = "#34c88f"; error = "#e0577b"; warning = "#eab308"; button = "#ecdffa"; buttonHover = "#dfc6f4"; editor = "#ffffff"; terminal = "#f6eefc" }
+    "Wireframe"  = @{ background = "#ffffff"; panel = "#ffffff"; border = "#b5b5b5"; text = "#1a1a1a"; textDim = "#6e6e6e"; accent = "#4a4a4a"; accentDark = "#000000"; success = "#2f855a"; error = "#b02a2a"; warning = "#8a6d1e"; button = "#f2f2f2"; buttonHover = "#e2e2e2"; editor = "#ffffff"; terminal = "#fafafa" }
+    "Black"      = @{ background = "#000000"; panel = "#0a0a0a"; border = "#2a2a2a"; text = "#f5f5f5"; textDim = "#9a9a9a"; accent = "#7d7d7d"; accentDark = "#555555"; success = "#22c55e"; error = "#ef4444"; warning = "#eab308"; button = "#141414"; buttonHover = "#1f1f1f"; editor = "#000000"; terminal = "#000000" }
+    "Luxury"     = @{ background = "#14110d"; panel = "#1b1712"; border = "#3a3020"; text = "#f2e6c9"; textDim = "#a4936b"; accent = "#cdae51"; accentDark = "#a98c33"; success = "#4b7f52"; error = "#a13d3d"; warning = "#c99a3c"; button = "#241f17"; buttonHover = "#302921"; editor = "#100d0a"; terminal = "#100d0a" }
+    "Dracula"    = @{ background = "#282a36"; panel = "#21222c"; border = "#44475a"; text = "#f8f8f2"; textDim = "#6272a4"; accent = "#bd93f9"; accentDark = "#9d6fe0"; success = "#50fa7b"; error = "#ff5555"; warning = "#f1fa8c"; button = "#343746"; buttonHover = "#44475a"; editor = "#21222c"; terminal = "#21222c" }
+    "Cmyk"       = @{ background = "#ffffff"; panel = "#f5f5f7"; border = "#d6d6db"; text = "#101010"; textDim = "#6d6d75"; accent = "#00b7eb"; accentDark = "#0090bd"; success = "#1fae4b"; error = "#e0225a"; warning = "#ffde00"; button = "#e9e9ee"; buttonHover = "#d9d9e2"; editor = "#ffffff"; terminal = "#f2f2f5" }
+    "Autumn"     = @{ background = "#f6ede1"; panel = "#fbf4ea"; border = "#ddc09a"; text = "#3a2415"; textDim = "#8a6a4c"; accent = "#c05621"; accentDark = "#9a441a"; success = "#6b8f4e"; error = "#a4302a"; warning = "#c98a2c"; button = "#ecdcc4"; buttonHover = "#e0c9a6"; editor = "#fbf4ea"; terminal = "#efe2cd" }
+    "Business"   = @{ background = "#1a2332"; panel = "#202b3d"; border = "#35435a"; text = "#e7ecf3"; textDim = "#8b98ac"; accent = "#3b82f6"; accentDark = "#2563eb"; success = "#22c55e"; error = "#ef4444"; warning = "#f59e0b"; button = "#263248"; buttonHover = "#324160"; editor = "#151d29"; terminal = "#151d29" }
+    "Acid"       = @{ background = "#fbfcef"; panel = "#ffffff"; border = "#d8e89a"; text = "#22280d"; textDim = "#7c8a4a"; accent = "#a3e635"; accentDark = "#7bc419"; success = "#22c55e"; error = "#ff2d78"; warning = "#facc15"; button = "#eaf4c0"; buttonHover = "#dcec9c"; editor = "#ffffff"; terminal = "#f6f9df" }
+    "Lemonade"   = @{ background = "#fbfde9"; panel = "#ffffff"; border = "#e1eaa6"; text = "#26310c"; textDim = "#77864a"; accent = "#cbe552"; accentDark = "#a9c62f"; success = "#4ade80"; error = "#ef4444"; warning = "#eab308"; button = "#eef5c4"; buttonHover = "#e2eda0"; editor = "#ffffff"; terminal = "#f6f9dd" }
+    "Night"      = @{ background = "#0f1729"; panel = "#161d31"; border = "#29314d"; text = "#cbd5e1"; textDim = "#7d8ba1"; accent = "#38bdf8"; accentDark = "#0ea5e9"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#1e263c"; buttonHover = "#29314d"; editor = "#0b1220"; terminal = "#0b1220" }
+    "Coffee"     = @{ background = "#20161a"; panel = "#2a1e22"; border = "#4a352f"; text = "#f1e7d3"; textDim = "#b0978a"; accent = "#c68958"; accentDark = "#a06b3f"; success = "#7a9a5e"; error = "#b1503b"; warning = "#cf9a3f"; button = "#34262a"; buttonHover = "#423037"; editor = "#1a1215"; terminal = "#1a1215" }
+    "Winter"     = @{ background = "#f0f6fb"; panel = "#ffffff"; border = "#cfe0ee"; text = "#1c2b3a"; textDim = "#62778c"; accent = "#3aa9dd"; accentDark = "#2683b0"; success = "#34a06d"; error = "#d1495b"; warning = "#e2a33e"; button = "#dceaf5"; buttonHover = "#c5deef"; editor = "#ffffff"; terminal = "#e9f2fa" }
+}
+
 function Initialize-SystemTheme {
     if (-not $script:themeMode) { $script:themeMode = "Default" }
     switch ($script:themeMode) {
-        "Steam"        { Initialize-SteamTheme }
-        "Windows"      { Initialize-WindowsTheme }
-        "Light"        { Initialize-LightTheme }
-        "HighContrast" { Initialize-HighContrastTheme }
-        default        { Initialize-DefaultTheme }  # Default = cyan/green accent look
+        "Steam"        { Initialize-SteamTheme; return }
+        "Windows"      { Initialize-WindowsTheme; return }
+        "Light"        { Initialize-LightTheme; return }
+        "HighContrast" { Initialize-HighContrastTheme; return }
+        "Default"      { Initialize-DefaultTheme; return }  # Default = cyan/green accent look
     }
+    if ($script:builtinPalettes -and $script:builtinPalettes.Contains($script:themeMode)) {
+        Initialize-PaletteTheme -Name $script:themeMode
+        return
+    }
+    Initialize-DefaultTheme
 }
 
 function Apply-ThemeToControl {
@@ -646,7 +750,9 @@ function Apply-ThemeToControl {
 }
 
 function Set-AppThemeMode {
-    param([ValidateSet("Default","Steam","Light","HighContrast","Windows")][string]$Mode)
+    # Mode is one of the 5 legacy names or a key in $script:builtinPalettes -
+    # no longer a fixed ValidateSet now that the theme list is data-driven.
+    param([string]$Mode)
     $script:themeMode = $Mode
     Initialize-SystemTheme
     try { Save-Config } catch {}
@@ -662,6 +768,7 @@ function Set-AppThemeMode {
             if ($script:editorBox) {
                 $script:editorBox.BackColor = $script:theme.editor
                 $script:editorBox.ForeColor = $script:theme.text
+                Highlight-RawEditorAll
             }
             if ($script:countLabel) {
                 $script:countLabel.ForeColor = $script:theme.success
@@ -670,12 +777,155 @@ function Set-AppThemeMode {
                 $script:btnTheme.Text = "Theme"
                 try {
                     $tt = $script:themeTip
-                    if ($tt) { $tt.SetToolTip($script:btnTheme, "Theme: $Mode (open Settings for all themes)") }
+                    if ($tt) { $tt.SetToolTip($script:btnTheme, "Theme: $Mode - click to browse all themes") }
                 } catch {}
             }
         } catch {}
     }
     Log-Message ("Theme: {0}" -f $Mode) "Cyan"
+}
+
+function Get-AllThemeEntries {
+    # Builds the full theme list (5 legacy modes + everything in
+    # $script:builtinPalettes) with each one's actual resolved colors, for
+    # the picker's preview cards. Temporarily swaps $script:theme/$script:
+    # themeMode while doing so, then restores whatever was active.
+    $entries = New-Object System.Collections.ArrayList
+    $savedTheme = $script:theme
+    $savedMode = $script:themeMode
+    $savedIsLight = $script:isLightTheme
+
+    $legacy = @(
+        @{ Key = "Default"; DisplayName = "Default" },
+        @{ Key = "Steam"; DisplayName = "Steam" },
+        @{ Key = "Light"; DisplayName = "Light" },
+        @{ Key = "HighContrast"; DisplayName = "Contrast" },
+        @{ Key = "Windows"; DisplayName = "Windows" }
+    )
+    foreach ($b in $legacy) {
+        $script:themeMode = $b.Key
+        Initialize-SystemTheme
+        [void]$entries.Add(@{ Key = $b.Key; DisplayName = $b.DisplayName; Colors = $script:theme })
+    }
+    foreach ($name in $script:builtinPalettes.Keys) {
+        $script:themeMode = $name
+        Initialize-SystemTheme
+        [void]$entries.Add(@{ Key = $name; DisplayName = $name; Colors = $script:theme })
+    }
+
+    $script:theme = $savedTheme
+    $script:themeMode = $savedMode
+    $script:isLightTheme = $savedIsLight
+    return $entries.ToArray()
+}
+
+function Apply-PickedThemeKey {
+    param([string]$Key, $Dialog)
+    if ([string]::IsNullOrWhiteSpace($Key)) { return }
+    if ($script:themeMode -ne $Key) {
+        Set-AppThemeMode -Mode $Key
+    }
+    if ($Dialog) {
+        try { $Dialog.Close() } catch {}
+    }
+}
+
+function Show-ThemePickerDialog {
+    # The dedicated theme page: a scrollable grid of cards, one per theme,
+    # each drawn in its own colors (background/text/swatch row) so you can
+    # see exactly what you're picking before you pick it.
+    $entries = Get-AllThemeEntries
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Choose a Theme"
+    $dlg.Size = New-Object System.Drawing.Size(600, 620)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "Sizable"
+    $dlg.MinimumSize = New-Object System.Drawing.Size(420, 360)
+    $dlg.MaximizeBox = $true
+    $dlg.MinimizeBox = $false
+    $dlg.BackColor = $script:theme.background
+    $dlg.ForeColor = $script:theme.text
+
+    $flow = New-Object System.Windows.Forms.FlowLayoutPanel
+    $flow.Dock = "Fill"
+    $flow.AutoScroll = $true
+    $flow.WrapContents = $true
+    $flow.FlowDirection = "LeftToRight"
+    $flow.Padding = New-Object System.Windows.Forms.Padding(10)
+    $flow.BackColor = $script:theme.background
+    $dlg.Controls.Add($flow)
+
+    # One click handler shared by every card and its children. It never
+    # closes over a loop variable - it reads .Tag off whichever control was
+    # actually clicked, so there's no stale-value bug from building these
+    # in a loop.
+    $cardClickHandler = {
+        param($sender, $e)
+        $key = [string]$sender.Tag
+        Apply-PickedThemeKey -Key $key -Dialog $dlg
+    }
+
+    foreach ($entry in $entries) {
+        $colors = $entry.Colors
+        $card = New-Object System.Windows.Forms.Panel
+        $card.Size = New-Object System.Drawing.Size(168, 100)
+        $card.Margin = New-Object System.Windows.Forms.Padding(6)
+        $card.BackColor = $colors.background
+        $card.BorderStyle = if ($script:themeMode -eq $entry.Key) { "Fixed3D" } else { "FixedSingle" }
+        $card.Tag = $entry.Key
+        $card.Cursor = [System.Windows.Forms.Cursors]::Hand
+
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = $entry.DisplayName
+        $lbl.Location = New-Object System.Drawing.Point(8, 6)
+        $lbl.Size = New-Object System.Drawing.Size(152, 18)
+        $lbl.ForeColor = $colors.text
+        $lbl.BackColor = [System.Drawing.Color]::Transparent
+        $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $lbl.Tag = $entry.Key
+        $card.Controls.Add($lbl)
+
+        $sx = 8
+        foreach ($sk in @("accent", "success", "warning", "error", "button")) {
+            $sw = New-Object System.Windows.Forms.Panel
+            $sw.Size = New-Object System.Drawing.Size(26, 26)
+            $sw.Location = New-Object System.Drawing.Point($sx, 30)
+            $sw.BackColor = $colors.$sk
+            $sw.Tag = $entry.Key
+            $card.Controls.Add($sw)
+            $sx += 30
+        }
+
+        $sample = New-Object System.Windows.Forms.Label
+        $sample.Text = "Aa  game: text"
+        $sample.Location = New-Object System.Drawing.Point(8, 64)
+        $sample.Size = New-Object System.Drawing.Size(152, 24)
+        $sample.ForeColor = $colors.text
+        $sample.BackColor = $colors.panel
+        $sample.TextAlign = "MiddleLeft"
+        $sample.Font = New-Object System.Drawing.Font("Consolas", 8)
+        $sample.Tag = $entry.Key
+        $card.Controls.Add($sample)
+
+        $card.Add_Click($cardClickHandler)
+        foreach ($c in @($card.Controls)) { $c.Add_Click($cardClickHandler) }
+
+        $flow.Controls.Add($card)
+    }
+
+    $btnClose = Create-Button "Close" 0 0 90 26
+    $bottomPanel = New-Object System.Windows.Forms.Panel
+    $bottomPanel.Dock = "Bottom"
+    $bottomPanel.Height = 40
+    $bottomPanel.BackColor = $script:theme.background
+    $btnClose.Location = New-Object System.Drawing.Point(($dlg.ClientSize.Width - 100), 7)
+    $btnClose.Anchor = "Top, Right"
+    $btnClose.Add_Click({ $dlg.Close() })
+    $bottomPanel.Controls.Add($btnClose)
+    $dlg.Controls.Add($bottomPanel)
+
+    [void]$dlg.ShowDialog($script:mainForm)
 }
 
 # Default until config loads
@@ -716,7 +966,9 @@ function Load-Config {
             $config = $raw | ConvertFrom-Json
             if ($null -ne $config.themeMode) {
                 $tm = [string]$config.themeMode
-                if ($tm -in @("Default", "Steam", "Light", "HighContrast", "Windows")) {
+                $isLegacyMode = $tm -in @("Default", "Steam", "Light", "HighContrast", "Windows")
+                $isPaletteMode = $script:builtinPalettes -and $script:builtinPalettes.Contains($tm)
+                if ($isLegacyMode -or $isPaletteMode) {
                     $script:themeMode = $tm
                 }
             }
@@ -1461,6 +1713,7 @@ function UpdateEditor {
             $normalized = Normalize-Newlines $raw
             if ($null -ne $script:editorBox) {
                 $script:editorBox.Text = $normalized
+                Highlight-RawEditorAll
             }
             
             try {
@@ -1479,10 +1732,8 @@ function UpdateEditor {
                 Apply-MetaAndGamesCollapseState
             } else {
                 if ($script:rawSearchBar) { $script:rawSearchBar.Visible = $true }
-                if ($script:editorBox) {
-                    $script:editorBox.Visible = $true
-                    try { $script:editorBox.Location = New-Object System.Drawing.Point(5, 80) } catch {}
-                }
+                if ($script:editorBox) { $script:editorBox.Visible = $true }
+                try { Apply-RawEditorLayout } catch {}
                 if ($script:gameListBox) { $script:gameListBox.Visible = $false }
                 if ($script:detailPanel) { $script:detailPanel.Visible = $false }
                 if ($script:metaOuter) { $script:metaOuter.Visible = $false }
@@ -1936,9 +2187,9 @@ function Apply-RawEditorLayout {
     if (-not $script:rawMode) { return }
     $gap = 6
     $fullW = if ($script:contentFullW) { $script:contentFullW } else { 1132 }
-    $editorTop = 80
     $searchTop = 48
-    $searchH = 30
+    $searchH = if ($script:rawReplaceVisible) { 64 } else { 30 }
+    $editorTop = $searchTop + $searchH + $gap
 
     # Available height inside the right panel (prefer client size)
     $avail = 700
@@ -2218,6 +2469,125 @@ function Find-InRawEditor {
     }
 }
 
+function Get-RawEditorLineColor {
+    # Whole-line syntax coloring for the raw Pegasus metadata.txt editor.
+    # Matches the app's own semantic colors so it stays in sync with
+    # whatever theme is active: game: = success (green), the asset/identity
+    # fields = accent (cyan in most themes), everything else (comments,
+    # blank lines, indented continuation lines, unrecognized keys) = text.
+    param([string]$line)
+    $trimmed = $line.TrimStart()
+    if ($trimmed -match '^game\s*:') { return $script:theme.success }
+    if ($trimmed -match '^assets\.[^\s:]*\s*:') { return $script:theme.accent }
+    if ($trimmed -match '^(shortname|collection|launch|description)\s*:') { return $script:theme.accent }
+    return $script:theme.text
+}
+
+function Paint-RawEditorLine {
+    param([int]$LineIndex)
+    if (-not $script:editorBox) { return }
+    $eb = $script:editorBox
+    if ($LineIndex -lt 0 -or $LineIndex -ge $eb.Lines.Count) { return }
+    $lineText = $eb.Lines[$LineIndex]
+    if ([string]::IsNullOrEmpty($lineText)) { return }
+    $lineStart = $eb.GetFirstCharIndexFromLine($LineIndex)
+    if ($lineStart -lt 0) { return }
+    $color = Get-RawEditorLineColor $lineText
+    $savedStart = $eb.SelectionStart
+    $savedLen = $eb.SelectionLength
+    $eb.Select($lineStart, $lineText.Length)
+    $eb.SelectionColor = $color
+    $eb.Select($savedStart, $savedLen)
+}
+
+function Highlight-RawEditorAll {
+    # Recolors every line. Used after bulk text changes (loading a
+    # collection, entering Raw view, Replace All, switching themes) rather
+    # than on every keystroke, since it's proportional to document size.
+    if (-not $script:rawMode -or -not $script:editorBox) { return }
+    $eb = $script:editorBox
+    $savedStart = $eb.SelectionStart
+    $savedLen = $eb.SelectionLength
+    $WM_SETREDRAW = 0x000B
+    try { [void][MrtWin32]::SendMessage($eb.Handle, $WM_SETREDRAW, [IntPtr]::Zero, [IntPtr]::Zero) } catch {}
+    try {
+        for ($i = 0; $i -lt $eb.Lines.Count; $i++) {
+            Paint-RawEditorLine $i
+        }
+    } finally {
+        try { [void][MrtWin32]::SendMessage($eb.Handle, $WM_SETREDRAW, [IntPtr]1, [IntPtr]::Zero) } catch {}
+        $eb.Invalidate()
+        $eb.Select($savedStart, $savedLen)
+        $eb.SelectionColor = $script:theme.text
+        $script:rawEditorLastLineCount = $eb.Lines.Count
+    }
+}
+
+function Highlight-RawEditorCurrentLine {
+    # Cheap per-keystroke recolor of just the line the caret is on.
+    if (-not $script:rawMode -or -not $script:editorBox) { return }
+    $eb = $script:editorBox
+    try {
+        $idx = $eb.GetLineFromCharIndex($eb.SelectionStart)
+        Paint-RawEditorLine $idx
+    } catch {}
+}
+
+function Show-RawReplaceBar {
+    # Opens the second (Replace) row of the raw editor's find bar - wired
+    # to Ctrl+H, with Ctrl+F just focusing the existing Find row.
+    param([string]$Focus = "Find")
+    if (-not $script:rawSearchBar) { return }
+    if ($Focus -eq "Replace") {
+        $script:rawReplaceVisible = $true
+        if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $true }
+        Apply-RawEditorLayout
+        if ($script:rawReplaceBox) {
+            $script:rawReplaceBox.Focus()
+            $script:rawReplaceBox.SelectAll()
+        }
+    } else {
+        if ($script:rawSearchBox) {
+            $script:rawSearchBox.Focus()
+            $script:rawSearchBox.SelectAll()
+        }
+    }
+}
+
+function Replace-InRawEditor {
+    # Replace (current selection, if it matches Find) or Replace All.
+    param([switch]$All)
+    if (-not $script:editorBox -or -not $script:rawSearchBox) { return }
+    $needle = $script:rawSearchBox.Text
+    if ([string]::IsNullOrEmpty($needle)) {
+        if ($script:rawSearchStatus) { $script:rawSearchStatus.Text = "Enter text to find" }
+        return
+    }
+    $replacement = if ($script:rawReplaceBox) { $script:rawReplaceBox.Text } else { "" }
+    if ($All) {
+        $hay = $script:editorBox.Text
+        if ([string]::IsNullOrEmpty($hay)) { return }
+        $pattern = [regex]::Escape($needle)
+        $count = [regex]::Matches($hay, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase).Count
+        if ($count -eq 0) {
+            if ($script:rawSearchStatus) { $script:rawSearchStatus.Text = "No matches" }
+            return
+        }
+        $evaluator = [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $replacement }
+        $newText = [regex]::Replace($hay, $pattern, $evaluator, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $script:editorBox.Text = $newText
+        Highlight-RawEditorAll
+        if ($script:rawSearchStatus) { $script:rawSearchStatus.Text = "Replaced $count occurrence(s)" }
+        Log-Message "Raw editor: replaced $count occurrence(s) of '$needle'" "Cyan"
+    } else {
+        $selected = $script:editorBox.SelectedText
+        if ($selected -and $selected.Equals($needle, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $script:editorBox.SelectedText = $replacement
+        }
+        Find-InRawEditor -Forward $true
+    }
+}
+
 function Set-EditorMode {
     param([bool]$raw)
     
@@ -2231,6 +2601,7 @@ function Set-EditorMode {
             if ($script:editorBox) { $script:editorBox.Text = Normalize-Newlines $built }
         }
         $script:rawMode = $true
+        Highlight-RawEditorAll
         if ($script:gameListBox) { $script:gameListBox.Visible = $false }
         if ($script:detailPanel) { $script:detailPanel.Visible = $false }
         if ($script:metaOuter) { $script:metaOuter.Visible = $false }
@@ -2477,7 +2848,7 @@ function Show-SettingsDialog {
     $btnDevLog.Add_Click({ Show-DeveloperLogDialog })
     $grpGuide.Controls.Add($btnDevLog)
 
-    # ========== Section 3: Theme (horizontal equal buttons) ==========
+    # ========== Section 3: Theme ==========
     $grpTheme = New-Object System.Windows.Forms.GroupBox
     $grpTheme.Text = " Theme "
     $grpTheme.Location = New-Object System.Drawing.Point($secX, 202)
@@ -2487,62 +2858,39 @@ function Show-SettingsDialog {
     $grpTheme.BackColor = $script:theme.background
     $dlg.Controls.Add($grpTheme)
 
-    $themes = @(
-        @{ Name = "Default"; Mode = "Default" },
-        @{ Name = "Steam"; Mode = "Steam" },
-        @{ Name = "Light"; Mode = "Light" },
-        @{ Name = "Contrast"; Mode = "HighContrast" },
-        @{ Name = "Windows"; Mode = "Windows" }
-    )
-    # 5 equal buttons across the group width
-    $themeCount = $themes.Count
+    $script:themeCurrentSwatch = New-Object System.Windows.Forms.Panel
     $themePad = 12
-    $themeInner = $secW - (2 * $themePad)
-    $themeBw = [Math]::Floor(($themeInner - ($gap * ($themeCount - 1))) / $themeCount)
-    $tx = $themePad
-    $themeBtns = New-Object System.Collections.ArrayList
-    foreach ($th in $themes) {
-        $tb = Create-Button $th.Name $tx 28 $themeBw $btnH
-        $tb.Tag = $th.Mode
-        $tb.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-        if ($script:themeMode -eq $th.Mode) {
-            $tb.BackColor = $script:theme.accentDark
-            $tb.ForeColor = [System.Drawing.Color]::White
-        }
-        $tb.Add_Click({
-            param($sender, $e)
-            $chosen = [string]$sender.Tag
-            if ([string]::IsNullOrWhiteSpace($chosen)) { return }
-            if ($script:themeMode -eq $chosen) { return }
-            Set-AppThemeMode -Mode $chosen
-            try {
-                $form = $sender.FindForm()
-                if ($form) {
-                    Apply-ThemeToControl $form
-                    # Re-highlight the active theme button after full theme apply
-                    foreach ($c in @($form.Controls)) {
-                        if ($c -isnot [System.Windows.Forms.GroupBox]) { continue }
-                        if ($c.Text -notmatch 'Theme') { continue }
-                        foreach ($b in @($c.Controls)) {
-                            if ($b -isnot [System.Windows.Forms.Button]) { continue }
-                            $mode = [string]$b.Tag
-                            if ($mode -eq $script:themeMode) {
-                                $b.BackColor = $script:theme.accentDark
-                                $b.ForeColor = [System.Drawing.Color]::White
-                            } else {
-                                $b.BackColor = $script:theme.button
-                                $b.ForeColor = $script:theme.text
-                            }
-                        }
-                    }
-                }
-            } catch {}
-            Log-Message "Theme: $chosen" "Cyan"
-        })
-        $grpTheme.Controls.Add($tb)
-        [void]$themeBtns.Add($tb)
-        $tx += $themeBw + $gap
-    }
+    $script:themeCurrentSwatch.Location = New-Object System.Drawing.Point(12, 28)
+    $script:themeCurrentSwatch.Size = New-Object System.Drawing.Size(36, 26)
+    $script:themeCurrentSwatch.BackColor = $script:theme.accent
+    $script:themeCurrentSwatch.BorderStyle = "FixedSingle"
+    $grpTheme.Controls.Add($script:themeCurrentSwatch)
+
+    $script:themeCurrentLabel = New-Object System.Windows.Forms.Label
+    $script:themeCurrentLabel.Text = "Current: $($script:themeMode)"
+    $script:themeCurrentLabel.Location = New-Object System.Drawing.Point(56, 33)
+    $script:themeCurrentLabel.Size = New-Object System.Drawing.Size(220, 20)
+    $script:themeCurrentLabel.ForeColor = $script:theme.text
+    $script:themeCurrentLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $grpTheme.Controls.Add($script:themeCurrentLabel)
+
+    $btnChooseTheme = Create-Button "Choose Theme..." ($secW - $btnW - $themePad) 28 $btnW $btnH
+    $btnChooseTheme.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnChooseTheme.Add_Click({
+        Show-ThemePickerDialog
+        # The picker applies live to the main window; bring this dialog's
+        # own colors and the preview swatch in line with whatever was picked.
+        try {
+            Apply-ThemeToControl $dlg
+            $dlg.BackColor = $script:theme.background
+            if ($script:themeCurrentSwatch) { $script:themeCurrentSwatch.BackColor = $script:theme.accent }
+            if ($script:themeCurrentLabel) {
+                $script:themeCurrentLabel.Text = "Current: $($script:themeMode)"
+                $script:themeCurrentLabel.ForeColor = $script:theme.text
+            }
+        } catch {}
+    })
+    $grpTheme.Controls.Add($btnChooseTheme)
 
     # ========== Section 4: API Keys ==========
     $grpApi = New-Object System.Windows.Forms.GroupBox
@@ -4195,42 +4543,73 @@ function Show-MainWindow {
         if (-not $script:suppressGameSelect) { LoadSelectedGameFields }
     })
     
-    # Raw editor (hidden by default)
-    $editorBox = New-Object System.Windows.Forms.TextBox
+    # Raw editor (hidden by default). A RichTextBox rather than a plain
+    # TextBox: this is what actually gets us reliable Ctrl+V/Enter plus
+    # per-line color, since a plain TextBox can only ever be one solid color.
+    $editorBox = New-Object System.Windows.Forms.RichTextBox
     $editorBox.Location = New-Object System.Drawing.Point(5, 80)
     $editorBox.Size = New-Object System.Drawing.Size(1132, 598)
     $editorBox.Multiline = $true
     $editorBox.ScrollBars = "Both"
     $editorBox.WordWrap = $false
     $editorBox.AcceptsTab = $true
-    $editorBox.AcceptsReturn = $true
     $editorBox.ShortcutsEnabled = $true
+    $editorBox.DetectUrls = $false
+    $editorBox.HideSelection = $false
     $editorBox.Font = New-Object System.Drawing.Font("Consolas", 9)
     $editorBox.BackColor = $script:theme.editor
     $editorBox.ForeColor = $script:theme.text
     $editorBox.BorderStyle = "FixedSingle"
     $editorBox.Visible = $false
     $editorBox.Text = "Select a collection to view metadata..."
-    # Explicit paste handling - some hosts block default Ctrl+V on multiline TextBox
+
+    # Ctrl+C / Ctrl+X / Ctrl+A / Ctrl+Z / arrows / Home / End / Page Up-Down /
+    # Delete / Backspace / double-click-to-select-word are all native
+    # RichTextBox behavior and need no code here. The handful below either
+    # aren't wired to anything by default (paste-as-plain-text, redo) or need
+    # to be pointed at this app's own Save/Find/Replace instead of a no-op.
     $editorBox.Add_KeyDown({
         param($sender, $e)
         if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::V) {
+            # Paste as plain text - so text copied from Word/a browser/etc.
+            # picks up this editor's own font and theme color instead of
+            # bringing its source formatting along with it.
             try {
                 if ([System.Windows.Forms.Clipboard]::ContainsText()) {
-                    $clip = [System.Windows.Forms.Clipboard]::GetText()
-                    $start = $sender.SelectionStart
-                    $len = $sender.SelectionLength
-                    $txt = $sender.Text
-                    if ($null -eq $txt) { $txt = "" }
-                    $before = if ($start -gt 0) { $txt.Substring(0, $start) } else { "" }
-                    $after = if (($start + $len) -lt $txt.Length) { $txt.Substring($start + $len) } else { "" }
-                    $sender.Text = $before + $clip + $after
-                    $sender.SelectionStart = $start + $clip.Length
-                    $sender.SelectionLength = 0
-                    $e.SuppressKeyPress = $true
-                    $e.Handled = $true
+                    $sender.SelectedText = [System.Windows.Forms.Clipboard]::GetText()
                 }
             } catch {}
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::Y) {
+            try { if ($sender.CanRedo) { $sender.Redo() } } catch {}
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::F) {
+            Show-RawReplaceBar -Focus "Find"
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::H) {
+            Show-RawReplaceBar -Focus "Replace"
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::S) {
+            SaveMeta
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        }
+    })
+    $editorBox.Add_TextChanged({
+        if (-not $script:rawMode -or -not $script:editorBox) { return }
+        $eb = $script:editorBox
+        $curCount = $eb.Lines.Count
+        if ($curCount -ne $script:rawEditorLastLineCount) {
+            # Line count changed (paste, Enter, multi-line delete) - a
+            # single-line recolor wouldn't reach every affected line.
+            $script:rawEditorLastLineCount = $curCount
+            Highlight-RawEditorAll
+        } else {
+            Highlight-RawEditorCurrentLine
         }
     })
     $rightPanel.Controls.Add($editorBox)
@@ -4280,13 +4659,79 @@ function Show-MainWindow {
     $btnRawFindPrev.Add_Click({ Find-InRawEditor -Forward $false })
     $rawSearchBar.Controls.Add($btnRawFindPrev)
 
+    $btnRawReplaceToggle = Create-Button "Replace" 670 2 90 24
+    $btnRawReplaceToggle.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceToggle.Add_Click({
+        if ($script:rawReplaceVisible) {
+            $script:rawReplaceVisible = $false
+            if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $false }
+            Apply-RawEditorLayout
+        } else {
+            Show-RawReplaceBar -Focus "Replace"
+        }
+    })
+    $rawSearchBar.Controls.Add($btnRawReplaceToggle)
+
     $rawSearchStatus = New-Object System.Windows.Forms.Label
     $rawSearchStatus.Text = ""
-    $rawSearchStatus.Location = New-Object System.Drawing.Point(674, 5)
-    $rawSearchStatus.Size = New-Object System.Drawing.Size(440, 20)
+    $rawSearchStatus.Location = New-Object System.Drawing.Point(766, 5)
+    $rawSearchStatus.Size = New-Object System.Drawing.Size(360, 20)
     $rawSearchStatus.ForeColor = $script:theme.textDim
     $rawSearchBar.Controls.Add($rawSearchStatus)
     $script:rawSearchStatus = $rawSearchStatus
+
+    # ---- Replace row (2nd row of the find bar; Ctrl+H, hidden until used) ----
+    $rawReplaceRow = New-Object System.Windows.Forms.Panel
+    $rawReplaceRow.Location = New-Object System.Drawing.Point(0, 32)
+    $rawReplaceRow.Size = New-Object System.Drawing.Size(1132, 30)
+    $rawReplaceRow.BackColor = $script:theme.background
+    $rawReplaceRow.Visible = $false
+    $rawSearchBar.Controls.Add($rawReplaceRow)
+    $script:rawReplaceRow = $rawReplaceRow
+
+    $rawReplaceLbl = New-Object System.Windows.Forms.Label
+    $rawReplaceLbl.Text = "Replace:"
+    $rawReplaceLbl.Location = New-Object System.Drawing.Point(4, 5)
+    $rawReplaceLbl.Size = New-Object System.Drawing.Size(60, 20)
+    $rawReplaceLbl.ForeColor = $script:theme.textDim
+    $rawReplaceRow.Controls.Add($rawReplaceLbl)
+
+    $rawReplaceBox = New-Object System.Windows.Forms.TextBox
+    $rawReplaceBox.Location = New-Object System.Drawing.Point(68, 3)
+    $rawReplaceBox.Size = New-Object System.Drawing.Size(400, 24)
+    $rawReplaceBox.BackColor = $script:theme.editor
+    $rawReplaceBox.ForeColor = $script:theme.text
+    $rawReplaceBox.BorderStyle = "FixedSingle"
+    $rawReplaceBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $rawReplaceRow.Controls.Add($rawReplaceBox)
+    $script:rawReplaceBox = $rawReplaceBox
+    $rawReplaceBox.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+            Replace-InRawEditor
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        }
+    })
+
+    $btnRawReplaceOne = Create-Button "Replace" 478 2 90 24
+    $btnRawReplaceOne.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceOne.Add_Click({ Replace-InRawEditor })
+    $rawReplaceRow.Controls.Add($btnRawReplaceOne)
+
+    $btnRawReplaceAll = Create-Button "Replace All" 574 2 90 24
+    $btnRawReplaceAll.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceAll.Add_Click({ Replace-InRawEditor -All })
+    $rawReplaceRow.Controls.Add($btnRawReplaceAll)
+
+    $btnRawReplaceClose = Create-Button "Close" 670 2 90 24
+    $btnRawReplaceClose.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceClose.Add_Click({
+        $script:rawReplaceVisible = $false
+        if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $false }
+        Apply-RawEditorLayout
+    })
+    $rawReplaceRow.Controls.Add($btnRawReplaceClose)
     
     # ---- Top header row: action buttons (left) + stats (right) ----
     # Single clean row across the full content width
