@@ -258,7 +258,7 @@ public static class MrtWin32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.41"
+$script:version = "2.5.42"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
@@ -282,6 +282,8 @@ $script:parsedGames = @()
 $script:rawMode = $false
 $script:rawEditorLastLineCount = 0
 $script:rawReplaceVisible = $false
+$script:hasUnsavedChanges = $false
+$script:suppressDirtyTracking = $false
 $script:editorSplit = $null
 $script:detailPanel = $null
 $script:metaOuter = $null
@@ -527,7 +529,7 @@ function Initialize-SteamTheme {
         textDim     = [System.Drawing.Color]::FromArgb(140, 155, 170)
         accent      = [System.Drawing.Color]::FromArgb(102, 192, 244)
         accentDark  = [System.Drawing.Color]::FromArgb(27, 140, 180)
-        success     = [System.Drawing.Color]::FromArgb(90, 200, 120)
+        success     = [System.Drawing.Color]::FromArgb(101, 127, 5)
         error       = [System.Drawing.Color]::FromArgb(255, 110, 110)
         warning     = [System.Drawing.Color]::FromArgb(230, 180, 70)
         button      = [System.Drawing.Color]::FromArgb(42, 71, 94)
@@ -552,7 +554,7 @@ function Initialize-WindowsTheme {
     if ($light) {
         $script:theme = @{
             background  = [System.Drawing.Color]::FromArgb(245, 245, 250)
-            panel       = [System.Drawing.Color]::FromArgb(255, 255, 255)
+            panel       = [System.Drawing.Color]::FromArgb(228, 228, 233)
             border      = [System.Drawing.Color]::FromArgb(200, 200, 210)
             text        = [System.Drawing.Color]::FromArgb(30, 30, 40)
             textDim     = [System.Drawing.Color]::FromArgb(100, 100, 120)
@@ -601,7 +603,7 @@ function Initialize-LightTheme {
     $script:isLightTheme = $true
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(245, 246, 250)
-        panel       = [System.Drawing.Color]::FromArgb(255, 255, 255)
+        panel       = [System.Drawing.Color]::FromArgb(228, 229, 234)
         border      = [System.Drawing.Color]::FromArgb(190, 195, 210)
         text        = [System.Drawing.Color]::FromArgb(25, 28, 40)
         textDim     = [System.Drawing.Color]::FromArgb(90, 95, 115)
@@ -622,7 +624,7 @@ function Initialize-HighContrastTheme {
     $script:isLightTheme = $false
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(0, 0, 0)
-        panel       = [System.Drawing.Color]::FromArgb(0, 0, 0)
+        panel       = [System.Drawing.Color]::FromArgb(20, 20, 20)
         border      = [System.Drawing.Color]::FromArgb(255, 255, 255)
         text        = [System.Drawing.Color]::FromArgb(255, 255, 255)
         textDim     = [System.Drawing.Color]::FromArgb(220, 220, 220)
@@ -639,40 +641,49 @@ function Initialize-HighContrastTheme {
 }
 
 # ----------------------------------------------------------------------------
-# Named palette themes - the same style of theme list Upscayl ships (it bundles
-# the daisyUI stock theme set). These are original palettes in that spirit,
-# not a pixel-for-pixel copy of any project's exact hex values. Everything is
-# defined right here in the script - no theme files, no external assets.
+# Named palette themes - the same theme set Upscayl ships (it bundles daisyUI's
+# stock themes). Each one's primary/base/semantic colors are pulled from
+# daisyUI's own theme source (src/theming/themes.js) and converted from
+# OKLCH to hex, then background/panel/border/accentDark/textDim are derived
+# from those (daisyUI itself only ships base-100 for most themes and computes
+# the rest; darker "step" shades and a contrast-safety pass are applied here
+# since this app uses "accent" directly as readable text/border color, not a
+# button fill with its own separate content color the way daisyUI does).
+# Everything is defined right here in the script - no theme files.
 # ----------------------------------------------------------------------------
 $script:builtinPalettes = [ordered]@{
-    "Dark"       = @{ background = "#1d232a"; panel = "#191e24"; border = "#2a323c"; text = "#e7ecf3"; textDim = "#97a3b4"; accent = "#5b8def"; accentDark = "#3f68b8"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#2a323c"; buttonHover = "#364256"; editor = "#151a20"; terminal = "#151a20" }
-    "Cupcake"    = @{ background = "#faf7f5"; panel = "#ffffff"; border = "#e7d7d0"; text = "#3d2b2b"; textDim = "#8a7268"; accent = "#ef9fbc"; accentDark = "#d97ba0"; success = "#78c9a2"; error = "#e0728a"; warning = "#eeaf3a"; button = "#f4e3e6"; buttonHover = "#f0d0d8"; editor = "#ffffff"; terminal = "#fbf1ee" }
-    "Bumblebee"  = @{ background = "#ffffff"; panel = "#f7f4e8"; border = "#e4dcae"; text = "#1f1300"; textDim = "#7a6a30"; accent = "#f9d72f"; accentDark = "#e0b400"; success = "#22c55e"; error = "#ef4444"; warning = "#eab308"; button = "#f3e9b0"; buttonHover = "#ecd97e"; editor = "#ffffff"; terminal = "#fbf8e8" }
-    "Emerald"    = @{ background = "#f4fbf6"; panel = "#ffffff"; border = "#cfe9d8"; text = "#16302a"; textDim = "#5f7d73"; accent = "#2bb673"; accentDark = "#1f8f59"; success = "#22c55e"; error = "#ef4444"; warning = "#f59e0b"; button = "#dcf2e4"; buttonHover = "#c2e8d1"; editor = "#ffffff"; terminal = "#eefbf3" }
-    "Corporate"  = @{ background = "#f5f6f8"; panel = "#ffffff"; border = "#d7dbe2"; text = "#1f2733"; textDim = "#6b7688"; accent = "#2563eb"; accentDark = "#1d4ed8"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#e6e9ee"; buttonHover = "#d3d9e2"; editor = "#ffffff"; terminal = "#eef0f3" }
-    "Synthwave"  = @{ background = "#241b2f"; panel = "#2d213b"; border = "#4b3466"; text = "#f4eefb"; textDim = "#b79fce"; accent = "#ff7edb"; accentDark = "#d34fb0"; success = "#72f1b8"; error = "#fe4450"; warning = "#f97e72"; button = "#3a2a52"; buttonHover = "#4b3768"; editor = "#1c1428"; terminal = "#1c1428" }
-    "Retro"      = @{ background = "#ece3ca"; panel = "#f4efdc"; border = "#d8c9a3"; text = "#2f2410"; textDim = "#7a6a4c"; accent = "#d97b3f"; accentDark = "#b85f2b"; success = "#6d9773"; error = "#c94f4f"; warning = "#e0a12e"; button = "#e2d5ab"; buttonHover = "#d6c690"; editor = "#f4efdc"; terminal = "#e7ddc0" }
-    "Cyberpunk"  = @{ background = "#100f11"; panel = "#1a181c"; border = "#33302f"; text = "#f5f5f0"; textDim = "#a7a49e"; accent = "#f6e23e"; accentDark = "#d1c11a"; success = "#3ddc97"; error = "#ff4d6d"; warning = "#ffb703"; button = "#262226"; buttonHover = "#33302f"; editor = "#0c0b0d"; terminal = "#0c0b0d" }
-    "Valentine"  = @{ background = "#fdf1f6"; panel = "#ffffff"; border = "#f3c6dc"; text = "#38182c"; textDim = "#935a76"; accent = "#e96d9b"; accentDark = "#c94c7c"; success = "#5eb98c"; error = "#e0577b"; warning = "#e8a13f"; button = "#fadce9"; buttonHover = "#f4c2d9"; editor = "#ffffff"; terminal = "#fdeef4" }
-    "Halloween"  = @{ background = "#1a1512"; panel = "#241d18"; border = "#3c2f22"; text = "#f1e5d2"; textDim = "#a08f77"; accent = "#ff7f0e"; accentDark = "#cc620a"; success = "#6f9c3d"; error = "#c1440e"; warning = "#d97706"; button = "#2e241c"; buttonHover = "#3c2f22"; editor = "#150f0c"; terminal = "#150f0c" }
-    "Garden"     = @{ background = "#f6f2ef"; panel = "#ffffff"; border = "#e3d7cf"; text = "#392f2a"; textDim = "#8a7a70"; accent = "#5c8a72"; accentDark = "#446a56"; success = "#6ea87c"; error = "#c4676a"; warning = "#d99a4e"; button = "#e8ddd0"; buttonHover = "#dccbb8"; editor = "#ffffff"; terminal = "#f2ebe1" }
-    "Forest"     = @{ background = "#131f18"; panel = "#182a20"; border = "#294436"; text = "#dff0e4"; textDim = "#82a893"; accent = "#36d399"; accentDark = "#22a876"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#1f3529"; buttonHover = "#294436"; editor = "#0f1913"; terminal = "#0f1913" }
-    "Aqua"       = @{ background = "#0c2b3d"; panel = "#123c52"; border = "#1f5a75"; text = "#eafbff"; textDim = "#86c4d8"; accent = "#22d3ee"; accentDark = "#0ea5c4"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#164a63"; buttonHover = "#1c5c79"; editor = "#082130"; terminal = "#082130" }
-    "Lofi"       = @{ background = "#ffffff"; panel = "#f7f7f7"; border = "#dedede"; text = "#0a0a0a"; textDim = "#6b6b6b"; accent = "#4b4b4b"; accentDark = "#2b2b2b"; success = "#2f855a"; error = "#c0392b"; warning = "#b7791f"; button = "#ececec"; buttonHover = "#dcdcdc"; editor = "#ffffff"; terminal = "#f2f2f2" }
-    "Pastel"     = @{ background = "#fbf7fb"; panel = "#ffffff"; border = "#e7dcf0"; text = "#3a3350"; textDim = "#948bab"; accent = "#b9a6e0"; accentDark = "#9a82cf"; success = "#a8d8b9"; error = "#f3a6a6"; warning = "#f6d6a8"; button = "#eee3f5"; buttonHover = "#e2d2ef"; editor = "#ffffff"; terminal = "#f7f1fa" }
-    "Fantasy"    = @{ background = "#f7f3fb"; panel = "#ffffff"; border = "#e2d3ef"; text = "#2c1a3d"; textDim = "#7c6690"; accent = "#a855f7"; accentDark = "#8b2fe0"; success = "#34c88f"; error = "#e0577b"; warning = "#eab308"; button = "#ecdffa"; buttonHover = "#dfc6f4"; editor = "#ffffff"; terminal = "#f6eefc" }
-    "Wireframe"  = @{ background = "#ffffff"; panel = "#ffffff"; border = "#b5b5b5"; text = "#1a1a1a"; textDim = "#6e6e6e"; accent = "#4a4a4a"; accentDark = "#000000"; success = "#2f855a"; error = "#b02a2a"; warning = "#8a6d1e"; button = "#f2f2f2"; buttonHover = "#e2e2e2"; editor = "#ffffff"; terminal = "#fafafa" }
-    "Black"      = @{ background = "#000000"; panel = "#0a0a0a"; border = "#2a2a2a"; text = "#f5f5f5"; textDim = "#9a9a9a"; accent = "#7d7d7d"; accentDark = "#555555"; success = "#22c55e"; error = "#ef4444"; warning = "#eab308"; button = "#141414"; buttonHover = "#1f1f1f"; editor = "#000000"; terminal = "#000000" }
-    "Luxury"     = @{ background = "#14110d"; panel = "#1b1712"; border = "#3a3020"; text = "#f2e6c9"; textDim = "#a4936b"; accent = "#cdae51"; accentDark = "#a98c33"; success = "#4b7f52"; error = "#a13d3d"; warning = "#c99a3c"; button = "#241f17"; buttonHover = "#302921"; editor = "#100d0a"; terminal = "#100d0a" }
-    "Dracula"    = @{ background = "#282a36"; panel = "#21222c"; border = "#44475a"; text = "#f8f8f2"; textDim = "#6272a4"; accent = "#bd93f9"; accentDark = "#9d6fe0"; success = "#50fa7b"; error = "#ff5555"; warning = "#f1fa8c"; button = "#343746"; buttonHover = "#44475a"; editor = "#21222c"; terminal = "#21222c" }
-    "Cmyk"       = @{ background = "#ffffff"; panel = "#f5f5f7"; border = "#d6d6db"; text = "#101010"; textDim = "#6d6d75"; accent = "#00b7eb"; accentDark = "#0090bd"; success = "#1fae4b"; error = "#e0225a"; warning = "#ffde00"; button = "#e9e9ee"; buttonHover = "#d9d9e2"; editor = "#ffffff"; terminal = "#f2f2f5" }
-    "Autumn"     = @{ background = "#f6ede1"; panel = "#fbf4ea"; border = "#ddc09a"; text = "#3a2415"; textDim = "#8a6a4c"; accent = "#c05621"; accentDark = "#9a441a"; success = "#6b8f4e"; error = "#a4302a"; warning = "#c98a2c"; button = "#ecdcc4"; buttonHover = "#e0c9a6"; editor = "#fbf4ea"; terminal = "#efe2cd" }
-    "Business"   = @{ background = "#1a2332"; panel = "#202b3d"; border = "#35435a"; text = "#e7ecf3"; textDim = "#8b98ac"; accent = "#3b82f6"; accentDark = "#2563eb"; success = "#22c55e"; error = "#ef4444"; warning = "#f59e0b"; button = "#263248"; buttonHover = "#324160"; editor = "#151d29"; terminal = "#151d29" }
-    "Acid"       = @{ background = "#fbfcef"; panel = "#ffffff"; border = "#d8e89a"; text = "#22280d"; textDim = "#7c8a4a"; accent = "#a3e635"; accentDark = "#7bc419"; success = "#22c55e"; error = "#ff2d78"; warning = "#facc15"; button = "#eaf4c0"; buttonHover = "#dcec9c"; editor = "#ffffff"; terminal = "#f6f9df" }
-    "Lemonade"   = @{ background = "#fbfde9"; panel = "#ffffff"; border = "#e1eaa6"; text = "#26310c"; textDim = "#77864a"; accent = "#cbe552"; accentDark = "#a9c62f"; success = "#4ade80"; error = "#ef4444"; warning = "#eab308"; button = "#eef5c4"; buttonHover = "#e2eda0"; editor = "#ffffff"; terminal = "#f6f9dd" }
-    "Night"      = @{ background = "#0f1729"; panel = "#161d31"; border = "#29314d"; text = "#cbd5e1"; textDim = "#7d8ba1"; accent = "#38bdf8"; accentDark = "#0ea5e9"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#1e263c"; buttonHover = "#29314d"; editor = "#0b1220"; terminal = "#0b1220" }
-    "Coffee"     = @{ background = "#20161a"; panel = "#2a1e22"; border = "#4a352f"; text = "#f1e7d3"; textDim = "#b0978a"; accent = "#c68958"; accentDark = "#a06b3f"; success = "#7a9a5e"; error = "#b1503b"; warning = "#cf9a3f"; button = "#34262a"; buttonHover = "#423037"; editor = "#1a1215"; terminal = "#1a1215" }
-    "Winter"     = @{ background = "#f0f6fb"; panel = "#ffffff"; border = "#cfe0ee"; text = "#1c2b3a"; textDim = "#62778c"; accent = "#3aa9dd"; accentDark = "#2683b0"; success = "#34a06d"; error = "#d1495b"; warning = "#e2a33e"; button = "#dceaf5"; buttonHover = "#c5deef"; editor = "#ffffff"; terminal = "#e9f2fa" }
+    "Dark" = @{ background = "#1d232a"; panel = "#0f141a"; border = "#15191e"; text = "#a6adbb"; textDim = "#6c737e"; accent = "#7480ff"; accentDark = "#5a64c7"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#333a5f"; buttonHover = "#3e467b"; editor = "#1d232a"; terminal = "#1d232a" }
+    "Cupcake" = @{ background = "#f7e8ec"; panel = "#efd6dd"; border = "#e3bfc9"; text = "#4a2c35"; textDim = "#8c6672"; accent = "#e8829f"; accentDark = "#c65f7d"; success = "#8fc9a0"; error = "#d9536f"; warning = "#eeaf3a"; button = "#efd6dd"; buttonHover = "#e3bfc9"; editor = "#efd6dd"; terminal = "#efd6dd" }
+    "Bumblebee" = @{ background = "#e9e6d4"; panel = "#dbd8c7"; border = "#cdcabb"; text = "#1f2937"; textDim = "#747879"; accent = "#ab9200"; accentDark = "#857200"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#dbd8c7"; buttonHover = "#cdcabb"; editor = "#dbd8c7"; terminal = "#dbd8c7" }
+    "Emerald" = @{ background = "#0d1f16"; panel = "#123023"; border = "#1a4531"; text = "#eafbf0"; textDim = "#7fb89a"; accent = "#2bb673"; accentDark = "#1f8f59"; success = "#34d399"; error = "#f87171"; warning = "#fbbf24"; button = "#123023"; buttonHover = "#1a4531"; editor = "#0d1f16"; terminal = "#0d1f16" }
+    "Corporate" = @{ background = "#dee1eb"; panel = "#d1d4dd"; border = "#c3c6cf"; text = "#181a2a"; textDim = "#6b6e7b"; accent = "#4d6eff"; accentDark = "#3c56c7"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#d1d4dd"; buttonHover = "#c3c6cf"; editor = "#d1d4dd"; terminal = "#d1d4dd" }
+    "Synthwave" = @{ background = "#1a103d"; panel = "#3f2355"; border = "#170e36"; text = "#f9f7fd"; textDim = "#9b96ac"; accent = "#e779c1"; accentDark = "#b45e97"; success = "#71ead2"; error = "#ec8c78"; warning = "#eace6c"; button = "#4d2a5e"; buttonHover = "#62356b"; editor = "#1a103d"; terminal = "#1a103d" }
+    "Retro" = @{ background = "#ece3ca"; panel = "#e4d8b4"; border = "#dbca9a"; text = "#282425"; textDim = "#7a746a"; accent = "#a16764"; accentDark = "#7e504e"; success = "#16a34a"; error = "#f35248"; warning = "#d97706"; button = "#e4d8b4"; buttonHover = "#dbca9a"; editor = "#e4d8b4"; terminal = "#e4d8b4" }
+    "Cyberpunk" = @{ background = "#0b0b12"; panel = "#1b1921"; border = "#2a1f38"; text = "#e8faff"; textDim = "#7d7a94"; accent = "#00e5ff"; accentDark = "#001eff"; success = "#00ff9f"; error = "#ff2079"; warning = "#ffd600"; button = "#08424d"; buttonHover = "#075e6c"; editor = "#0b0b12"; terminal = "#0b0b12" }
+    "Valentine" = @{ background = "#fae7f4"; panel = "#eedbe8"; border = "#e1d0dc"; text = "#632c3b"; textDim = "#a27b89"; accent = "#e96d7b"; accentDark = "#b65560"; success = "#16a34a"; error = "#ff675b"; warning = "#d97706"; button = "#eedbe8"; buttonHover = "#e1d0dc"; editor = "#eedbe8"; terminal = "#eedbe8" }
+    "Halloween" = @{ background = "#212121"; panel = "#121212"; border = "#1d1d1d"; text = "#e7ecf3"; textDim = "#94979b"; accent = "#ff8f00"; accentDark = "#c77000"; success = "#16a34a"; error = "#f35248"; warning = "#d97706"; button = "#583c19"; buttonHover = "#754b14"; editor = "#212121"; terminal = "#212121" }
+    "Garden" = @{ background = "#e9e7e7"; panel = "#dddbdb"; border = "#d2d0d0"; text = "#100f0f"; textDim = "#6b6a6a"; accent = "#fe0075"; accentDark = "#c6005b"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#dddbdb"; buttonHover = "#d2d0d0"; editor = "#dddbdb"; terminal = "#dddbdb" }
+    "Forest" = @{ background = "#171212"; panel = "#080303"; border = "#141010"; text = "#e7ecf3"; textDim = "#909094"; accent = "#1eb854"; accentDark = "#179042"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#193c22"; buttonHover = "#1a512b"; editor = "#171212"; terminal = "#171212" }
+    "Aqua" = @{ background = "#0d2438"; panel = "#164257"; border = "#1f5a75"; text = "#eafbff"; textDim = "#86c4d8"; accent = "#22d3ee"; accentDark = "#0ea5c4"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#164257"; buttonHover = "#1f5a75"; editor = "#0d2438"; terminal = "#0d2438" }
+    "Lofi" = @{ background = "#e5e5e5"; panel = "#d7d7d7"; border = "#cacaca"; text = "#000000"; textDim = "#606060"; accent = "#0d0d0d"; accentDark = "#0a0a0a"; success = "#47ab83"; error = "#d1776a"; warning = "#ab8b47"; button = "#d7d7d7"; buttonHover = "#cacaca"; editor = "#d7d7d7"; terminal = "#d7d7d7" }
+    "Silver" = @{ background = "#e5e4e5"; panel = "#d7d6d7"; border = "#cac9ca"; text = "#1f2937"; textDim = "#727880"; accent = "#8c8290"; accentDark = "#6d6570"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#d7d6d7"; buttonHover = "#cac9ca"; editor = "#d7d6d7"; terminal = "#d7d6d7" }
+    "Pastel" = @{ background = "#f5eef8"; panel = "#ece0f2"; border = "#ddc8e8"; text = "#4a3358"; textDim = "#8d7699"; accent = "#c99ee0"; accentDark = "#a875c4"; success = "#9bdcb0"; error = "#f2a3ab"; warning = "#f6d189"; button = "#ece0f2"; buttonHover = "#ddc8e8"; editor = "#ece0f2"; terminal = "#ece0f2" }
+    "Fantasy" = @{ background = "#ddd4de"; panel = "#d0c7d1"; border = "#c2bbc3"; text = "#1f2937"; textDim = "#6f717d"; accent = "#6d0076"; accentDark = "#55005c"; success = "#16a34a"; error = "#dc2626"; warning = "#d97706"; button = "#d0c7d1"; buttonHover = "#c2bbc3"; editor = "#d0c7d1"; terminal = "#d0c7d1" }
+    "Wireframe" = @{ background = "#ededed"; panel = "#dfdfdf"; border = "#d1d1d1"; text = "#1f2937"; textDim = "#767b83"; accent = "#979797"; accentDark = "#767676"; success = "#008000"; error = "#ff0000"; warning = "#a6a659"; button = "#dfdfdf"; buttonHover = "#d1d1d1"; editor = "#dfdfdf"; terminal = "#dfdfdf" }
+    "Black" = @{ background = "#000000"; panel = "#141414"; border = "#262626"; text = "#d6d6d6"; textDim = "#7c7c7c"; accent = "#5b5b5b"; accentDark = "#474747"; success = "#008000"; error = "#ff0000"; warning = "#ffff00"; button = "#141414"; buttonHover = "#262626"; editor = "#000000"; terminal = "#000000" }
+    "Luxury" = @{ background = "#09090b"; panel = "#171618"; border = "#2e2d2f"; text = "#dca54c"; textDim = "#836331"; accent = "#ffffff"; accentDark = "#c7c7c7"; success = "#87d039"; error = "#ff6f6f"; warning = "#e2d562"; button = "#171618"; buttonHover = "#2e2d2f"; editor = "#09090b"; terminal = "#09090b" }
+    "Dracula" = @{ background = "#282a36"; panel = "#1a1b27"; border = "#232530"; text = "#f8f8f2"; textDim = "#a1a1a3"; accent = "#ff79c6"; accentDark = "#c75e9a"; success = "#50fa7b"; error = "#ff5555"; warning = "#f1fa8c"; button = "#5e3e5a"; buttonHover = "#7a486d"; editor = "#282a36"; terminal = "#282a36" }
+    "Cmyk" = @{ background = "#dee6ea"; panel = "#d1d8dc"; border = "#c3cace"; text = "#1f2937"; textDim = "#6f7882"; accent = "#398fc3"; accentDark = "#2c7098"; success = "#823290"; error = "#e93f33"; warning = "#ee8133"; button = "#d1d8dc"; buttonHover = "#c3cace"; editor = "#d1d8dc"; terminal = "#d1d8dc" }
+    "Autumn" = @{ background = "#d7ced0"; panel = "#cac2c4"; border = "#bdb5b7"; text = "#1f2937"; textDim = "#6c6e77"; accent = "#8c0327"; accentDark = "#6d021e"; success = "#499380"; error = "#d40014"; warning = "#bf6810"; button = "#cac2c4"; buttonHover = "#bdb5b7"; editor = "#cac2c4"; terminal = "#cac2c4" }
+    "Business" = @{ background = "#202020"; panel = "#111111"; border = "#1c1c1c"; text = "#e7ecf3"; textDim = "#93969a"; accent = "#6688aa"; accentDark = "#506a85"; success = "#6bb187"; error = "#bb6156"; warning = "#dbae59"; button = "#323a42"; buttonHover = "#3b4854"; editor = "#202020"; terminal = "#202020" }
+    "Acid" = @{ background = "#081a0d"; panel = "#162c1b"; border = "#163a1d"; text = "#eafff0"; textDim = "#7fae8c"; accent = "#ccff00"; accentDark = "#a3cc00"; success = "#39ff14"; error = "#ff2d55"; warning = "#faff00"; button = "#39530a"; buttonHover = "#527108"; editor = "#081a0d"; terminal = "#081a0d" }
+    "Lemonade" = @{ background = "#d8e2cc"; panel = "#cbd4c0"; border = "#bec7b4"; text = "#1f2937"; textDim = "#6d7776"; accent = "#419400"; accentDark = "#337300"; success = "#7d9485"; error = "#a18582"; warning = "#908e76"; button = "#cbd4c0"; buttonHover = "#bec7b4"; editor = "#cbd4c0"; terminal = "#cbd4c0" }
+    "Night" = @{ background = "#0f172a"; panel = "#01091a"; border = "#0d1425"; text = "#e7ecf3"; textDim = "#8c939f"; accent = "#38bdf8"; accentDark = "#2c93c1"; success = "#2dd4bf"; error = "#fb7085"; warning = "#f4bf50"; button = "#19405e"; buttonHover = "#1f5678"; editor = "#0f172a"; terminal = "#0f172a" }
+    "Coffee" = @{ background = "#20161f"; panel = "#110810"; border = "#1c131b"; text = "#c59f60"; textDim = "#806545"; accent = "#db924b"; accentDark = "#ab723a"; success = "#9db787"; error = "#fc9581"; warning = "#ffd25f"; button = "#4f352a"; buttonHover = "#674530"; editor = "#20161f"; terminal = "#20161f" }
+    "Winter" = @{ background = "#d4dde9"; panel = "#c7d0db"; border = "#bbc2cd"; text = "#394e6a"; textDim = "#7a8a9f"; accent = "#0069ff"; accentDark = "#0052c7"; success = "#578b8c"; error = "#bc7272"; warning = "#a1907d"; button = "#c7d0db"; buttonHover = "#bbc2cd"; editor = "#c7d0db"; terminal = "#c7d0db" }
+    "Dim" = @{ background = "#2a303c"; panel = "#1c212b"; border = "#20252e"; text = "#b2ccd6"; textDim = "#798a95"; accent = "#9fe88d"; accentDark = "#7cb56e"; success = "#62efbd"; error = "#ffae9b"; warning = "#efd057"; button = "#475e50"; buttonHover = "#56765b"; editor = "#2a303c"; terminal = "#2a303c" }
+    "Nord" = @{ background = "#eceff4"; panel = "#dce0e7"; border = "#d8dee9"; text = "#2e3440"; textDim = "#7e838c"; accent = "#5e81ac"; accentDark = "#496586"; success = "#869c73"; error = "#bf616a"; warning = "#c1a672"; button = "#c8d4e2"; buttonHover = "#b6c5d9"; editor = "#e5e9f0"; terminal = "#e5e9f0" }
+    "Sunset" = @{ background = "#121c22"; panel = "#030c13"; border = "#091319"; text = "#9fb9d0"; textDim = "#647787"; accent = "#ff865b"; accentDark = "#c76947"; success = "#addfad"; error = "#ffbbbd"; warning = "#f1c891"; button = "#4d3630"; buttonHover = "#6c4438"; editor = "#121c22"; terminal = "#121c22" }
 }
 
 function Initialize-SystemTheme {
@@ -718,17 +729,45 @@ function Apply-ThemeToControl {
             }
             try {
                 $ctrl.FlatAppearance.MouseOverBackColor = $t.buttonHover
-                $ctrl.FlatAppearance.BorderColor = $t.border
+                $ctrl.FlatAppearance.BorderColor = $t.textDim
+                if ($ctrl.FlatAppearance.BorderSize -eq 0) { $ctrl.FlatAppearance.BorderSize = 1 }
             } catch {}
         } elseif ($n -eq "TextBox" -or $n -eq "RichTextBox" -or $n -eq "ListBox") {
+            $isDetailField = $false
+            try {
+                if ($script:headerControls) {
+                    foreach ($v in $script:headerControls.Values) { if ([object]::ReferenceEquals($ctrl, $v)) { $isDetailField = $true; break } }
+                }
+                if (-not $isDetailField -and $script:fieldControls) {
+                    foreach ($v in $script:fieldControls.Values) { if ([object]::ReferenceEquals($ctrl, $v)) { $isDetailField = $true; break } }
+                }
+            } catch {}
             if ($script:logBox -and [object]::ReferenceEquals($ctrl, $script:logBox)) {
                 $ctrl.BackColor = $t.terminal
+            } elseif ($isDetailField) {
+                # The individual Item/Game Metadata field boxes are created
+                # with a lighter theme.panel tint (see the header/game field
+                # loops) to stand out from the surrounding theme.background,
+                # not the flat theme.editor color everything else in this
+                # branch uses. Re-applying theme.editor here on every theme
+                # switch is what made those rows go flat/dark after
+                # switching themes back and forth instead of keeping their
+                # original lighter look.
+                $ctrl.BackColor = $t.panel
             } else {
                 $ctrl.BackColor = $t.editor
             }
             $ctrl.ForeColor = $t.text
         } elseif ($n -eq "Label") {
             try {
+                # Labels that are drawn as a bordered/boxed element (the title
+                # label, for one) set an explicit BackColor at creation time;
+                # that needs to track theme changes same as everything else,
+                # not just stay pinned to whichever theme was active at
+                # startup. Genuinely transparent labels are left alone.
+                if ($ctrl.BackColor -ne [System.Drawing.Color]::Transparent) {
+                    $ctrl.BackColor = $t.background
+                }
                 if ($ctrl.Name -eq "countLabel" -or $role -eq "success") {
                     $ctrl.ForeColor = $t.success
                 } elseif ($role -eq "accent") {
@@ -761,6 +800,7 @@ function Set-AppThemeMode {
             $script:mainForm.BackColor = $script:theme.background
             $script:mainForm.ForeColor = $script:theme.text
             Apply-ThemeToControl $script:mainForm
+            Update-SaveButtonAppearance
             if ($script:logBox) {
                 $script:logBox.BackColor = $script:theme.terminal
                 $script:logBox.ForeColor = $script:theme.text
@@ -789,8 +829,11 @@ function Get-AllThemeEntries {
     # Builds the full theme list (5 legacy modes + everything in
     # $script:builtinPalettes) with each one's actual resolved colors, for
     # the picker's preview cards. Temporarily swaps $script:theme/$script:
-    # themeMode while doing so, then restores whatever was active.
-    $entries = New-Object System.Collections.ArrayList
+    # themeMode while doing so, then restores whatever was active. Dark
+    # themes are returned before light ones (each group keeps its original
+    # relative order) so the picker can show dark-on-top, light-on-bottom.
+    $darkEntries = New-Object System.Collections.ArrayList
+    $lightEntries = New-Object System.Collections.ArrayList
     $savedTheme = $script:theme
     $savedMode = $script:themeMode
     $savedIsLight = $script:isLightTheme
@@ -805,18 +848,20 @@ function Get-AllThemeEntries {
     foreach ($b in $legacy) {
         $script:themeMode = $b.Key
         Initialize-SystemTheme
-        [void]$entries.Add(@{ Key = $b.Key; DisplayName = $b.DisplayName; Colors = $script:theme })
+        $entry = @{ Key = $b.Key; DisplayName = $b.DisplayName; Colors = $script:theme }
+        if ($script:isLightTheme) { [void]$lightEntries.Add($entry) } else { [void]$darkEntries.Add($entry) }
     }
     foreach ($name in $script:builtinPalettes.Keys) {
         $script:themeMode = $name
         Initialize-SystemTheme
-        [void]$entries.Add(@{ Key = $name; DisplayName = $name; Colors = $script:theme })
+        $entry = @{ Key = $name; DisplayName = $name; Colors = $script:theme }
+        if ($script:isLightTheme) { [void]$lightEntries.Add($entry) } else { [void]$darkEntries.Add($entry) }
     }
 
     $script:theme = $savedTheme
     $script:themeMode = $savedMode
     $script:isLightTheme = $savedIsLight
-    return $entries.ToArray()
+    return @($darkEntries.ToArray() + $lightEntries.ToArray())
 }
 
 function Apply-PickedThemeKey {
@@ -838,10 +883,10 @@ function Show-ThemePickerDialog {
 
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Choose a Theme"
-    $dlg.Size = New-Object System.Drawing.Size(600, 620)
+    $dlg.Size = New-Object System.Drawing.Size(1300, 700)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "Sizable"
-    $dlg.MinimumSize = New-Object System.Drawing.Size(420, 360)
+    $dlg.MinimumSize = New-Object System.Drawing.Size(620, 400)
     $dlg.MaximizeBox = $true
     $dlg.MinimizeBox = $false
     $dlg.BackColor = $script:theme.background
@@ -869,7 +914,7 @@ function Show-ThemePickerDialog {
     foreach ($entry in $entries) {
         $colors = $entry.Colors
         $card = New-Object System.Windows.Forms.Panel
-        $card.Size = New-Object System.Drawing.Size(168, 100)
+        $card.Size = New-Object System.Drawing.Size(132, 96)
         $card.Margin = New-Object System.Windows.Forms.Padding(6)
         $card.BackColor = $colors.background
         $card.BorderStyle = if ($script:themeMode -eq $entry.Key) { "Fixed3D" } else { "FixedSingle" }
@@ -879,7 +924,7 @@ function Show-ThemePickerDialog {
         $lbl = New-Object System.Windows.Forms.Label
         $lbl.Text = $entry.DisplayName
         $lbl.Location = New-Object System.Drawing.Point(8, 6)
-        $lbl.Size = New-Object System.Drawing.Size(152, 18)
+        $lbl.Size = New-Object System.Drawing.Size(116, 18)
         $lbl.ForeColor = $colors.text
         $lbl.BackColor = [System.Drawing.Color]::Transparent
         $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -889,18 +934,18 @@ function Show-ThemePickerDialog {
         $sx = 8
         foreach ($sk in @("accent", "success", "warning", "error", "button")) {
             $sw = New-Object System.Windows.Forms.Panel
-            $sw.Size = New-Object System.Drawing.Size(26, 26)
-            $sw.Location = New-Object System.Drawing.Point($sx, 30)
+            $sw.Size = New-Object System.Drawing.Size(18, 22)
+            $sw.Location = New-Object System.Drawing.Point($sx, 28)
             $sw.BackColor = $colors.$sk
             $sw.Tag = $entry.Key
             $card.Controls.Add($sw)
-            $sx += 30
+            $sx += 21
         }
 
         $sample = New-Object System.Windows.Forms.Label
-        $sample.Text = "Aa  game: text"
-        $sample.Location = New-Object System.Drawing.Point(8, 64)
-        $sample.Size = New-Object System.Drawing.Size(152, 24)
+        $sample.Text = "Aa  game:"
+        $sample.Location = New-Object System.Drawing.Point(8, 60)
+        $sample.Size = New-Object System.Drawing.Size(116, 22)
         $sample.ForeColor = $colors.text
         $sample.BackColor = $colors.panel
         $sample.TextAlign = "MiddleLeft"
@@ -1079,13 +1124,36 @@ function Create-Button {
     $btn.Location = New-Object System.Drawing.Point($x, $y)
     $btn.Size = New-Object System.Drawing.Size($w, $h)
     $btn.FlatStyle = "Flat"
-    $btn.FlatAppearance.BorderColor = $script:theme.border
+    $btn.FlatAppearance.BorderColor = $script:theme.textDim
     $btn.FlatAppearance.MouseOverBackColor = $script:theme.buttonHover
     $btn.BackColor = $script:theme.button
     $btn.ForeColor = $script:theme.text
     $btn.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
     $btn.Cursor = [System.Windows.Forms.Cursors]::Hand
     return $btn
+}
+
+function Update-SaveButtonAppearance {
+    # Reflects $script:hasUnsavedChanges on the Save button itself: an
+    # obvious color flip rather than a separate indicator, since that's the
+    # one button whose whole job is "write the pending edit to disk".
+    if (-not $script:btnSave) { return }
+    if ($script:hasUnsavedChanges) {
+        $script:btnSave.BackColor = $script:theme.success
+        $script:btnSave.ForeColor = $script:theme.text
+        $script:btnSave.Text = "Save*"
+    } else {
+        $script:btnSave.BackColor = $script:theme.button
+        $script:btnSave.ForeColor = $script:theme.text
+        $script:btnSave.Text = "Save"
+    }
+}
+
+function Set-UnsavedChanges {
+    param([bool]$Dirty = $true)
+    if ($script:hasUnsavedChanges -eq $Dirty) { return }
+    $script:hasUnsavedChanges = $Dirty
+    Update-SaveButtonAppearance
 }
 
 function Log-Message {
@@ -1206,7 +1274,8 @@ function Register-LeftSection {
         $btn.Size = New-Object System.Drawing.Size(22, 18)
         $btn.Location = New-Object System.Drawing.Point(6, 1)
         $btn.FlatStyle = "Flat"
-        $btn.FlatAppearance.BorderSize = 0
+        $btn.FlatAppearance.BorderSize = 1
+        $btn.FlatAppearance.BorderColor = $script:theme.textDim
         $btn.BackColor = $script:theme.button
         $btn.ForeColor = $script:theme.accent
         $btn.Name = "mrtAccentBtn"
@@ -1712,9 +1781,15 @@ function UpdateEditor {
             $raw = Get-Content $path -Raw -ErrorAction Stop
             $normalized = Normalize-Newlines $raw
             if ($null -ne $script:editorBox) {
-                $script:editorBox.Text = $normalized
+                $script:suppressDirtyTracking = $true
+                try {
+                    $script:editorBox.Text = $normalized
+                } finally {
+                    $script:suppressDirtyTracking = $false
+                }
                 Highlight-RawEditorAll
             }
+            Set-UnsavedChanges $false
             
             try {
                 Parse-PegasusMetadata $raw
@@ -1808,6 +1883,7 @@ function SaveMeta {
             [System.IO.File]::WriteAllText($c.metadataPath, $text, $utf8NoBom)
         }
         Log-Message "Saved: $name ($($script:parsedGames.Count) games)" "Green"
+        Set-UnsavedChanges $false
 
         $script:suppressGameSelect = $true
         try {
@@ -1953,15 +2029,20 @@ function Parse-PegasusMetadata {
 
 function Load-HeaderFieldsIntoUI {
     if ($null -eq $script:headerControls) { return }
-    $keys = @("collection", "shortname", "launch", "assets.box_front", "assets.logo", "description")
-    foreach ($k in $keys) {
-        if ($script:headerControls.ContainsKey($k)) {
-            $val = ""
-            if ($script:parsedHeaderFields -and $script:parsedHeaderFields.ContainsKey($k)) {
-                $val = [string]$script:parsedHeaderFields[$k]
+    $script:suppressDirtyTracking = $true
+    try {
+        $keys = @("collection", "shortname", "launch", "assets.box_front", "assets.logo", "description")
+        foreach ($k in $keys) {
+            if ($script:headerControls.ContainsKey($k)) {
+                $val = ""
+                if ($script:parsedHeaderFields -and $script:parsedHeaderFields.ContainsKey($k)) {
+                    $val = [string]$script:parsedHeaderFields[$k]
+                }
+                $script:headerControls[$k].Text = $val
             }
-            $script:headerControls[$k].Text = $val
         }
+    } finally {
+        $script:suppressDirtyTracking = $false
     }
 }
 
@@ -2122,16 +2203,21 @@ function LoadSelectedGameFields {
     $game = $script:parsedGames | Where-Object { $_.Title -eq $title } | Select-Object -First 1
     if ($null -eq $game) { return }
     
-    $fields = $game.Fields
-    foreach ($key in @($script:fieldControls.Keys)) {
-        $ctrl = $script:fieldControls[$key]
-        $val = ""
-        if ($fields.ContainsKey($key)) {
-            $val = $fields[$key]
-        } elseif ($key -eq "sort_title" -and $fields.ContainsKey("sort-title")) {
-            $val = $fields["sort-title"]
+    $script:suppressDirtyTracking = $true
+    try {
+        $fields = $game.Fields
+        foreach ($key in @($script:fieldControls.Keys)) {
+            $ctrl = $script:fieldControls[$key]
+            $val = ""
+            if ($fields.ContainsKey($key)) {
+                $val = $fields[$key]
+            } elseif ($key -eq "sort_title" -and $fields.ContainsKey("sort-title")) {
+                $val = $fields["sort-title"]
+            }
+            $ctrl.Text = $val
         }
-        $ctrl.Text = $val
+    } finally {
+        $script:suppressDirtyTracking = $false
     }
 }
 
@@ -2471,31 +2557,48 @@ function Find-InRawEditor {
 
 function Get-RawEditorLineColor {
     # Whole-line syntax coloring for the raw Pegasus metadata.txt editor.
-    # Matches the app's own semantic colors so it stays in sync with
-    # whatever theme is active: game: = success (green), the asset/identity
-    # fields = accent (cyan in most themes), everything else (comments,
-    # blank lines, indented continuation lines, unrecognized keys) = text.
+    # Colors are pulled from the live theme so this stays correct across
+    # every theme:
+    #   game:                                  -> success (green)
+    #   assets.*: / shortname: / collection: /
+    #   launch: / description:                 -> accent  (cyan in most themes)
+    #   file:                                   -> warning (its own color)
+    #   players:                                -> accentDark (its own color)
+    #   developer: / publisher: / genre: /
+    #   release: / rating: / extra:             -> textDim (muted, informational)
+    #   everything else (comments, blank lines,
+    #   indented continuation lines, unknown keys)  -> text
     param([string]$line)
     $trimmed = $line.TrimStart()
     if ($trimmed -match '^game\s*:') { return $script:theme.success }
     if ($trimmed -match '^assets\.[^\s:]*\s*:') { return $script:theme.accent }
     if ($trimmed -match '^(shortname|collection|launch|description)\s*:') { return $script:theme.accent }
+    if ($trimmed -match '^file\s*:') { return $script:theme.warning }
+    if ($trimmed -match '^players\s*:') { return $script:theme.accentDark }
+    if ($trimmed -match '^(developer|publisher|genre|release|rating|extra)\s*:') { return $script:theme.textDim }
     return $script:theme.text
 }
 
 function Paint-RawEditorLine {
-    param([int]$LineIndex)
-    if (-not $script:editorBox) { return }
-    $eb = $script:editorBox
-    if ($LineIndex -lt 0 -or $LineIndex -ge $eb.Lines.Count) { return }
-    $lineText = $eb.Lines[$LineIndex]
-    if ([string]::IsNullOrEmpty($lineText)) { return }
+    # LineText/Editor are optional fast-path overrides used by
+    # Highlight-RawEditorAll, which fetches $eb.Lines ONCE for the whole
+    # document instead of letting this function re-read it per line (see the
+    # comment there - that repeated read was the actual cause of raw mode
+    # freezing/hanging on anything but a tiny metadata.txt).
+    param([int]$LineIndex, [string]$LineText = $null, $Editor = $null)
+    $eb = if ($Editor) { $Editor } else { $script:editorBox }
+    if (-not $eb) { return }
+    if ($null -eq $LineText) {
+        if ($LineIndex -lt 0 -or $LineIndex -ge $eb.Lines.Count) { return }
+        $LineText = $eb.Lines[$LineIndex]
+    }
+    if ([string]::IsNullOrEmpty($LineText)) { return }
     $lineStart = $eb.GetFirstCharIndexFromLine($LineIndex)
     if ($lineStart -lt 0) { return }
-    $color = Get-RawEditorLineColor $lineText
+    $color = Get-RawEditorLineColor $LineText
     $savedStart = $eb.SelectionStart
     $savedLen = $eb.SelectionLength
-    $eb.Select($lineStart, $lineText.Length)
+    $eb.Select($lineStart, $LineText.Length)
     $eb.SelectionColor = $color
     $eb.Select($savedStart, $savedLen)
 }
@@ -2504,33 +2607,77 @@ function Highlight-RawEditorAll {
     # Recolors every line. Used after bulk text changes (loading a
     # collection, entering Raw view, Replace All, switching themes) rather
     # than on every keystroke, since it's proportional to document size.
+    #
+    # Each recolored line is a real Win32 round-trip (RichEdit doesn't have
+    # a bulk "color these ranges" call), so on a very large metadata.txt this
+    # was the actual cause of the "raw mode freezes for 10+ seconds" report -
+    # tens of thousands of small synchronous calls with nothing pumping the
+    # message queue in between, so Windows shows the window as Not Responding
+    # even though it's still working. Two fixes: skip it outright above a
+    # size where it wouldn't finish in reasonable time, and otherwise pump
+    # Application.DoEvents() + update the status bar periodically so the UI
+    # stays alive and the person can see it's busy rather than stuck.
     if (-not $script:rawMode -or -not $script:editorBox) { return }
     $eb = $script:editorBox
+    $linesArray = $eb.Lines
+    $lineCount = $linesArray.Count
+    $maxColorLines = 6000
+    if ($lineCount -gt $maxColorLines) {
+        $script:rawEditorLastLineCount = $lineCount
+        if ($script:statusBar) { $script:statusBar.Text = "Raw view loaded ($lineCount lines) - syntax coloring skipped on files this large to stay responsive" }
+        Log-Message "Raw editor: skipped syntax coloring ($lineCount lines > $maxColorLines) to avoid a long freeze" "Yellow"
+        return
+    }
     $savedStart = $eb.SelectionStart
     $savedLen = $eb.SelectionLength
+    $prevCursor = $null
+    try { if ($script:mainForm) { $prevCursor = $script:mainForm.Cursor; $script:mainForm.Cursor = [System.Windows.Forms.Cursors]::WaitCursor } } catch {}
+    # Setting SelectionColor per line is formatting only, not a text edit -
+    # but RichTextBox can still raise TextChanged as a side effect of it, and
+    # that TextChanged handler marks the file dirty. Since this function only
+    # ever runs on programmatic recolors (load, Save, theme switch, entering
+    # Raw view - never on a keystroke anymore), suppress dirty tracking for
+    # its duration so the Save button doesn't flip on its own before any real
+    # edit has happened.
+    $prevSuppress = $script:suppressDirtyTracking
+    $script:suppressDirtyTracking = $true
     $WM_SETREDRAW = 0x000B
     try { [void][MrtWin32]::SendMessage($eb.Handle, $WM_SETREDRAW, [IntPtr]::Zero, [IntPtr]::Zero) } catch {}
     try {
-        for ($i = 0; $i -lt $eb.Lines.Count; $i++) {
-            Paint-RawEditorLine $i
+        for ($i = 0; $i -lt $lineCount; $i++) {
+            Paint-RawEditorLine -LineIndex $i -LineText $linesArray[$i] -Editor $eb
+            if (($i % 400) -eq 0) {
+                if ($script:statusBar) { $script:statusBar.Text = "Coloring metadata... ($i / $lineCount lines)" }
+                try { [System.Windows.Forms.Application]::DoEvents() } catch {}
+            }
         }
     } finally {
+        $script:suppressDirtyTracking = $prevSuppress
         try { [void][MrtWin32]::SendMessage($eb.Handle, $WM_SETREDRAW, [IntPtr]1, [IntPtr]::Zero) } catch {}
         $eb.Invalidate()
         $eb.Select($savedStart, $savedLen)
         $eb.SelectionColor = $script:theme.text
         $script:rawEditorLastLineCount = $eb.Lines.Count
+        try { if ($script:mainForm -and $null -ne $prevCursor) { $script:mainForm.Cursor = $prevCursor } } catch {}
+        if ($script:statusBar) { $script:statusBar.Text = "Ready" }
     }
 }
 
 function Highlight-RawEditorCurrentLine {
-    # Cheap per-keystroke recolor of just the line the caret is on.
+    # Cheap per-keystroke recolor of just the line the caret is on. Not
+    # currently called anywhere (see the editorBox TextChanged handler),
+    # but kept safe against the same SelectionColor/TextChanged quirk as
+    # Highlight-RawEditorAll in case it's ever wired back up.
     if (-not $script:rawMode -or -not $script:editorBox) { return }
     $eb = $script:editorBox
+    $prevSuppress = $script:suppressDirtyTracking
+    $script:suppressDirtyTracking = $true
     try {
         $idx = $eb.GetLineFromCharIndex($eb.SelectionStart)
         Paint-RawEditorLine $idx
-    } catch {}
+    } catch {} finally {
+        $script:suppressDirtyTracking = $prevSuppress
+    }
 }
 
 function Show-RawReplaceBar {
@@ -2590,7 +2737,17 @@ function Replace-InRawEditor {
 
 function Set-EditorMode {
     param([bool]$raw)
-    
+
+    $prevCursor = $null
+    try { if ($script:mainForm) { $prevCursor = $script:mainForm.Cursor; $script:mainForm.Cursor = [System.Windows.Forms.Cursors]::WaitCursor } } catch {}
+    if ($raw) {
+        if ($script:statusBar) { $script:statusBar.Text = "Switching to Raw view..." }
+        try { [System.Windows.Forms.Application]::DoEvents() } catch {}
+    } else {
+        if ($script:statusBar) { $script:statusBar.Text = "Switching to Form view..." }
+        try { [System.Windows.Forms.Application]::DoEvents() } catch {}
+    }
+
     if ($raw) {
         if (-not $script:rawMode) {
             Apply-HeaderFieldsFromUI
@@ -2598,7 +2755,14 @@ function Set-EditorMode {
                 try { ApplyGameFields } catch {}
             }
             $built = Build-PegasusMetadata
-            if ($script:editorBox) { $script:editorBox.Text = Normalize-Newlines $built }
+            if ($script:editorBox) {
+                $script:suppressDirtyTracking = $true
+                try {
+                    $script:editorBox.Text = Normalize-Newlines $built
+                } finally {
+                    $script:suppressDirtyTracking = $false
+                }
+            }
         }
         $script:rawMode = $true
         Highlight-RawEditorAll
@@ -2626,6 +2790,8 @@ function Set-EditorMode {
         if ($null -ne $script:parsedGames) { $cnt = @($script:parsedGames).Count }
         Log-Message "Switched to Form View ($cnt games)" "Cyan"
     }
+    try { if ($script:mainForm -and $null -ne $prevCursor) { $script:mainForm.Cursor = $prevCursor } } catch {}
+    if ($script:statusBar) { $script:statusBar.Text = "Ready" }
 }
 
 function Get-DeveloperLogText {
@@ -2634,6 +2800,44 @@ function Get-DeveloperLogText {
     return @"
 Developer Log
 Policy: All changes and updates must always be listed here.
+
+2.5.42 - 2026-09-18
+- Fixed the raw-mode/theme-switch freeze: RichTextBox.Lines rebuilds its
+  entire line array from .Text on every access, and the syntax-highlighter
+  was reading it twice per line inside a per-line loop, making a full
+  recolor accidentally O(n^2). Now reads .Lines once and passes each line's
+  text through directly.
+- Raw mode: full RichTextBox editing (copy/cut/paste/undo/redo/select-all/
+  arrow-navigation/double-click word select), Ctrl+V pastes as plain text,
+  Ctrl+Y redo, Ctrl+S save, Ctrl+F find, Ctrl+H opens a Replace row
+  (Replace / Replace All)
+- Raw mode syntax coloring: game: green; assets.*/shortname/collection/
+  launch/description cyan; file: and players: each get their own color;
+  developer/publisher/genre/release/rating/extra muted; everything else
+  plain text - all pulled live from the active theme
+- Added a busy cursor + status bar progress + periodic message-pump during
+  large recolors, and a 6000-line cap that skips coloring outright (with a
+  log message) rather than ever hanging
+- Switching Raw/Form view and applying a theme now show a status message
+  and busy cursor instead of looking frozen
+- New dedicated Theme picker (Settings -> Theme -> Choose Theme...): one
+  card per theme with a live color-swatch preview, 8 per row, dark themes
+  listed above light ones
+- 31 additional named themes (daisyUI/Upscayl-style set), colors derived
+  from daisyUI's own published theme source and converted from OKLCH,
+  with hand-tuned fixes for Cyberpunk (neon-on-near-black instead of a
+  yellow background), Acid (dark green base), Aqua (darker background than
+  its buttons), Emerald (deep emerald dark background), Cupcake (bakery
+  pink/cream pastel), and a genuinely pastel "Pastel" theme (old muted-gray
+  version renamed to "Silver")
+- Button outlines fixed: the +/- collapse toggles had BorderSize forced to
+  0 (no outline at all), and the general button border color was too close
+  in tone to the button fill in several dark themes (Night especially) -
+  now uses a guaranteed-contrast color everywhere
+- Title label's background color now updates on theme switch instead of
+  staying pinned to whichever theme was active at app startup
+- Save button now turns amber ("Save*") the moment a field or the raw text
+  is actually edited, and reverts once the save completes
 
 2.5.13 - 2026-08-31
 - Cover type descriptions (blue text) now include typical resolutions and quality tier
@@ -4216,7 +4420,8 @@ function Show-MainWindow {
     $btnMetaToggle.Size = New-Object System.Drawing.Size(22, 18)
     $btnMetaToggle.Location = New-Object System.Drawing.Point(6, 1)
     $btnMetaToggle.FlatStyle = "Flat"
-    $btnMetaToggle.FlatAppearance.BorderSize = 0
+    $btnMetaToggle.FlatAppearance.BorderSize = 1
+    $btnMetaToggle.FlatAppearance.BorderColor = $script:theme.textDim
     $btnMetaToggle.BackColor = $script:theme.button
     $btnMetaToggle.ForeColor = $script:theme.accent
     $btnMetaToggle.Tag = "accent"
@@ -4392,6 +4597,7 @@ function Show-MainWindow {
         }
         $detailPanel.Controls.Add($tb)
         $script:headerControls[$fName] = $tb
+        $tb.Add_TextChanged({ if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true } })
     }
     
     $fy += 6
@@ -4485,6 +4691,7 @@ function Show-MainWindow {
         }
         $detailPanel.Controls.Add($tb)
         $script:fieldControls[$fName] = $tb
+        $tb.Add_TextChanged({ if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true } })
     }
     
     # Prevent horizontal scrollbar from covering the description area
@@ -4600,17 +4807,15 @@ function Show-MainWindow {
         }
     })
     $editorBox.Add_TextChanged({
-        if (-not $script:rawMode -or -not $script:editorBox) { return }
-        $eb = $script:editorBox
-        $curCount = $eb.Lines.Count
-        if ($curCount -ne $script:rawEditorLastLineCount) {
-            # Line count changed (paste, Enter, multi-line delete) - a
-            # single-line recolor wouldn't reach every affected line.
-            $script:rawEditorLastLineCount = $curCount
-            Highlight-RawEditorAll
-        } else {
-            Highlight-RawEditorCurrentLine
-        }
+        # Recoloring is deliberately NOT done here. It used to re-run on
+        # every keystroke (a full Highlight-RawEditorAll whenever the line
+        # count changed - which includes just pressing Enter), and on a
+        # large metadata.txt that made every edit feel cumbersome even with
+        # the WM_SETREDRAW/DoEvents optimizations in Highlight-RawEditorAll.
+        # Per the requested behavior, syntax coloring should only refresh on
+        # Save (see SaveMeta -> UpdateEditor -> Highlight-RawEditorAll) and
+        # on a theme switch (see Set-AppThemeMode) - never while typing.
+        if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true }
     })
     $rightPanel.Controls.Add($editorBox)
     $script:editorBox = $editorBox
@@ -4782,6 +4987,8 @@ function Show-MainWindow {
     $btnSave = Create-Button "Save" $bx $btnY $btnW 26
     $btnSave.Add_Click({ SaveMeta })
     $actionBar.Controls.Add($btnSave)
+    $script:btnSave = $btnSave
+    Update-SaveButtonAppearance
     
     $bx += $btnW + $bg
     $btnLaunch = Create-Button "Launch" $bx $btnY $btnW 26
@@ -4871,7 +5078,8 @@ function Show-MainWindow {
     $btnTermToggle.Size = New-Object System.Drawing.Size(22, 18)
     $btnTermToggle.Location = New-Object System.Drawing.Point(6, 1)
     $btnTermToggle.FlatStyle = "Flat"
-    $btnTermToggle.FlatAppearance.BorderSize = 0
+    $btnTermToggle.FlatAppearance.BorderSize = 1
+    $btnTermToggle.FlatAppearance.BorderColor = $script:theme.textDim
     $btnTermToggle.BackColor = $script:theme.button
     $btnTermToggle.ForeColor = $script:theme.accent
     $btnTermToggle.Tag = "accent"
@@ -5825,7 +6033,7 @@ function ShowAboutDialog {
     $btnTheme.Location = New-Object System.Drawing.Point(12, 8)
     $btnTheme.FlatStyle = "Flat"
     $btnTheme.FlatAppearance.BorderSize = 1
-    $btnTheme.FlatAppearance.BorderColor = $script:theme.border
+    $btnTheme.FlatAppearance.BorderColor = $script:theme.textDim
     $btnTheme.BackColor = $script:theme.button
     $btnTheme.ForeColor = [System.Drawing.Color]::White
     $btnTheme.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
@@ -5863,7 +6071,7 @@ function ShowAboutDialog {
         $textBox.ForeColor = $script:theme.text
         $btnTheme.BackColor = $script:theme.button
         $btnTheme.ForeColor = [System.Drawing.Color]::White
-        $btnTheme.FlatAppearance.BorderColor = $script:theme.border
+        $btnTheme.FlatAppearance.BorderColor = $script:theme.textDim
         $btnOK.BackColor = $script:theme.accentDark
         $lblTheme.ForeColor = $script:theme.textDim
     })
