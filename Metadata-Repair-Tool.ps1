@@ -1,5 +1,22 @@
 ﻿# ============================================================================
 # METADATA REPAIR TOOL
+# Version: 2.5.44 - Image Tools: universal "Include subfolders" checkbox (off by default),
+#   used by the PNG<->JPG converters, "Convert JPG to PNG (Pick Any Folder)" and the
+#   new "Convert Illustrator (.ai) to PNG" button.
+#   Uses Illustrator via COM when installed (per-artboard PNGs), else Ghostscript.
+#   Originals kept, existing PNGs never overwritten, metadata untouched.
+# Version: 2.5.43 - Fixed "Update Metadata Extensions to PNG/JPG" corrupting metadata
+#   (every "." became ".png_thumb"). Cause: unbraced "$oldExt_thumb" variable.
+# Version: 2.5.42 - New Image Tools button: "Convert JPG to PNG (All Subfolders)".
+#   The existing JPG->PNG buttons only look in <media>\box2dfront and
+#   <media>\box2dThumb. This one lets you pick any top folder (e.g. Movies)
+#   and converts JPG/JPEG images in every subfolder under it (Movie 1\box.jpg,
+#   Movie 2\folder.jpg, ...), either all of them or only box.jpg/folder.jpg.
+#   Reuses Convert-ImageFileToPng (verifies the PNG before deleting the JPG),
+#   never overwrites an existing PNG, backs up the metadata file first, then
+#   rewrites only the metadata references that point at converted files
+#   (relative paths resolved from the metadata file's folder). Line endings
+#   and file encoding of the metadata file are preserved.
 # Version: 2.5.41 - Roadmap #6 (final item): RetroAchievements integration.
 #   New Settings -> API Keys fields for RA username + Web API key. New
 #   "Check RetroAchievements..." button in Hash Match Tools: hashes each
@@ -3876,7 +3893,7 @@ function Show-MainWindow {
     $imageGroup = New-Object System.Windows.Forms.GroupBox
     $imageGroup.Text = " Image Tools "
     $imageGroup.Location = New-Object System.Drawing.Point(5, 422)
-    $imageGroup.Size = New-Object System.Drawing.Size($leftW, 340)
+    $imageGroup.Size = New-Object System.Drawing.Size($leftW, 424)
     $imageGroup.ForeColor = $script:theme.text
     $imageGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
     $leftPanel.Controls.Add($imageGroup)
@@ -3884,6 +3901,19 @@ function Show-MainWindow {
     $iy = 22
     $is = 28
     $fullW = $leftW - 16
+    
+    # Universal toggle read by the image tools that scan for files
+    # (see Get-ImgIncludeSubfolders).
+    $script:chkImgSubfolders = New-Object System.Windows.Forms.CheckBox
+    $script:chkImgSubfolders.Text = "Include subfolders (image converters)"
+    $script:chkImgSubfolders.Location = New-Object System.Drawing.Point(10, $iy)
+    $script:chkImgSubfolders.Size = New-Object System.Drawing.Size(($fullW - 4), 22)
+    $script:chkImgSubfolders.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $script:chkImgSubfolders.ForeColor = $script:theme.text
+    $script:chkImgSubfolders.BackColor = [System.Drawing.Color]::Transparent
+    $script:chkImgSubfolders.Checked = $false
+    $imageGroup.Controls.Add($script:chkImgSubfolders)
+    $iy += $is
     
     $btnImg3 = Create-Button "Add Box Art to Metadata" 8 $iy $fullW 26
     $btnImg3.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
@@ -3949,6 +3979,18 @@ function Show-MainWindow {
     $btnImg9.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $btnImg9.Add_Click({ UpdateMetadataExtensions "png" })
     $imageGroup.Controls.Add($btnImg9)
+    
+    $iy += $is
+    $btnImg10 = Create-Button "Convert JPG to PNG (Pick Any Folder)" 8 $iy $fullW 26
+    $btnImg10.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg10.Add_Click({ ConvertJpgToPng })
+    $imageGroup.Controls.Add($btnImg10)
+    
+    $iy += $is
+    $btnImg11 = Create-Button "Convert Illustrator (.ai) to PNG" 8 $iy $fullW 26
+    $btnImg11.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg11.Add_Click({ ConvertAiToPng })
+    $imageGroup.Controls.Add($btnImg11)
     
     # ============================================================
     # SECTION 3: SNS CODE TOOLS
@@ -4368,7 +4410,7 @@ function Show-MainWindow {
     # Register left sections
     Register-LeftSection -Group $colGroup -ExpandedHeight 230 -Collapsible $true -StartExpanded $true -Title "Collections"
     Register-LeftSection -Group $toolsGroup -ExpandedHeight 120 -Collapsible $true -StartExpanded $true -Title "Metadata Tools"
-    Register-LeftSection -Group $imageGroup -ExpandedHeight 340 -Collapsible $true -StartExpanded $false -Title "Image Tools"
+    Register-LeftSection -Group $imageGroup -ExpandedHeight 424 -Collapsible $true -StartExpanded $false -Title "Image Tools"
     Register-LeftSection -Group $snsGroup -ExpandedHeight $snsExpandedH -Collapsible $true -StartExpanded $false -Title "SNS Code Tools"
     Register-LeftSection -Group $gameIDGroup -ExpandedHeight 90 -Collapsible $true -StartExpanded $false -Title "Game ID Tools"
     Register-LeftSection -Group $gtdbGroup -ExpandedHeight $gtdbExpandedH -Collapsible $true -StartExpanded $false -Title "GameTDB Tools"
@@ -5550,6 +5592,8 @@ Update Metadata Names from Images
 Add Box Art to Metadata
 Add All Media Types (boxFull, logo, etc.)  <- NEW
 Convert PNG/JPG (all or selected)
+Convert JPG to PNG (Pick Any Folder)  <- NEW: any folder, updates metadata
+Convert Illustrator (.ai) to PNG  <- NEW: needs Illustrator or Ghostscript
 Update Metadata Extensions to PNG/JPG
 "@
     [void]$nTools.Nodes.Add("Image Tools")
@@ -6531,6 +6575,11 @@ function ApplyGameIDsToMetadata {
 # ============================================================================
 # IMAGE CONVERSION FUNCTIONS
 # ============================================================================
+function Get-ImgIncludeSubfolders {
+    # True when the Image Tools "Include subfolders" checkbox is ticked.
+    try { return [bool]($script:chkImgSubfolders -and $script:chkImgSubfolders.Checked) } catch { return $false }
+}
+
 function ConvertImagesPNGtoJPG {
     param($allImages)
     $c = Get-Col
@@ -6565,7 +6614,7 @@ function ConvertImagesPNGtoJPG {
         foreach ($folder in $folders) {
             if (-not (Test-Path $folder)) { continue }
             
-            $pngFiles = Get-ChildItem $folder -Filter "*.png" -ErrorAction SilentlyContinue
+            $pngFiles = Get-ChildItem $folder -Filter "*.png" -File -Recurse:(Get-ImgIncludeSubfolders) -ErrorAction SilentlyContinue
             
             if (-not $allImages) {
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
@@ -6648,7 +6697,7 @@ function ConvertImagesJPGtoPNG {
         foreach ($folder in $folders) {
             if (-not (Test-Path $folder)) { continue }
             
-            $jpgFiles = Get-ChildItem $folder -Filter "*.jpg" -ErrorAction SilentlyContinue
+            $jpgFiles = Get-ChildItem $folder -Filter "*.jpg" -File -Recurse:(Get-ImgIncludeSubfolders) -ErrorAction SilentlyContinue
             
             if (-not $allImages) {
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
@@ -6699,6 +6748,363 @@ function ConvertSingleJPGtoPNG {
     }
 }
 
+function ConvertJpgToPng {
+    # Converts JPG/JPEG images to PNG in a folder you pick. With the Image Tools
+    # "Include subfolders" box ticked it also searches every subfolder
+    # (e.g. Movies\Movie 1\box.jpg, Movies\Movie 2\folder.jpg). Then rewrites the
+    # matching .jpg references in the collection's metadata file to .png.
+    # Unlike the box2dfront/box2dThumb converters above, this does not depend on
+    # the collection's Media Folder layout at all.
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $metaPath = $c.metadataPath
+    $metaDir = $null
+    if (-not [string]::IsNullOrWhiteSpace($metaPath)) {
+        try { $metaDir = Split-Path $metaPath -Parent } catch {}
+    }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = $(if (Get-ImgIncludeSubfolders) { "Select the TOP folder to scan (e.g. your Movies folder). Every subfolder inside it will be searched for JPG images." } else { "Select the folder that contains the JPG images (subfolders are NOT searched)." })
+    $fd.ShowNewFolderButton = $false
+    if ($metaDir -and (Test-Path -LiteralPath $metaDir)) { $fd.SelectedPath = $metaDir }
+    if ($fd.ShowDialog() -ne "OK") { return }
+    $root = $fd.SelectedPath.TrimEnd('\', '/')
+
+    Log-Message "========================================" "Cyan"
+    Log-Message $(if (Get-ImgIncludeSubfolders) { "CONVERTING JPG TO PNG (INCLUDING SUBFOLDERS)" } else { "CONVERTING JPG TO PNG" }) "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Scanning: $root" "White"
+
+    try {
+        $all = @(Get-ChildItem -LiteralPath $root -Recurse:(Get-ImgIncludeSubfolders) -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -match '^\.jpe?g$' })
+
+        if ($all.Count -eq 0) {
+            Log-Message "No JPG/JPEG files found under that folder." "Yellow"
+            return
+        }
+
+        $boxOnly = @($all | Where-Object { $_.BaseName -match '^(box|folder)$' })
+        $folderCount = @($all | ForEach-Object { $_.DirectoryName } | Select-Object -Unique).Count
+
+        $msg = "Found $($all.Count) JPG file(s) in $folderCount folder(s) under:`n$root`n`n" +
+               "YES = convert ALL $($all.Count) JPG files to PNG`n" +
+               "NO = convert only box.jpg / folder.jpg ($($boxOnly.Count) files)`n" +
+               "CANCEL = do nothing`n`n" +
+               "Each original JPG is deleted once its PNG is created successfully. " +
+               "Your metadata file is backed up first, then updated to point at the new PNGs."
+        $choice = [System.Windows.Forms.MessageBox]::Show(
+            $msg, "Convert JPG to PNG",
+            [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
+            [System.Windows.Forms.MessageBoxIcon]::Question)
+
+        if ($choice -eq [System.Windows.Forms.DialogResult]::Cancel) {
+            Log-Message "Cancelled." "Yellow"
+            return
+        }
+        $targets = if ($choice -eq [System.Windows.Forms.DialogResult]::Yes) { $all } else { $boxOnly }
+        if ($targets.Count -eq 0) {
+            Log-Message "Nothing to convert with that choice (no box.jpg / folder.jpg found)." "Yellow"
+            return
+        }
+
+        # Safety net: back up the metadata file before touching anything.
+        if ($metaPath -and (Test-Path -LiteralPath $metaPath)) { CreateBackup }
+
+        $converted = 0
+        $skipped = 0
+        $failed = 0
+        $map = @{}   # lower-cased full path of the OLD jpg -> new png path
+        $n = 0
+        foreach ($f in $targets) {
+            $n++
+            $rel = $f.FullName
+            if ($rel.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+                $rel = $rel.Substring($root.Length).TrimStart('\', '/')
+            }
+            $pngTarget = [System.IO.Path]::ChangeExtension($f.FullName, ".png")
+            if (Test-Path -LiteralPath $pngTarget) {
+                # Never overwrite an existing PNG that sits next to the JPG.
+                $skipped++
+                Log-Message "  Skipped (a PNG with that name already exists): $rel" "Yellow"
+                continue
+            }
+            $result = Convert-ImageFileToPng -Path $f.FullName
+            if (($result -match '\.png$') -and (Test-Path -LiteralPath $result)) {
+                $converted++
+                $map[$f.FullName.ToLowerInvariant()] = $result
+                Log-Message "  Converted: $rel" "Green"
+            } else {
+                $failed++
+                Log-Message "  FAILED: $rel" "Red"
+            }
+            if (($n % 10) -eq 0) { try { [System.Windows.Forms.Application]::DoEvents() } catch {} }
+        }
+
+        # ---- Update the metadata file so its references match the new PNGs ----
+        # Only a reference that points at a file we actually converted (or at a
+        # .jpg that no longer exists while a .png does) is changed, so nothing
+        # else in the file is touched. Relative paths resolve against the
+        # metadata file's own folder, the same way Pegasus resolves them.
+        $refsUpdated = 0
+        if ($metaPath -and $metaDir -and (Test-Path -LiteralPath $metaPath)) {
+            $bytes = [System.IO.File]::ReadAllBytes($metaPath)
+            $hadBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+            $offset = 0
+            if ($hadBom) { $offset = 3 }
+            try {
+                $strict = New-Object System.Text.UTF8Encoding($false, $true)
+                $text = $strict.GetString($bytes, $offset, $bytes.Length - $offset)
+                $writeEnc = New-Object System.Text.UTF8Encoding($hadBom)
+            } catch {
+                # Not valid UTF-8 (old single-byte/ANSI file). Latin-1 maps every byte to
+                # exactly one char and back, so accented titles round-trip untouched on
+                # both Windows PowerShell 5.1 and PowerShell 7.
+                $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+                $text = $latin1.GetString($bytes)
+                $writeEnc = $latin1
+            }
+
+            $rx = New-Object System.Text.RegularExpressions.Regex(
+                '^(?<pre>[^:>"''=]*[:>"''=][ \t]*)(?<val>[^"''<>]*?\.jpe?g)(?=$|[\s"''<>])(?<post>.*)$',
+                [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+
+            $lines = $text -split "`n"
+            for ($i = 0; $i -lt $lines.Length; $i++) {
+                $line = $lines[$i]
+                if ($line.IndexOf('.jp', [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+                $cr = ''
+                if ($line.EndsWith("`r")) { $cr = "`r"; $line = $line.Substring(0, $line.Length - 1) }
+                $m = $rx.Match($line)
+                if (-not $m.Success) { continue }
+
+                $val = $m.Groups['val'].Value
+                $p = $val.Trim().Replace('/', '\')
+                if ($p.StartsWith('.\')) { $p = $p.Substring(2) }
+                try {
+                    if (-not [System.IO.Path]::IsPathRooted($p)) { $p = Join-Path $metaDir $p }
+                    $full = [System.IO.Path]::GetFullPath($p)
+                } catch { continue }
+
+                $hit = $map.ContainsKey($full.ToLowerInvariant())
+                if (-not $hit) {
+                    $pngFull = [System.IO.Path]::ChangeExtension($full, ".png")
+                    if ((-not (Test-Path -LiteralPath $full)) -and (Test-Path -LiteralPath $pngFull)) { $hit = $true }
+                }
+                if (-not $hit) { continue }
+
+                $newVal = [regex]::Replace($val, '\.jpe?g$', '.png', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+                $lines[$i] = $m.Groups['pre'].Value + $newVal + $m.Groups['post'].Value + $cr
+                $refsUpdated++
+            }
+
+            if ($refsUpdated -gt 0) {
+                [System.IO.File]::WriteAllText($metaPath, ($lines -join "`n"), $writeEnc)
+                Log-Message "Metadata updated: $refsUpdated reference(s) changed from .jpg to .png" "Green"
+                UpdateEditor
+            }
+        } else {
+            Log-Message "No metadata file found for this collection - images converted, metadata not changed." "Yellow"
+        }
+
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Converted: $converted   Skipped: $skipped   Failed: $failed" "Green"
+        if ($converted -gt 0 -and $refsUpdated -eq 0) {
+            Log-Message "No metadata entries pointed at the converted files. If your metadata uses a different path style, try 'Update Metadata Extensions to PNG'." "Yellow"
+        }
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Find-GhostscriptExe {
+    # Returns the path to a Ghostscript console executable, or $null.
+    foreach ($n in @('gswin64c', 'gswin32c', 'gs')) {
+        $cmd = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd -and $cmd.Source) { return $cmd.Source }
+    }
+    foreach ($pf in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
+        if ([string]::IsNullOrWhiteSpace($pf)) { continue }
+        $gsRoot = Join-Path $pf 'gs'
+        if (-not (Test-Path -LiteralPath $gsRoot)) { continue }
+        $hit = Get-ChildItem -LiteralPath $gsRoot -Recurse -Include 'gswin64c.exe', 'gswin32c.exe' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+        if ($hit) { return $hit.FullName }
+    }
+    return $null
+}
+
+function ConvertAiToPng {
+    # Converts the Adobe Illustrator (.ai) files in a folder you pick to PNG.
+    # With the Image Tools "Include subfolders" box ticked it also searches
+    # every subfolder. The PNG is written next to each
+    # .ai file with the same name. The .ai originals are NEVER deleted or modified, and an existing
+    # PNG is never overwritten.
+    #
+    # Engine 1 (preferred): Illustrator itself, driven through its COM
+    #   scripting interface (Illustrator.Application). Illustrator has no real
+    #   "/export" command-line switch, so COM is the supported way to do this.
+    # Engine 2 (fallback): Ghostscript, which can render the PDF-compatible
+    #   data most .ai files contain. No Illustrator needed. First page only.
+    $startDir = $null
+    try {
+        if ($script:collectionList.SelectedItem) {
+            $sel = $script:collections[$script:collectionList.SelectedItem.ToString()]
+            if ($sel -and $sel.metadataPath) { $startDir = Split-Path $sel.metadataPath -Parent }
+        }
+    } catch {}
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select the folder that contains your Adobe Illustrator (.ai) files (tick Include subfolders to search inside subfolders too)."
+    $fd.ShowNewFolderButton = $false
+    if ($startDir -and (Test-Path -LiteralPath $startDir)) { $fd.SelectedPath = $startDir }
+    if ($fd.ShowDialog() -ne "OK") { return }
+    $root = $fd.SelectedPath.TrimEnd('\', '/')
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "CONVERTING ILLUSTRATOR (.AI) TO PNG" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Scanning: $root" "White"
+
+    $app = $null
+    $startedIllustrator = $false
+    try {
+        $all = @(Get-ChildItem -LiteralPath $root -Recurse:(Get-ImgIncludeSubfolders) -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -ieq '.ai' })
+        if ($all.Count -eq 0) {
+            Log-Message "No .ai files found in that location." "Yellow"
+            return
+        }
+
+        $haveIllustrator = ($null -ne [Type]::GetTypeFromProgID('Illustrator.Application'))
+        $gsExe = Find-GhostscriptExe
+        if (-not $haveIllustrator -and -not $gsExe) {
+            Log-Message "Neither Adobe Illustrator nor Ghostscript was found on this PC." "Red"
+            Log-Message "Install Illustrator, or install Ghostscript (ghostscript.com) and try again." "Yellow"
+            return
+        }
+        $engineText = if ($haveIllustrator) { "Adobe Illustrator (72 ppi, artboard size)" } else { "Ghostscript (150 dpi, first page only)" }
+
+        $folderCount = @($all | ForEach-Object { $_.DirectoryName } | Select-Object -Unique).Count
+        $msg = "Found $($all.Count) .ai file(s) in $folderCount folder(s) under:`n$root`n`n" +
+               "Converter: $engineText`n`n" +
+               "A PNG with the same name is created next to each .ai file.`n" +
+               "The .ai originals are kept. Existing PNGs are skipped.`n`n" +
+               "Continue?"
+        $choice = [System.Windows.Forms.MessageBox]::Show(
+            $msg, "Convert Illustrator (.ai) to PNG",
+            [System.Windows.Forms.MessageBoxButtons]::YesNo,
+            [System.Windows.Forms.MessageBoxIcon]::Question)
+        if ($choice -ne [System.Windows.Forms.DialogResult]::Yes) {
+            Log-Message "Cancelled." "Yellow"
+            return
+        }
+
+        $useIllustrator = $haveIllustrator
+        if ($useIllustrator) {
+            try {
+                $startedIllustrator = -not [bool](Get-Process -Name 'Illustrator' -ErrorAction SilentlyContinue)
+                $app = New-Object -ComObject Illustrator.Application
+            } catch {
+                Log-Message "Could not start Illustrator ($($_.Exception.Message))." "Yellow"
+                $app = $null
+                $useIllustrator = $false
+                if ($gsExe) { Log-Message "Falling back to Ghostscript." "Yellow" }
+            }
+        }
+        if (-not $useIllustrator -and -not $gsExe) {
+            Log-Message "No usable converter. Nothing was changed." "Red"
+            return
+        }
+
+        $converted = 0
+        $skipped = 0
+        $failed = 0
+        $n = 0
+        foreach ($f in $all) {
+            $n++
+            $rel = $f.FullName
+            if ($rel.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
+                $rel = $rel.Substring($root.Length).TrimStart('\', '/')
+            }
+            $pngTarget = [System.IO.Path]::ChangeExtension($f.FullName, ".png")
+            if (Test-Path -LiteralPath $pngTarget) {
+                $skipped++
+                Log-Message "  Skipped (PNG already exists): $rel" "Yellow"
+                continue
+            }
+
+            $ok = $false
+            $extra = 0
+            if ($useIllustrator) {
+                $doc = $null
+                try {
+                    $doc = $app.Open($f.FullName)
+                    $opts = New-Object -ComObject Illustrator.ExportOptionsPNG24
+                    $opts.AntiAliasing = $true
+                    $opts.Transparency = $true
+                    $opts.ArtBoardClipping = $true
+                    $abCount = 1
+                    try { $abCount = [int]$doc.Artboards.Count } catch {}
+                    if ($abCount -lt 1) { $abCount = 1 }
+                    # Illustrator adds the .png extension itself, so pass the
+                    # path WITHOUT an extension. Artboard 1 -> Name.png,
+                    # artboard 2 -> Name_artboard2.png, and so on.
+                    $noExt = [System.IO.Path]::ChangeExtension($f.FullName, $null)
+                    for ($a = 0; $a -lt $abCount; $a++) {
+                        if ($abCount -gt 1) { try { $doc.Artboards.SetActiveArtboardIndex($a) } catch {} }
+                        $dest = if ($a -eq 0) { $noExt } else { "{0}_artboard{1}" -f $noExt, ($a + 1) }
+                        $doc.Export($dest, 5, $opts)   # 5 = aiPNG24
+                        if ($a -gt 0) { $extra++ }
+                    }
+                    $ok = (Test-Path -LiteralPath $pngTarget) -and ((Get-Item -LiteralPath $pngTarget).Length -gt 0)
+                } catch {
+                    Log-Message "  Illustrator error on $rel : $($_.Exception.Message)" "Yellow"
+                } finally {
+                    if ($doc) { try { $doc.Close(2) } catch {} }   # 2 = aiDoNotSaveChanges
+                }
+            }
+            if (-not $ok -and $gsExe) {
+                try {
+                    $gsArgs = @('-dBATCH', '-dNOPAUSE', '-dSAFER', '-dQUIET', '-sDEVICE=pngalpha', '-r150',
+                                '-dFirstPage=1', '-dLastPage=1', '-dUseCropBox',
+                                "-sOutputFile=$pngTarget", $f.FullName)
+                    & $gsExe @gsArgs 2>&1 | Out-Null
+                    $ok = (Test-Path -LiteralPath $pngTarget) -and ((Get-Item -LiteralPath $pngTarget).Length -gt 0)
+                } catch {
+                    Log-Message "  Ghostscript error on $rel : $($_.Exception.Message)" "Yellow"
+                }
+            }
+
+            if ($ok) {
+                $converted++
+                if ($extra -gt 0) { Log-Message "  Converted: $rel (+$extra extra artboard PNG(s))" "Green" }
+                else { Log-Message "  Converted: $rel" "Green" }
+            } else {
+                $failed++
+                # Remove a zero-byte/partial PNG so a retry is not skipped.
+                if ((Test-Path -LiteralPath $pngTarget) -and ((Get-Item -LiteralPath $pngTarget).Length -eq 0)) {
+                    Remove-Item -LiteralPath $pngTarget -Force -ErrorAction SilentlyContinue
+                }
+                Log-Message "  FAILED: $rel" "Red"
+            }
+            if (($n % 5) -eq 0) { try { [System.Windows.Forms.Application]::DoEvents() } catch {} }
+        }
+
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Converted: $converted   Skipped: $skipped   Failed: $failed" "Green"
+        Log-Message "The .ai originals were left untouched. Metadata was not changed." "White"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    } finally {
+        if ($app) {
+            if ($startedIllustrator) { try { $app.Quit() } catch {} }
+            try { [void][System.Runtime.InteropServices.Marshal]::ReleaseComObject($app) } catch {}
+        }
+    }
+}
+
 function UpdateMetadataExtensions {
     param($ext)
     $c = Get-Col
@@ -6714,7 +7120,9 @@ function UpdateMetadataExtensions {
         $oldExt = if ($ext -eq "png") { "jpg" } else { "png" }
         
         $newContent = $content -replace "\.$oldExt(?=`"|'|\s|$)", ".$ext"
-        $newContent = $newContent -replace "\.$oldExt_thumb", ".$ext`_thumb"
+        # (v2.5.43) Removed a second -replace here: "$oldExt_thumb" was parsed by PowerShell as a
+        # variable named oldExt_thumb (empty), so the pattern became "\." and EVERY period in the
+        # file turned into ".png_thumb". The line above already converts *_thumb.jpg too.
         
         CreateBackup
         $newContent | Out-File -FilePath $p -Encoding UTF8
