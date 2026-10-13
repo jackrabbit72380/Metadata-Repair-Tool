@@ -1,238 +1,65 @@
-﻿# ============================================================================
-# METADATA REPAIR TOOL
-# Version: 2.5.44 - Image Tools: universal "Include subfolders" checkbox (off by default),
-#   used by the PNG<->JPG converters, "Convert JPG to PNG (Pick Any Folder)" and the
-#   new "Convert Illustrator (.ai) to PNG" button.
-#   Uses Illustrator via COM when installed (per-artboard PNGs), else Ghostscript.
-#   Originals kept, existing PNGs never overwritten, metadata untouched.
-# Version: 2.5.43 - Fixed "Update Metadata Extensions to PNG/JPG" corrupting metadata
-#   (every "." became ".png_thumb"). Cause: unbraced "$oldExt_thumb" variable.
-# Version: 2.5.42 - New Image Tools button: "Convert JPG to PNG (All Subfolders)".
-#   The existing JPG->PNG buttons only look in <media>\box2dfront and
-#   <media>\box2dThumb. This one lets you pick any top folder (e.g. Movies)
-#   and converts JPG/JPEG images in every subfolder under it (Movie 1\box.jpg,
-#   Movie 2\folder.jpg, ...), either all of them or only box.jpg/folder.jpg.
-#   Reuses Convert-ImageFileToPng (verifies the PNG before deleting the JPG),
-#   never overwrites an existing PNG, backs up the metadata file first, then
-#   rewrites only the metadata references that point at converted files
-#   (relative paths resolved from the metadata file's folder). Line endings
-#   and file encoding of the metadata file are preserved.
-# Version: 2.5.41 - Roadmap #6 (final item): RetroAchievements integration.
-#   New Settings -> API Keys fields for RA username + Web API key. New
-#   "Check RetroAchievements..." button in Hash Match Tools: hashes each
-#   ROM (MD5, via .NET's built-in hasher - no compiled helper needed like
-#   CRC32) and resolves it to a game via RA's hash->ID lookup
-#   (dorequest.php?r=gameid, the same endpoint emulator cores use - not
-#   part of RA's newer documented REST API, but the real long-standing
-#   mechanism), then pulls achievement count + user unlock count via the
-#   documented API_GetGameInfoAndUserProgress.php. Verified exact field
-#   names (NumAchievements/NumAwardedToUser/etc.) against RA's official
-#   api-docs before writing this, same care taken with SteamGridDB/Pegasus
-#   asset keys earlier. Flagged honestly, in both the UI log and the
-#   Workflow Guide, that plain file-MD5 only matches RA's hash for
-#   cartridge-style platforms - disc-based/NES-style systems need RA's own
-#   RAHasher tool, which this doesn't attempt to reimplement. Report-only,
-#   same non-destructive pattern as the rest of Hash Match Tools; same
-#   pacing + circuit breaker as GameTDB/SteamGridDB. This closes out the
-#   full 6-item roadmap from the PegasusBridge review.
-# Version: 2.5.40 - Roadmap #5: ROM hash-based matching, generalized from
-#   the existing SNES-only "Match ROMs by Checksum" (GameDB-SNES) to any
-#   platform via standard No-Intro/Redump/TOSEC DAT files. New sidebar
-#   section "Hash Match Tools": Import DAT File... parses a user-supplied
-#   .dat/.xml into a CRC32->title JSON cached per collection (same shape as
-#   snes_titles_raw.json); Match by Checksum hashes a ROM folder with the
-#   existing compiled MrtCrc32 engine and looks games up by exact file
-#   content instead of filename/title guessing - the actual fix for the
-#   whole "Kuru Kuru Kururin" vs "kurukurukurin.jpg" class of bug this
-#   conversation spent so long patching around. Report-only like its SNES
-#   counterpart (never writes metadata directly); if a collection is
-#   loaded it additionally flags hash-confirmed titles that disagree with
-#   current metadata as "TITLE MISMATCH" for manual review. No fetching of
-#   DAT files themselves - No-Intro/Redump require manual download, so
-#   this doesn't fabricate a scraper for them. Existing SNES-specific
-#   Match-RomsByChecksum untouched.
-# Version: 2.5.39 - Added SteamGridDB as a 4th Site option in the Cover
-#   Pack dialog (#4 in the roadmap). Fully automated, unlike TheCoverProject
-#   - real API, no browser tabs. New Settings -> API Keys section for the
-#   free API key. System/Region hidden (not applicable); the cover-types
-#   list is swapped for SteamGridDB's own Grids/Heroes/Logos/Icons, mapped
-#   to the closest real Pegasus asset keys (assets.steamgrid, assets.logo,
-#   assets.background, assets.tile - the last one's a loose fit, flagged in
-#   the description text and the Guide). Matches by title like
-#   TheCoverProject/Libretro-Thumbnails. Reuses the same pacing/circuit-
-#   breaker/persisted-no-art patterns built for GameTDB in 2.5.37-2.5.38,
-#   applied fresh since this is a different API. Workflow Guide updated
-#   with a new page covering both TheCoverProject and SteamGridDB (the
-#   former was promised in an earlier changelog entry but never actually
-#   added - fixed now). Existing GameTDB/Libretro/TheCoverProject code
-#   paths untouched.
-# Version: 2.5.38 - Extended the "confirmed missing" tracking from
-#   TheCoverProject to the GameTDB Cover Pack downloader. A game/cover-type
-#   combo where every region tried came back a clean 404 (never a network
-#   error - see 2.5.37) gets remembered per-collection in
-#   gametdb_no_art_marks.json, and skipped on future scans instead of being
-#   re-requested - the same "don't keep re-asking a settled question"
-#   principle, just automated instead of manual since GameTDB's API can
-#   actually tell the difference between failed-to-ask and confirmed-no.
-#   Marks expire after 30 days and get retried automatically (GameTDB's
-#   library does grow over time), and clear immediately the moment art for
-#   that game/type is actually found on a later scan. Summary line now
-#   breaks out how many skips were "already confirmed missing" vs already
-#   having the file. Purely additive - normal downloads unaffected.
-# Version: 2.5.37 - GameTDB Cover Pack downloader: (1) paced every real
-#   network request with a 200ms delay (RequestDelayMs param) instead of
-#   hammering art.gametdb.com as fast as the loop allows; (2) failures are
-#   now split into "confirmed not found" (clean 404 - a normal, expected
-#   answer) vs "actual error" (timeout, 5xx, connection failure) - only the
-#   latter count toward a new circuit breaker that stops the whole download
-#   after 8 consecutive real errors in a row, since that pattern means the
-#   server is unreachable/rate-limiting, not that the next 500 games all
-#   genuinely lack art. failed_covers.csv now has a Reason column showing
-#   which case each row was. Purely additive to the download loop - normal
-#   successful downloads, skips, and folder/asset behavior are unchanged.
-# Version: 2.5.36 - TheCoverProject "Assign Saved Cover" now offers to crop
-#   the full wrap you just picked into Box Front, Box Back, AND Box Thumb
-#   right away. A popup shows the image with two draggable divider lines
-#   (auto-fit to a 45/10/45 back/spine/front split, shaded band marks the
-#   spine) - drag to line them up with the actual spine edges, then Save
-#   Crops writes assets.box_front (box2dfront/), assets.box_back
-#   (box2dback/), and assets.box_front_thumb (box2dThumb/ - a max-512px-
-#   wide downscale of the front crop, same convention used elsewhere in
-#   this app) alongside the full wrap. Skip leaves just the full wrap,
-#   same as before. Fixed a search miss for titles like "Legend of Zelda,
-#   The - Minish Cap, The (GBA)": a new Format-TCPSearchTitle helper strips
-#   the trailing system/region tag and un-swaps comma-articles ("X, The"
-#   -> "The X") on each segment so the query's word order matches how
-#   TheCoverProject phrases its own titles.
-# Version: 2.5.35 - Close shouldn't have gotten its own row - moved it back
-#   onto the same row as the other five buttons, right after Match &
-#   Import. Widened the dialog (791 -> 869px) and everything in it to fit
-#   all six side by side, and dropped the height back down (715 -> 679)
-#   since the extra row is gone.
-# Version: 2.5.34 - Skipped the "what kind of cover is this?" prompt for
-#   Assign Saved Cover: TheCoverProject only lists full box scans
-#   (front+back+spine), never front-only art, so it's always Box Full -
-#   asking was pointless. Now writes straight to assets.box_full/boxFull
-#   with no dialog in between. The filename-matching fallback in Match &
-#   Import (for files saved but not explicitly assigned) got the same
-#   change, since those files come from the same site. Also fixed a bug
-#   from earlier layout passes: a "Close" button was left behind at its
-#   original position (496, 458) while the dialog grew around it, so it's
-#   been sitting on top of the game list - moved it to its own row under
-#   the other buttons, which needed the dialog to grow by 36px to fit.
-# Version: 2.5.33 - Rebalanced the dialog now that the Status text is
-#   shorter: shrank the Status column (330 -> 260) and tightened the five
-#   bottom buttons to their actual text width instead of the more generous
-#   padding used before, which brought the dialog back down from 909 to
-#   791px wide. Put that width savings into height instead - the game list
-#   is now tall enough (520px) to show all missing games at once without
-#   scrolling for a typical run.
-# Version: 2.5.32 - Shortened the status column's timestamp text: "No cover
-#   available (last check 6:44 PM 9/1/2026)" -> "Not Available As of 6:44 PM
-#   9/1/2026", so the Status column doesn't need as much room.
-# Version: 2.5.31 - The dialog's buttons were 32px tall, but every other
-#   button in the app (toolbar, sidebar, all other dialogs) uses 26px via
-#   Create-Button's standard height. Matched that here, and matched the
-#   "..." folder-browse button to the 35x25 size used by the other browse
-#   buttons in the app instead of the one-off 40x26 it had. Dialog height
-#   trimmed by 6px to follow the shorter button row.
-# Version: 2.5.30 - The uniform 200px-wide buttons from 2.5.29 fit their
-#   text but left big blank gaps around short labels like "Retry". Buttons
-#   are now individually sized to their own text instead of forced to match
-#   the widest one, which let the dialog shrink back down (1064 -> 909px).
-#   Made the dialog taller instead (428 -> 584px) and gave that extra room
-#   to the game list, which used to need scrolling to see more than ~9 of
-#   the missing games at once.
-# Version: 2.5.29 - The single button row from 2.5.28 was wrapping onto two
-#   lines because the buttons were too narrow for their labels. Widened the
-#   whole dialog (674 -> 1064px) so all five buttons fit their text on one
-#   line at a shorter, single-row height (32px instead of 40) - everything
-#   else (list, hint text, folder field) widened to match.
-# Version: 2.5.28 - Reworked the TheCoverProject dialog layout: widened the
-#   window so the hint text no longer gets cut off, put all five buttons
-#   (Open Selected, Assign Saved Cover, Mark No Cover Available, Retry,
-#   Match & Import) in a single row of equal width at the bottom of the
-#   panel with no leftover blank space, restored the longer "Assign Saved
-#   Cover" / "Mark No Cover Available" labels now that there's room for
-#   them, and removed Match & Import's accent highlight so it matches the
-#   other buttons instead of standing out in light blue.
-# Version: 2.5.27 - Shortened two button labels that were clipping under
-#   bold Segoe UI: "Assign Saved File..." -> "Assign Cover" (also dropped
-#   the trailing "..." - not a submenu, no reason to imply one), "Mark No
-#   Cover Available" -> "No Cover". Widths adjusted so nothing truncates.
-# Version: 2.5.26 - "No cover available" marks now store a timestamp
-#   (tcp_no_cover_marks.json changed from a plain list to title->timestamp
-#   map) and the greyed-out status line shows it, e.g. "No cover available
-#   (last check 6:44 PM 9/1/2026)". Added a "Retry" button: clears the mark
-#   on selected rows and reopens the search right away, for cases where a
-#   cover might have shown up on the site since you last checked. Dialog
-#   widened slightly to fit the longer status text.
-# Version: 2.5.25 - Added "Mark No Cover Available" for the TheCoverProject
-#   assist window. The site blocks scripted access, so the app genuinely
-#   can't tell when a search comes back empty - but you can now select a
-#   game after checking it yourself and mark it, and that's remembered
-#   per-collection (tcp_no_cover_marks.json next to the metadata file) so
-#   it shows greyed-out instead of nagging you to re-check it every time
-#   this window reopens. Assigning a file later automatically clears the
-#   mark again.
-# Version: 2.5.24 - "TheCoverProject" was still clipped in the closed Site
-#   box itself (DropDownWidth from 2.5.21 only fixed the open list). Since
-#   System/Region are completely unused in TheCoverProject mode, they're
-#   now hidden outright and Site expands into that freed space instead -
-#   so the full text fits without needing a wider fixed layout for every
-#   other source.
-# Version: 2.5.23 - Reverted 2.5.22: confirmed from a screenshot of the
-#   actual site that TheCoverProject has no region filter at all - just a
-#   plain title search box. Each result row shows a flag for that cover's
-#   own region, but the search itself can't be filtered by region. So
-#   Region is disabled again for TheCoverProject mode (matching System),
-#   with a "(not filterable - see results)" placeholder instead of being
-#   left on based on an unverified guess.
-# Version: 2.5.22 - Region dropdown is no longer disabled/grayed out for
-#   TheCoverProject mode (System still is - its search is title-only).
-#   Region genuinely is used on the actual site, but since scripted access
-#   is blocked there's no confirmed URL parameter to encode it with yet, so
-#   for now it's left usable for reference while filtering by region has to
-#   be done by hand once you're on the site.
-# Version: 2.5.21 - Fixed the Site dropdown clipping "TheCoverProject" in
-#   its open list (box itself stays narrow, dropdown list is now wider -
-#   same fix already used for the System dropdown). Also fixed the System
-#   dropdown going empty/blank when TheCoverProject is selected - it now
-#   shows a grayed-out "(not used for TheCoverProject)" placeholder instead
-#   of looking broken, since System/Region genuinely don't apply there.
-# Version: 2.5.20 - "Assign Saved File..." Box Full option now writes BOTH
-#   assets.box_full (box2dfull/) and assets.boxFull (boxFull/), copying the
-#   PNG into both folders - matching the dual-key convention already used
-#   elsewhere in this app, since many Pegasus themes look for boxFull
-#   specifically rather than box_full.
-# Version: 2.5.19 - Fixed two bugs in "Assign Saved File...": (1) it now
-#   always converts the saved image to PNG on import, same as every other
-#   art source in this app, instead of leaving it as .jpg; (2) it now asks
-#   what kind of cover you saved (Box Front / Box Full / Box Back) and
-#   files it into the matching folder (box2dfront / box2dfull / box2dback)
-#   under the matching assets key, instead of always assuming box_front.
-# Version: 2.5.18 - TheCoverProject assist window: covers folder is now
-#   auto-created on open, and each row has an "Assign Saved File..." option
-#   to link a saved cover straight to that game (no filename matching or
-#   renaming needed). Filename matching is now just a fallback for anything
-#   saved without assigning, and also tries space-stripped titles. Buttons
-#   in this window now use the app's themed Create-Button style so their
-#   text is readable instead of default black-on-dark.
-# Version: 2.5.17 - "TheCoverProject" added as a 3rd Site option. No API/
-# scripted access there (Cloudflare-blocked), so it scans your collection for
-# missing box_front art, generates direct search links per game, and lets you
-# match+import whatever you save into a folder (Show-TCPAssistDialog).
-# Cover Pack dialog description box auto-sizes, no scrollbar (2.5.16).
 # ============================================================================
-
+# METADATA REPAIR TOOL
+# Version: 2.5.64 - After upscaling, assets.box_front is written for EVERY upscaled
+#                   image found in box2dfront (not only this run's), so an
+#                   interrupted/crashed run no longer leaves paths unwritten.
+# Version: 2.5.63 - Progress window: Close button made reliable; X button enabled when done.
+# Version: 2.5.62 - Upscayl: file names containing [ ] now handled (literal paths).
+# Version: 2.5.61 - FIXED Upscayl exiting instantly: paths with spaces were not
+#                   quoted. Exit code is now read correctly, Upscayl's error
+#                   text is shown, and only this collection's thumbs are upscaled.
+# Version: 2.5.60 - FIXED Upscayl step never finding thumbnails ("all 0 already
+#                   present"): Get-ChildItem -Include needs -Recurse/wildcard.
+#                   Upscale now keeps the window responsive and logs progress.
+# Version: 2.5.59 - Libretro Count line now shows "Already downloaded: N (will be upscaled)".
+# Version: 2.5.58 - PNG to WebP now uses quality 100.
+# Version: 2.5.57 - Libretro: fixed "(500) Internal Server Error" repo listing
+#                   (now 2 small GitHub calls + retries + fallback; failures are
+#                   no longer cached; file URLs escaped). Image Tools: Convert
+#                   WebP to PNG / PNG to WebP. Build & Repair: Indent Descriptions.
+# Version: 2.5.56 - Upscayl: picking Upscayl.exe now auto-links upscayl-bin.exe
+#                   (Browse saves immediately, Close saves too, and the
+#                   "locate Upscayl" prompt during upscaling accepts Upscayl.exe).
+# Version: 2.5.55 - Settings: "Get Latest Version" buttons for Pegasus and Upscayl.
+# Version: 2.5.54 - Settings: new "Upscayl" section (Browse / Save Path) to link
+#                   Upscayl.exe. Accepts Upscayl.exe or upscayl-bin.exe and
+#                   resolves resources\bin\upscayl-bin.exe automatically.
+# Version: 2.5.53 - Libretro Tools: added "Open Libretro Thumbnails (GitHub)"
+#                   button next to the downloader button.
+# Version: 2.5.52 - New left sections under Build & Repair Tools:
+#                   "TheCoverProject Tools" and "SteamGridDB Tools", each with
+#                   a downloader button (opens Cover Pack with that site
+#                   preselected) and a button to open the website.
+# Version: 2.5.51 - Cover Pack output folder now defaults to the collection's
+#                   media folder itself (no "\Covers" subfolder appended).
+# Version: 2.5.50 - Libretro: "Only missing art" no longer blocks the Upscayl
+#                   step. Thumbs that already exist are queued for upscaling to
+#                   box2dfront on a re-run. Summary says "Failed" not "Missing".
+# Version: 2.5.49 - "Unzip All" button now sits in the empty slot beside
+#                   "Separate Game Blocks" (it was on a new row that did not
+#                   show). Build & Repair group height back to 416.
+# Version: 2.5.48 - Fixes the Libretro Cover Pack dialog still showing the
+#                   "requires game_id" checkbox. The Libretro preset-run block
+#                   executed before the Options checkboxes were created, so
+#                   the visibility toggle hit $null. It now runs after all
+#                   controls exist. Two separate checkboxes: GameTDB (game_id)
+#                   and Libretro/SteamGridDB (matches by title, no game_id).
+# Version: 2.5.47 - Adds "Unzip All" button (Build & Repair Tools).
+#                   Adds 7 new themes (Midnight Blue, Graphite Lime,
+#                   Obsidian Gold, Violet Night, Arctic Blue, Sage & Cream,
+#                   Rose Quartz).
+#                   Cover Pack dialog gets two checkboxes (game_id vs title)
+#                   and a manual Count button for the preview line.
+# Version: 2.5.44 - Image Tools: "Include subfolders" checkbox (off by default).
+# Version: 2.5.43 - Fixed "Update Metadata Extensions to PNG/JPG" corrupting
+#   metadata (every "." became ".png_thumb"). Cause: unbraced "$oldExt_thumb".
+# ============================================================================
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.IO
 
-# Compiled CRC32 (matches the algorithm GameDB/GameID use to fingerprint ROMs -
-# standard zlib/PKZIP polynomial 0xEDB88320). Implemented in C# via Add-Type
-# because a pure-PowerShell byte loop over hundreds of multi-MB ROMs is too slow.
+# Compiled CRC32 - standard zlib/PKZIP polynomial 0xEDB88320.
 Add-Type -TypeDefinition @"
 using System;
 public static class MrtCrc32 {
@@ -260,9 +87,7 @@ public static class MrtCrc32 {
 }
 "@
 
-# Minimal user32 wrapper used only to pause/resume redraw (WM_SETREDRAW)
-# around bulk syntax-coloring passes on the raw editor, so recoloring a
-# large metadata.txt doesn't visibly flicker line-by-line.
+# Minimal user32 wrapper for WM_SETREDRAW around bulk recolors.
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
@@ -275,7 +100,7 @@ public static class MrtWin32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.42"
+$script:version = "2.5.64"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
@@ -339,7 +164,6 @@ $script:consoleIDs = @{
 }
 
 # GameTDB platform + art path mappings (official art.gametdb.com CDN)
-# CoverTypes verified on art.gametdb.com (disc/cover3D often PNG when covers are JPG)
 $script:gameTdbPlatforms = @{
     "wii" = @{
         Label = "Wii"; TitlesUrl = "https://www.gametdb.com/wiitdb.txt?LANG=EN"
@@ -390,9 +214,6 @@ $script:gameTdbTitlesCache = @{}
 $script:lastGameTdbPlatform = "wii"
 
 # Libretro-Thumbnails source (github.com/libretro-thumbnails org).
-# RepoName must match the GitHub repo exactly (verified live against the org).
-# Only boxart is supported (Named_Boxarts folder) - Libretro-Thumbnails has no
-# separate "back cover" category, only Boxarts / Snaps / Titles.
 $script:libretroPlatforms = @{
     "nes"          = @{ Label = "Nintendo Entertainment System"; RepoName = "Nintendo_-_Nintendo_Entertainment_System" }
     "snes"         = @{ Label = "Super Nintendo Entertainment System"; RepoName = "Nintendo_-_Super_Nintendo_Entertainment_System" }
@@ -438,12 +259,9 @@ if (-not (Test-Path $configDir)) {
 }
 
 # ============================================================================
-# THEME - follows Windows light/dark app mode + system accent
+# THEME
 # ============================================================================
 function ConvertTo-ThemeColor {
-    # Parses "#RRGGBB" or "#RGB" into a Color. Returns Magenta for anything
-    # unparsable so a bad custom-theme file is obvious rather than silently
-    # falling back to a color that looks intentional.
     param([string]$Hex)
     if ([string]::IsNullOrWhiteSpace($Hex)) { return [System.Drawing.Color]::Magenta }
     $h = $Hex.Trim().TrimStart('#')
@@ -462,8 +280,6 @@ function ConvertTo-ThemeColor {
 }
 
 function Initialize-PaletteTheme {
-    # Builds $script:theme from a 14-color hex palette in $script:builtinPalettes
-    # (all defined right in this script - nothing loaded from disk).
     param([string]$Name)
     $pal = $script:builtinPalettes[$Name]
     if ($null -eq $pal) { Initialize-DefaultTheme; return }
@@ -495,7 +311,6 @@ function Get-WindowsAccentColor {
         if ($null -ne $dwm.AccentColor) { $dword = [int]$dwm.AccentColor }
         elseif ($null -ne $dwm.ColorizationColor) { $dword = [int]$dwm.ColorizationColor }
         if ($null -ne $dword) {
-            # Stored as AABBGGRR
             $r = $dword -band 0xFF
             $g = ($dword -shr 8) -band 0xFF
             $b = ($dword -shr 16) -band 0xFF
@@ -504,7 +319,7 @@ function Get-WindowsAccentColor {
             }
         }
     } catch {}
-    return [System.Drawing.Color]::FromArgb(255, 0, 120, 215)  # Windows blue fallback
+    return [System.Drawing.Color]::FromArgb(255, 0, 120, 215)
 }
 
 function Test-WindowsAppsLightTheme {
@@ -516,7 +331,6 @@ function Test-WindowsAppsLightTheme {
 }
 
 function Initialize-DefaultTheme {
-    # App default: dark blue panel with cyan accent labels + green success text
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(30, 30, 50)
         panel       = [System.Drawing.Color]::FromArgb(40, 40, 65)
@@ -537,7 +351,6 @@ function Initialize-DefaultTheme {
 }
 
 function Initialize-SteamTheme {
-    # Separate Steam-inspired dark gray theme (not the app default)
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(27, 40, 56)
         panel       = [System.Drawing.Color]::FromArgb(23, 26, 33)
@@ -616,7 +429,6 @@ function Initialize-WindowsTheme {
 }
 
 function Initialize-LightTheme {
-    # Explicit light theme (not tied to Windows accent)
     $script:isLightTheme = $true
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(245, 246, 250)
@@ -637,7 +449,6 @@ function Initialize-LightTheme {
 }
 
 function Initialize-HighContrastTheme {
-    # High contrast: black / white / cyan accents (same cyan family as Default)
     $script:isLightTheme = $false
     $script:theme = @{
         background  = [System.Drawing.Color]::FromArgb(0, 0, 0)
@@ -657,17 +468,6 @@ function Initialize-HighContrastTheme {
     }
 }
 
-# ----------------------------------------------------------------------------
-# Named palette themes - the same theme set Upscayl ships (it bundles daisyUI's
-# stock themes). Each one's primary/base/semantic colors are pulled from
-# daisyUI's own theme source (src/theming/themes.js) and converted from
-# OKLCH to hex, then background/panel/border/accentDark/textDim are derived
-# from those (daisyUI itself only ships base-100 for most themes and computes
-# the rest; darker "step" shades and a contrast-safety pass are applied here
-# since this app uses "accent" directly as readable text/border color, not a
-# button fill with its own separate content color the way daisyUI does).
-# Everything is defined right here in the script - no theme files.
-# ----------------------------------------------------------------------------
 $script:builtinPalettes = [ordered]@{
     "Dark" = @{ background = "#1d232a"; panel = "#0f141a"; border = "#15191e"; text = "#a6adbb"; textDim = "#6c737e"; accent = "#7480ff"; accentDark = "#5a64c7"; success = "#4ade80"; error = "#f87171"; warning = "#fbbf24"; button = "#333a5f"; buttonHover = "#3e467b"; editor = "#1d232a"; terminal = "#1d232a" }
     "Cupcake" = @{ background = "#f7e8ec"; panel = "#efd6dd"; border = "#e3bfc9"; text = "#4a2c35"; textDim = "#8c6672"; accent = "#e8829f"; accentDark = "#c65f7d"; success = "#8fc9a0"; error = "#d9536f"; warning = "#eeaf3a"; button = "#efd6dd"; buttonHover = "#e3bfc9"; editor = "#efd6dd"; terminal = "#efd6dd" }
@@ -701,6 +501,14 @@ $script:builtinPalettes = [ordered]@{
     "Dim" = @{ background = "#2a303c"; panel = "#1c212b"; border = "#20252e"; text = "#b2ccd6"; textDim = "#798a95"; accent = "#9fe88d"; accentDark = "#7cb56e"; success = "#62efbd"; error = "#ffae9b"; warning = "#efd057"; button = "#475e50"; buttonHover = "#56765b"; editor = "#2a303c"; terminal = "#2a303c" }
     "Nord" = @{ background = "#eceff4"; panel = "#dce0e7"; border = "#d8dee9"; text = "#2e3440"; textDim = "#7e838c"; accent = "#5e81ac"; accentDark = "#496586"; success = "#869c73"; error = "#bf616a"; warning = "#c1a672"; button = "#c8d4e2"; buttonHover = "#b6c5d9"; editor = "#e5e9f0"; terminal = "#e5e9f0" }
     "Sunset" = @{ background = "#121c22"; panel = "#030c13"; border = "#091319"; text = "#9fb9d0"; textDim = "#647787"; accent = "#ff865b"; accentDark = "#c76947"; success = "#addfad"; error = "#ffbbbd"; warning = "#f1c891"; button = "#4d3630"; buttonHover = "#6c4438"; editor = "#121c22"; terminal = "#121c22" }
+    # ---- New themes (2.5.47) ----
+    "Midnight Blue" = @{ background = "#0D1B2A"; panel = "#152840"; border = "#1F3554"; text = "#E8F1FA"; textDim = "#8AA3BC"; accent = "#3A86FF"; accentDark = "#2A5FC4"; success = "#4ADE80"; error = "#F87171"; warning = "#FBBF24"; button = "#1E3A5F"; buttonHover = "#2A4A78"; editor = "#0A1522"; terminal = "#0A1522" }
+    "Graphite Lime" = @{ background = "#17191C"; panel = "#1F2226"; border = "#2E3238"; text = "#EAECEE"; textDim = "#8E9398"; accent = "#C6FF00"; accentDark = "#8FB800"; success = "#C6FF00"; error = "#FF5555"; warning = "#FFD54F"; button = "#262A2F"; buttonHover = "#333A40"; editor = "#101214"; terminal = "#101214" }
+    "Obsidian Gold" = @{ background = "#111111"; panel = "#1A1814"; border = "#2A2620"; text = "#F4EFE3"; textDim = "#A69A82"; accent = "#D4AF37"; accentDark = "#A3821F"; success = "#8FB35A"; error = "#E0745C"; warning = "#D4AF37"; button = "#26221B"; buttonHover = "#3A3327"; editor = "#0A0A0A"; terminal = "#0A0A0A" }
+    "Violet Night" = @{ background = "#171329"; panel = "#221B3D"; border = "#302450"; text = "#EDE9FF"; textDim = "#9C93C2"; accent = "#B69CFF"; accentDark = "#8367D4"; success = "#7BE8C1"; error = "#FF7BA0"; warning = "#F5D06A"; button = "#2B2350"; buttonHover = "#3B3168"; editor = "#100D1F"; terminal = "#100D1F" }
+    "Arctic Blue" = @{ background = "#F2F7FC"; panel = "#E1EBF5"; border = "#C9D8EA"; text = "#1B2A41"; textDim = "#5F7590"; accent = "#2563EB"; accentDark = "#1A45A8"; success = "#16A34A"; error = "#DC2626"; warning = "#D97706"; button = "#DCE7F3"; buttonHover = "#C4D6EC"; editor = "#FFFFFF"; terminal = "#F8FBFE" }
+    "Sage & Cream" = @{ background = "#F5F2E8"; panel = "#E8E4D2"; border = "#D4CEB6"; text = "#2C3220"; textDim = "#6D7460"; accent = "#477A5B"; accentDark = "#345A43"; success = "#477A5B"; error = "#A8472E"; warning = "#B8883D"; button = "#E2DDC9"; buttonHover = "#CFC9AF"; editor = "#FBF9F2"; terminal = "#FBF9F2" }
+    "Rose Quartz" = @{ background = "#FFF5F6"; panel = "#FBE5E9"; border = "#EFC9D0"; text = "#3F1F2C"; textDim = "#8C6470"; accent = "#B94F72"; accentDark = "#8E3857"; success = "#4F8A64"; error = "#C4384B"; warning = "#C28A3D"; button = "#F7DCE2"; buttonHover = "#EFC4CE"; editor = "#FFFFFF"; terminal = "#FFFAFB" }
 }
 
 function Initialize-SystemTheme {
@@ -710,7 +518,7 @@ function Initialize-SystemTheme {
         "Windows"      { Initialize-WindowsTheme; return }
         "Light"        { Initialize-LightTheme; return }
         "HighContrast" { Initialize-HighContrastTheme; return }
-        "Default"      { Initialize-DefaultTheme; return }  # Default = cyan/green accent look
+        "Default"      { Initialize-DefaultTheme; return }
     }
     if ($script:builtinPalettes -and $script:builtinPalettes.Contains($script:themeMode)) {
         Initialize-PaletteTheme -Name $script:themeMode
@@ -762,14 +570,6 @@ function Apply-ThemeToControl {
             if ($script:logBox -and [object]::ReferenceEquals($ctrl, $script:logBox)) {
                 $ctrl.BackColor = $t.terminal
             } elseif ($isDetailField) {
-                # The individual Item/Game Metadata field boxes are created
-                # with a lighter theme.panel tint (see the header/game field
-                # loops) to stand out from the surrounding theme.background,
-                # not the flat theme.editor color everything else in this
-                # branch uses. Re-applying theme.editor here on every theme
-                # switch is what made those rows go flat/dark after
-                # switching themes back and forth instead of keeping their
-                # original lighter look.
                 $ctrl.BackColor = $t.panel
             } else {
                 $ctrl.BackColor = $t.editor
@@ -777,11 +577,6 @@ function Apply-ThemeToControl {
             $ctrl.ForeColor = $t.text
         } elseif ($n -eq "Label") {
             try {
-                # Labels that are drawn as a bordered/boxed element (the title
-                # label, for one) set an explicit BackColor at creation time;
-                # that needs to track theme changes same as everything else,
-                # not just stay pinned to whichever theme was active at
-                # startup. Genuinely transparent labels are left alone.
                 if ($ctrl.BackColor -ne [System.Drawing.Color]::Transparent) {
                     $ctrl.BackColor = $t.background
                 }
@@ -806,8 +601,6 @@ function Apply-ThemeToControl {
 }
 
 function Set-AppThemeMode {
-    # Mode is one of the 5 legacy names or a key in $script:builtinPalettes -
-    # no longer a fixed ValidateSet now that the theme list is data-driven.
     param([string]$Mode)
     $script:themeMode = $Mode
     Initialize-SystemTheme
@@ -843,12 +636,6 @@ function Set-AppThemeMode {
 }
 
 function Get-AllThemeEntries {
-    # Builds the full theme list (5 legacy modes + everything in
-    # $script:builtinPalettes) with each one's actual resolved colors, for
-    # the picker's preview cards. Temporarily swaps $script:theme/$script:
-    # themeMode while doing so, then restores whatever was active. Dark
-    # themes are returned before light ones (each group keeps its original
-    # relative order) so the picker can show dark-on-top, light-on-bottom.
     $darkEntries = New-Object System.Collections.ArrayList
     $lightEntries = New-Object System.Collections.ArrayList
     $savedTheme = $script:theme
@@ -893,9 +680,6 @@ function Apply-PickedThemeKey {
 }
 
 function Show-ThemePickerDialog {
-    # The dedicated theme page: a scrollable grid of cards, one per theme,
-    # each drawn in its own colors (background/text/swatch row) so you can
-    # see exactly what you're picking before you pick it.
     $entries = Get-AllThemeEntries
 
     $dlg = New-Object System.Windows.Forms.Form
@@ -918,10 +702,6 @@ function Show-ThemePickerDialog {
     $flow.BackColor = $script:theme.background
     $dlg.Controls.Add($flow)
 
-    # One click handler shared by every card and its children. It never
-    # closes over a loop variable - it reads .Tag off whichever control was
-    # actually clicked, so there's no stale-value bug from building these
-    # in a loop.
     $cardClickHandler = {
         param($sender, $e)
         $key = [string]$sender.Tag
@@ -993,7 +773,6 @@ function Show-ThemePickerDialog {
 # Default until config loads
 $script:themeMode = "Default"
 Initialize-SystemTheme
-
 
 # ============================================================================
 # CONFIG FUNCTIONS
@@ -1151,9 +930,6 @@ function Create-Button {
 }
 
 function Update-SaveButtonAppearance {
-    # Reflects $script:hasUnsavedChanges on the Save button itself: an
-    # obvious color flip rather than a separate indicator, since that's the
-    # one button whose whole job is "write the pending edit to disk".
     if (-not $script:btnSave) { return }
     if ($script:hasUnsavedChanges) {
         $script:btnSave.BackColor = $script:theme.success
@@ -1226,9 +1002,6 @@ function Get-Col {
 }
 
 function Get-ToolsFolder {
-    # Tools output files live in <media>\Tools, not next to metadata.txt
-    # and not mixed in with ROMs, so they never get mistaken for a
-    # curated import list or picked up by a folder scan again.
     param([string]$MediaPath)
     if ([string]::IsNullOrWhiteSpace($MediaPath)) { return $null }
     $toolsDir = Join-Path $MediaPath "Tools"
@@ -1239,9 +1012,6 @@ function Get-ToolsFolder {
 }
 
 function Resolve-ToolsFile {
-    # Looks for $FileName in <media>\Tools first (current convention),
-    # then falls back to older locations (media root, metadata folder)
-    # in case the file was generated before this convention existed.
     param([string]$MediaPath, [string]$FileName, [string]$MetaDir = "")
     if (-not [string]::IsNullOrWhiteSpace($MediaPath)) {
         $inTools = Join-Path (Join-Path $MediaPath "Tools") $FileName
@@ -1285,7 +1055,7 @@ function Register-LeftSection {
         Title           = $(if ($Title) { $Title } else { $Group.Text.Trim() })
         ToggleBtn       = $null
     }
-    
+
     if ($Collapsible) {
         $btn = New-Object System.Windows.Forms.Button
         $btn.Size = New-Object System.Drawing.Size(22, 18)
@@ -1310,15 +1080,13 @@ function Register-LeftSection {
         $Group.Controls.Add($btn)
         $btn.BringToFront()
         $entry.ToggleBtn = $btn
-        
-        # Also toggle by double-clicking the group header area
+
         $Group.Add_DoubleClick({
             param($sender, $e)
             $found = $script:leftSections | Where-Object { $_.Group -eq $sender } | Select-Object -First 1
             if ($found -and $found.Collapsible) { Toggle-LeftSection $found }
         })
-        
-        # Title padded; escape & for GroupBox accelerator rules
+
         $disp = $entry.Title -replace '&', '&&'
         $Group.Text = "      $disp "
         if (-not $StartExpanded) {
@@ -1328,7 +1096,7 @@ function Register-LeftSection {
             $Group.Height = $script:collapsedHeaderH
         }
     }
-    
+
     [void]$script:leftSections.Add($entry)
     return $entry
 }
@@ -1339,7 +1107,7 @@ function Toggle-LeftSection {
     $entry.Expanded = -not $entry.Expanded
     $grp = $entry.Group
     $btn = $entry.ToggleBtn
-    
+
     if ($entry.Expanded) {
         $grp.Height = $entry.ExpandedHeight
         $grp.Text = ("      " + ($entry.Title -replace '&', '&&') + " ")
@@ -1418,17 +1186,17 @@ function Show-CreateCollectionDialog {
     $dlg.MaximizeBox = $false
     $dlg.BackColor = $script:theme.background
     $dlg.ForeColor = $script:theme.text
-    
+
     $y = 18
     $sp = 38
-    
+
     $lName = New-Object System.Windows.Forms.Label
     $lName.Text = "Collection Name:"
     $lName.Location = New-Object System.Drawing.Point(20, $y)
     $lName.Size = New-Object System.Drawing.Size(130, 25)
     $lName.ForeColor = $script:theme.text
     $dlg.Controls.Add($lName)
-    
+
     $tName = New-Object System.Windows.Forms.TextBox
     $tName.Location = New-Object System.Drawing.Point(155, $y)
     $tName.Size = New-Object System.Drawing.Size(300, 25)
@@ -1436,7 +1204,7 @@ function Show-CreateCollectionDialog {
     $tName.ForeColor = $script:theme.text
     $tName.BorderStyle = "FixedSingle"
     $dlg.Controls.Add($tName)
-    
+
     $y += $sp
     $lFolder = New-Object System.Windows.Forms.Label
     $lFolder.Text = "Collection Folder:"
@@ -1444,7 +1212,7 @@ function Show-CreateCollectionDialog {
     $lFolder.Size = New-Object System.Drawing.Size(130, 25)
     $lFolder.ForeColor = $script:theme.text
     $dlg.Controls.Add($lFolder)
-    
+
     $tFolder = New-Object System.Windows.Forms.TextBox
     $tFolder.Location = New-Object System.Drawing.Point(155, $y)
     $tFolder.Size = New-Object System.Drawing.Size(255, 25)
@@ -1452,7 +1220,7 @@ function Show-CreateCollectionDialog {
     $tFolder.ForeColor = $script:theme.text
     $tFolder.BorderStyle = "FixedSingle"
     $dlg.Controls.Add($tFolder)
-    
+
     $bFolder = Create-Button "..." 420 $y 35 25
     $bFolder.Add_Click({
         $fd = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -1466,7 +1234,7 @@ function Show-CreateCollectionDialog {
         }
     })
     $dlg.Controls.Add($bFolder)
-    
+
     $y += $sp
     $lShort = New-Object System.Windows.Forms.Label
     $lShort.Text = "Shortname:"
@@ -1474,7 +1242,7 @@ function Show-CreateCollectionDialog {
     $lShort.Size = New-Object System.Drawing.Size(130, 25)
     $lShort.ForeColor = $script:theme.text
     $dlg.Controls.Add($lShort)
-    
+
     $tShort = New-Object System.Windows.Forms.TextBox
     $tShort.Location = New-Object System.Drawing.Point(155, $y)
     $tShort.Size = New-Object System.Drawing.Size(300, 25)
@@ -1482,7 +1250,7 @@ function Show-CreateCollectionDialog {
     $tShort.ForeColor = $script:theme.text
     $tShort.BorderStyle = "FixedSingle"
     $dlg.Controls.Add($tShort)
-    
+
     $y += $sp
     $hint = New-Object System.Windows.Forms.Label
     $hint.Text = "Creates metadata .txt, media\box2dfront, media\box2dThumb, and adds the collection."
@@ -1490,7 +1258,7 @@ function Show-CreateCollectionDialog {
     $hint.Size = New-Object System.Drawing.Size(440, 40)
     $hint.ForeColor = $script:theme.textDim
     $dlg.Controls.Add($hint)
-    
+
     $y += 50
     $ok = Create-Button "Create" 150 $y 120 35
     $ok.BackColor = $script:theme.success
@@ -1500,7 +1268,7 @@ function Show-CreateCollectionDialog {
         $name = $tName.Text.Trim()
         $folder = $tFolder.Text.Trim()
         $short = $tShort.Text.Trim()
-        
+
         if ([string]::IsNullOrWhiteSpace($name)) {
             [System.Windows.Forms.MessageBox]::Show("Enter a collection name.", "Error", "OK", "Error")
             return
@@ -1521,25 +1289,25 @@ function Show-CreateCollectionDialog {
             $short = ($name -replace '[^A-Za-z0-9]', '').ToLower()
             if ([string]::IsNullOrWhiteSpace($short)) { $short = "collection" }
         }
-        
+
         Ensure-CollectionsHashtable
         if ($script:collections.ContainsKey($name)) {
             $result = [System.Windows.Forms.MessageBox]::Show("Collection '$name' already exists. Overwrite metadata file?", "Warning", "YesNo", "Warning")
             if ($result -eq "No") { return }
         }
-        
+
         try {
             $metaFile = Join-Path $folder "$name.txt"
             $mediaPath = Join-Path $folder "media"
             $frontPath = Join-Path $mediaPath "box2dfront"
             $thumbPath = Join-Path $mediaPath "box2dThumb"
-            
+
             foreach ($d in @($mediaPath, $frontPath, $thumbPath)) {
                 if (-not (Test-Path $d)) {
                     New-Item -ItemType Directory -Path $d -Force | Out-Null
                 }
             }
-            
+
             $header = @"
 collection: $name
 shortname: $short
@@ -1551,10 +1319,10 @@ description:
 "@
             $utf8NoBom = New-Object System.Text.UTF8Encoding $false
             [System.IO.File]::WriteAllText($metaFile, $header, $utf8NoBom)
-            
+
             $okAdd = Add-Collection $name $metaFile $mediaPath
             RefreshCollectionList
-            
+
             if ($null -ne $script:collectionList) {
                 if (-not $script:collectionList.Items.Contains($name)) {
                     [void]$script:collectionList.Items.Add($name)
@@ -1562,11 +1330,11 @@ description:
                 $idx = $script:collectionList.Items.IndexOf($name)
                 if ($idx -ge 0) { $script:collectionList.SelectedIndex = $idx }
             }
-            
+
             $script:currentCollection = $script:collections[$name]
             UpdateEditor
             UpdateStats
-            
+
             Log-Message "Created collection: $name" "Green"
             Log-Message "Metadata: $metaFile" "Cyan"
             Log-Message "Media: $mediaPath" "Cyan"
@@ -1577,11 +1345,11 @@ description:
         }
     })
     $dlg.Controls.Add($ok)
-    
+
     $cn = Create-Button "Cancel" 285 $y 100 35
     $cn.Add_Click({ $dlg.Close() })
     $dlg.Controls.Add($cn)
-    
+
     $dlg.ShowDialog()
 }
 
@@ -1594,17 +1362,17 @@ function Show-AddCollectionDialog {
     $dlg.MaximizeBox = $false
     $dlg.BackColor = $script:theme.background
     $dlg.ForeColor = $script:theme.text
-    
+
     $y = 20
     $sp = 40
-    
+
     $l2 = New-Object System.Windows.Forms.Label
     $l2.Text = "Metadata File:"
     $l2.Location = New-Object System.Drawing.Point(20, $y)
     $l2.Size = New-Object System.Drawing.Size(120, 25)
     $l2.ForeColor = $script:theme.text
     $dlg.Controls.Add($l2)
-    
+
     $t2 = New-Object System.Windows.Forms.TextBox
     $t2.Location = New-Object System.Drawing.Point(150, $y)
     $t2.Size = New-Object System.Drawing.Size(240, 25)
@@ -1612,7 +1380,7 @@ function Show-AddCollectionDialog {
     $t2.ForeColor = $script:theme.text
     $t2.BorderStyle = "FixedSingle"
     $dlg.Controls.Add($t2)
-    
+
     $b2 = Create-Button "..." 395 $y 35 25
     $b2.Add_Click({
         $of = New-Object System.Windows.Forms.OpenFileDialog
@@ -1624,7 +1392,7 @@ function Show-AddCollectionDialog {
         }
     })
     $dlg.Controls.Add($b2)
-    
+
     $y += $sp
     $l3 = New-Object System.Windows.Forms.Label
     $l3.Text = "Media Folder:"
@@ -1632,7 +1400,7 @@ function Show-AddCollectionDialog {
     $l3.Size = New-Object System.Drawing.Size(120, 25)
     $l3.ForeColor = $script:theme.text
     $dlg.Controls.Add($l3)
-    
+
     $t3 = New-Object System.Windows.Forms.TextBox
     $t3.Location = New-Object System.Drawing.Point(150, $y)
     $t3.Size = New-Object System.Drawing.Size(240, 25)
@@ -1640,7 +1408,7 @@ function Show-AddCollectionDialog {
     $t3.ForeColor = $script:theme.text
     $t3.BorderStyle = "FixedSingle"
     $dlg.Controls.Add($t3)
-    
+
     $b3 = Create-Button "..." 395 $y 35 25
     $b3.Add_Click({
         $fd = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -1660,7 +1428,7 @@ function Show-AddCollectionDialog {
         }
     })
     $dlg.Controls.Add($b3)
-    
+
     $y += $sp + 10
     $ok = Create-Button "Add Collection" 150 $y 120 35
     $ok.BackColor = $script:theme.success
@@ -1669,31 +1437,31 @@ function Show-AddCollectionDialog {
     $ok.Add_Click({
         $meta = $t2.Text.Trim()
         $media = $t3.Text.Trim()
-        
+
         if (-not (Test-Path $meta)) {
             [System.Windows.Forms.MessageBox]::Show("Metadata file not found: $meta", "Error", "OK", "Error")
             return
         }
-        
+
         if ([string]::IsNullOrWhiteSpace($media)) {
             [System.Windows.Forms.MessageBox]::Show("Please select a Media Folder.", "Error", "OK", "Error")
             return
         }
-        
+
         if (-not (Test-Path $media)) {
             [System.Windows.Forms.MessageBox]::Show("Media folder not found: $media", "Error", "OK", "Error")
             return
         }
-        
+
         $name = Get-CollectionNameFromFile $meta
-        
+
         if (-not $name) {
             [System.Windows.Forms.MessageBox]::Show("Could not determine collection name from filename.", "Error", "OK", "Error")
             return
         }
-        
+
         Ensure-CollectionsHashtable
-        
+
         if ($script:collections.ContainsKey($name)) {
             $result = [System.Windows.Forms.MessageBox]::Show("Collection '$name' already exists. Overwrite?", "Warning", "YesNo", "Warning")
             if ($result -eq "No") {
@@ -1701,12 +1469,12 @@ function Show-AddCollectionDialog {
             }
             $script:collections.Remove($name)
         }
-        
+
         $okAdd = Add-Collection $name $meta $media
         Log-Message "Add-Collection returned: $okAdd | Keys now: $(@($script:collections.Keys) -join ', ')" "Cyan"
-        
+
         RefreshCollectionList
-        
+
         if ($null -ne $script:collectionList) {
             if (-not $script:collectionList.Items.Contains($name)) {
                 [void]$script:collectionList.Items.Add($name)
@@ -1720,25 +1488,25 @@ function Show-AddCollectionDialog {
         } else {
             Log-Message "ERROR: collectionList control is null after add!" "Red"
         }
-        
+
         if ($null -ne $script:countLabel) {
             $script:countLabel.Text = "Ready  |  Collections: $($script:collections.Count)"
         }
-        
+
         $script:currentCollection = $script:collections[$name]
         UpdateEditor
         UpdateStats
-        
+
         Log-Message "Added: $name  (hashtable: $($script:collections.Count) | listbox: $($script:collectionList.Items.Count))" "Green"
         Log-Message "Media folder: $media" "Cyan"
         $dlg.Close()
     })
     $dlg.Controls.Add($ok)
-    
+
     $cn = Create-Button "Cancel" 280 $y 100 35
     $cn.Add_Click({ $dlg.Close() })
     $dlg.Controls.Add($cn)
-    
+
     $dlg.ShowDialog()
 }
 
@@ -1769,7 +1537,7 @@ function UpdateStats {
             $thPng = @(Get-ChildItem $tp -Filter "*.png" -ErrorAction SilentlyContinue).Count
             $thJpg = @(Get-ChildItem $tp -Filter "*.jpg" -ErrorAction SilentlyContinue).Count
             $thumbs = $thPng + $thJpg
-            
+
             if ($script:countLabel) {
                 $script:countLabel.Text = "Games: $total  |  Box Art: $art  |  Missing: $missing  |  Images: $img"
             }
@@ -1807,7 +1575,7 @@ function UpdateEditor {
                 Highlight-RawEditorAll
             }
             Set-UnsavedChanges $false
-            
+
             try {
                 Parse-PegasusMetadata $raw
                 FilterGameList
@@ -1815,12 +1583,11 @@ function UpdateEditor {
                 Log-Message "Parse warning: $_" "Yellow"
                 $script:parsedGames = @()
             }
-            
+
             if (-not $script:rawMode) {
                 if ($script:rawSearchBar) { $script:rawSearchBar.Visible = $false }
                 if ($script:editorBox) { $script:editorBox.Visible = $false }
                 if ($script:metaOuter) { $script:metaOuter.Visible = $true }
-                # Respect collapse: Item Metadata + Games (list/search) stay in sync
                 Apply-MetaAndGamesCollapseState
             } else {
                 if ($script:rawSearchBar) { $script:rawSearchBar.Visible = $true }
@@ -1833,7 +1600,7 @@ function UpdateEditor {
                 if ($script:gameSearchBox) { $script:gameSearchBox.Visible = $false }
                 if ($script:searchLabel) { $script:searchLabel.Visible = $false }
             }
-            
+
             $cnt = 0
             if ($null -ne $script:parsedGames) { $cnt = @($script:parsedGames).Count }
             if ($script:statusBar) { $script:statusBar.Text = "Loaded: $name ($cnt games)" }
@@ -1863,7 +1630,6 @@ function SaveMeta {
     $name = $script:collectionList.SelectedItem.ToString()
     $c = $script:collections[$name]
     try {
-        # Remember place so Save does not jump the list / caret
         $prevTitle = $null
         $prevTop = -1
         $prevSelStart = -1
@@ -1887,7 +1653,7 @@ function SaveMeta {
                 ApplyGameFields
             }
         }
-        
+
         if ($script:rawMode) {
             $text = $script:editorBox.Text
             $text = $text -replace "`r`n", "`n" -replace "`r", "`n"
@@ -1905,7 +1671,6 @@ function SaveMeta {
         $script:suppressGameSelect = $true
         try {
             UpdateEditor
-            # Restore list selection + scroll position
             if (-not $script:rawMode -and $script:gameListBox -and $script:gameListBox.Items.Count -gt 0) {
                 $idx = -1
                 if ($prevTitle) {
@@ -1921,7 +1686,6 @@ function SaveMeta {
                     } catch {}
                 }
             }
-            # Restore raw editor caret / selection
             if ($script:rawMode -and $script:editorBox -and $prevSelStart -ge 0) {
                 try {
                     $len = $script:editorBox.Text.Length
@@ -1947,11 +1711,11 @@ function Parse-HeaderFields {
     param([string]$headerText)
     $fields = @{}
     if ([string]::IsNullOrWhiteSpace($headerText)) { return $fields }
-    
+
     $lines = $headerText -split "`n"
     $currentKey = $null
     $currentVals = @()
-    
+
     foreach ($line in $lines) {
         if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
         if ($line -match '^([^\s][^:]*):\s*(.*)$') {
@@ -1978,15 +1742,15 @@ function Parse-GameBlock {
     param([string]$block)
     $block = $block.Trim()
     if (-not ($block -match '(?m)^game:\s*')) { return $null }
-    
+
     $fields = @{}
     $lines = $block -split "`n"
     $currentKey = $null
     $currentVals = @()
-    
+
     foreach ($line in $lines) {
         if ($line -match '^\s*#' -or $line -match '^\s*$') { continue }
-        
+
         if ($line -match '^([^\s][^:]*):\s*(.*)$') {
             if ($null -ne $currentKey) {
                 $fields[$currentKey] = ($currentVals -join "`n").Trim()
@@ -2004,9 +1768,9 @@ function Parse-GameBlock {
     if ($null -ne $currentKey) {
         $fields[$currentKey] = ($currentVals -join "`n").Trim()
     }
-    
+
     if (-not $fields.ContainsKey("game")) { return $null }
-    
+
     return [PSCustomObject]@{
         Fields = $fields
         Title  = [string]$fields["game"]
@@ -2018,15 +1782,15 @@ function Parse-PegasusMetadata {
     $script:parsedHeader = ""
     $script:parsedHeaderFields = @{}
     $script:parsedGames = @()
-    
+
     if ([string]::IsNullOrWhiteSpace($content)) { return }
-    
+
     $content = $content -replace "`r`n", "`n" -replace "`r", "`n"
     $parts = [regex]::Split($content, '(?m)(?=^game:\s*)')
-    
+
     $headerParts = New-Object System.Collections.ArrayList
     $games = New-Object System.Collections.ArrayList
-    
+
     foreach ($part in $parts) {
         if ([string]::IsNullOrWhiteSpace($part)) { continue }
         if ($part -match '(?m)^game:\s*') {
@@ -2036,11 +1800,11 @@ function Parse-PegasusMetadata {
             [void]$headerParts.Add($part.TrimEnd())
         }
     }
-    
+
     $script:parsedHeader = ($headerParts -join "`n").Trim()
     $script:parsedHeaderFields = Parse-HeaderFields $script:parsedHeader
     $script:parsedGames = @($games.ToArray())
-    
+
     Load-HeaderFieldsIntoUI
 }
 
@@ -2107,17 +1871,17 @@ function Apply-HeaderFieldsFromUI {
 
 function Build-PegasusMetadata {
     $sb = New-Object System.Text.StringBuilder
-    
+
     if (-not [string]::IsNullOrWhiteSpace($script:parsedHeader)) {
         [void]$sb.AppendLine($script:parsedHeader.TrimEnd())
         [void]$sb.AppendLine("")
     }
-    
+
     foreach ($g in $script:parsedGames) {
         $fields = $g.Fields
         $title = if ($fields.ContainsKey("game")) { $fields["game"] } else { $g.Title }
         [void]$sb.AppendLine("game: $title")
-        
+
         $preferredOrder = @(
             "sort_title", "sort-title", "file", "developer", "publisher",
             "genre", "players", "release", "rating", "description",
@@ -2128,14 +1892,14 @@ function Build-PegasusMetadata {
             "assets.titlescreen", "assets.fanart", "assets.cartridge",
             "assets.steamgrid", "assets.marquee", "assets.banner"
         )
-        
+
         $written = @{ "game" = $true }
         foreach ($key in $preferredOrder) {
             $actualKey = $null
             if ($fields.ContainsKey($key)) { $actualKey = $key }
             elseif ($key -eq "sort_title" -and $fields.ContainsKey("sort-title")) { $actualKey = "sort-title" }
             elseif ($key -eq "sort-title" -and $fields.ContainsKey("sort_title")) { $actualKey = "sort_title" }
-            
+
             if ($null -ne $actualKey -and -not $written.ContainsKey($actualKey)) {
                 $val = $fields[$actualKey]
                 if (-not [string]::IsNullOrWhiteSpace($val)) {
@@ -2151,7 +1915,7 @@ function Build-PegasusMetadata {
                 $written[$actualKey] = $true
             }
         }
-        
+
         foreach ($key in @($fields.Keys)) {
             if ($written.ContainsKey($key)) { continue }
             $val = $fields[$key]
@@ -2167,7 +1931,7 @@ function Build-PegasusMetadata {
         }
         [void]$sb.AppendLine("")
     }
-    
+
     return $sb.ToString().TrimEnd() + "`n"
 }
 
@@ -2177,27 +1941,26 @@ function FilterGameList {
     if ($null -ne $script:gameSearchBox) {
         $filter = $script:gameSearchBox.Text.Trim().ToLower()
     }
-    
-    # Remember current selection so Add Box Art / refresh does not jump away
+
     $prevTitle = $null
     if ($script:gameListBox.SelectedIndex -ge 0 -and $script:gameListBox.SelectedItem) {
         $prevTitle = $script:gameListBox.SelectedItem.ToString()
     }
-    
+
     $script:suppressGameSelect = $true
     $script:gameListBox.BeginUpdate()
     $script:gameListBox.Items.Clear()
-    
+
     foreach ($g in $script:parsedGames) {
         $title = [string]$g.Title
         if ([string]::IsNullOrWhiteSpace($filter) -or $title.ToLower().Contains($filter)) {
             [void]$script:gameListBox.Items.Add($title)
         }
     }
-    
+
     $script:gameListBox.EndUpdate()
     $script:suppressGameSelect = $false
-    
+
     if ($script:gameListBox.Items.Count -gt 0) {
         $restored = $false
         if ($prevTitle) {
@@ -2216,10 +1979,10 @@ function FilterGameList {
 function LoadSelectedGameFields {
     if ($null -eq $script:gameListBox -or $script:gameListBox.SelectedIndex -lt 0) { return }
     $title = $script:gameListBox.SelectedItem.ToString()
-    
+
     $game = $script:parsedGames | Where-Object { $_.Title -eq $title } | Select-Object -First 1
     if ($null -eq $game) { return }
-    
+
     $script:suppressDirtyTracking = $true
     try {
         $fields = $game.Fields
@@ -2240,7 +2003,7 @@ function LoadSelectedGameFields {
 
 function ApplyGameFields {
     Apply-HeaderFieldsFromUI
-    
+
     if ($null -eq $script:gameListBox -or $script:gameListBox.SelectedIndex -lt 0) {
         Log-Message "Collection metadata applied (no game selected)" "Cyan"
         return
@@ -2259,10 +2022,10 @@ function ApplyGameFields {
         Log-Message "Game not found in parsed data" "Red"
         return
     }
-    
+
     $fields = @{}
     foreach ($k in @($game.Fields.Keys)) { $fields[$k] = $game.Fields[$k] }
-    
+
     foreach ($key in @($script:fieldControls.Keys)) {
         $val = $script:fieldControls[$key].Text
         if ([string]::IsNullOrWhiteSpace($val)) {
@@ -2273,20 +2036,18 @@ function ApplyGameFields {
             if ($key -eq "sort_title" -and $fields.ContainsKey("sort-title")) { $fields.Remove("sort-title") }
         }
     }
-    
+
     $newTitle = if ($fields.ContainsKey("game")) { $fields["game"] } else { $oldTitle }
     $script:parsedGames[$idx] = [PSCustomObject]@{ Fields = $fields; Title = $newTitle }
-    
+
     FilterGameList
     $newIdx = $script:gameListBox.Items.IndexOf($newTitle)
     if ($newIdx -ge 0) { $script:gameListBox.SelectedIndex = $newIdx }
-    
+
     Log-Message "Applied collection + game fields for: $newTitle" "Green"
 }
 
 function Apply-RawEditorLayout {
-    # Size Find bar + raw editor + terminal so nothing overlaps and the
-    # terminal header + drag grip stay visible/usable.
     if (-not $script:rawMode) { return }
     $gap = 6
     $fullW = if ($script:contentFullW) { $script:contentFullW } else { 1132 }
@@ -2294,7 +2055,6 @@ function Apply-RawEditorLayout {
     $searchH = if ($script:rawReplaceVisible) { 64 } else { 30 }
     $editorTop = $searchTop + $searchH + $gap
 
-    # Available height inside the right panel (prefer client size)
     $avail = 700
     try {
         if ($script:rightPanelRef -and $script:rightPanelRef.ClientSize.Height -gt 100) {
@@ -2304,7 +2064,6 @@ function Apply-RawEditorLayout {
         }
     } catch {}
 
-    # Terminal height (expanded or collapsed), capped so editor keeps room
     if ($script:termExpanded) {
         $termH = if ($script:termExpandedH -and $script:termExpandedH -ge 100) { $script:termExpandedH } else { 220 }
         $maxTerm = [Math]::Max(120, [int]($avail * 0.40))
@@ -2316,7 +2075,6 @@ function Apply-RawEditorLayout {
 
     $termY = $avail - $termH - 8
     if ($termY -lt ($editorTop + 120)) {
-        # Not enough room - shrink terminal further
         $termY = $editorTop + 120
         $termH = [Math]::Max(80, $avail - $termY - 8)
     }
@@ -2347,10 +2105,8 @@ function Apply-RawEditorLayout {
 }
 
 function Relayout-TerminalPosition {
-    # Sit terminal just under Item Metadata / raw editor. Full width of right content area.
     if ($null -eq $script:termOuter) { return }
 
-    # Raw mode uses its own shared layout (editor + terminal)
     if ($script:rawMode) {
         Apply-RawEditorLayout
         return
@@ -2369,7 +2125,6 @@ function Relayout-TerminalPosition {
     $script:termOuter.Location = New-Object System.Drawing.Point(5, $termY)
     $script:termOuter.Width = $fullW
 
-    # Expanded terminal uses last drag height; collapsed stays header-only
     if ($script:termExpanded) {
         $h = if ($script:termExpandedH -and $script:termExpandedH -ge 100) { $script:termExpandedH } else { 360 }
         $script:termOuter.Height = $h
@@ -2383,7 +2138,6 @@ function Relayout-TerminalPosition {
         if ($f -and $f.WindowState -eq "Normal") {
             $bottom = $script:termOuter.Bottom + 58
             $needed = [Math]::Max($f.MinimumSize.Height, $bottom)
-            # Never grow past the screen working area (keeps window above the taskbar)
             $waH = [System.Windows.Forms.Screen]::FromControl($f).WorkingArea.Height
             $maxH = [Math]::Max($f.MinimumSize.Height, $waH - 8)
             if ($needed -gt $maxH) { $needed = $maxH }
@@ -2392,7 +2146,6 @@ function Relayout-TerminalPosition {
             } elseif (-not $script:metaExpanded -and $f.Height -gt ($needed + 30)) {
                 $f.Height = $needed
             }
-            # Keep top of window inside working area after height changes
             $wa = [System.Windows.Forms.Screen]::FromControl($f).WorkingArea
             if ($f.Bottom -gt $wa.Bottom) {
                 $f.Top = [Math]::Max($wa.Top, $wa.Bottom - $f.Height)
@@ -2402,7 +2155,6 @@ function Relayout-TerminalPosition {
 }
 
 function Apply-TerminalInnerLayout {
-    # Size log box + bottom drag grip to current terminal height.
     if ($null -eq $script:termOuter) { return }
     $h = $script:termOuter.Height
     $fullW = if ($script:contentFullW) { $script:contentFullW } else { 1132 }
@@ -2419,15 +2171,12 @@ function Apply-TerminalInnerLayout {
 
     if ($script:logBox) {
         $script:logBox.Width = $fullW - 24
-        # Log buttons live on the top action bar now - use full terminal height
         $script:logBox.Height = [Math]::Max(40, $h - 32)
         $script:logBox.Visible = $true
     }
 }
 
 function Apply-MetaInnerLayout {
-    # Size detail panel + bottom drag grip to current Item Metadata height.
-    # Also keep the Games list box filling its GroupBox (fixes blank area at bottom).
     if ($null -eq $script:metaOuter) { return }
     $h = $script:metaOuter.Height
     $nw = if ($script:metaNarrowW) { $script:metaNarrowW } else { 700 }
@@ -2445,8 +2194,6 @@ function Apply-MetaInnerLayout {
         $script:detailPanel.Height = [Math]::Max(80, $h - 28)
         $script:detailPanel.Visible = $true
     }
-    # Keep Games list height in sync when expanded, and stretch the ListBox
-    # so it fills the GroupBox instead of leaving a blank strip at the bottom.
     if ($script:gamesOuter -and $script:gamesOuter.Visible) {
         $script:gamesOuter.Height = $h
         $script:gamesExpandedH = $h
@@ -2465,8 +2212,6 @@ function Apply-MetaInnerLayout {
 }
 
 function Apply-MetaAndGamesCollapseState {
-    # Item Metadata collapse also collapses Games to a header strip (stays visible on the right).
-    # Raw View hides both entirely via Set-EditorMode.
     if ($script:rawMode) { return }
 
     $tb = $script:btnMetaToggle
@@ -2508,7 +2253,6 @@ function Apply-MetaAndGamesCollapseState {
                 if ($null -eq $tb -or $ctrl -ne $tb) { $ctrl.Visible = $false }
             }
         }
-        # Games stays visible as a collapsed header strip on the right
         if ($script:gamesOuter) {
             $script:gamesOuter.Visible = $true
             $script:gamesOuter.Height = $gCollapsed
@@ -2573,18 +2317,6 @@ function Find-InRawEditor {
 }
 
 function Get-RawEditorLineColor {
-    # Whole-line syntax coloring for the raw Pegasus metadata.txt editor.
-    # Colors are pulled from the live theme so this stays correct across
-    # every theme:
-    #   game:                                  -> success (green)
-    #   assets.*: / shortname: / collection: /
-    #   launch: / description:                 -> accent  (cyan in most themes)
-    #   file:                                   -> warning (its own color)
-    #   players:                                -> accentDark (its own color)
-    #   developer: / publisher: / genre: /
-    #   release: / rating: / extra:             -> textDim (muted, informational)
-    #   everything else (comments, blank lines,
-    #   indented continuation lines, unknown keys)  -> text
     param([string]$line)
     $trimmed = $line.TrimStart()
     if ($trimmed -match '^game\s*:') { return $script:theme.success }
@@ -2597,11 +2329,6 @@ function Get-RawEditorLineColor {
 }
 
 function Paint-RawEditorLine {
-    # LineText/Editor are optional fast-path overrides used by
-    # Highlight-RawEditorAll, which fetches $eb.Lines ONCE for the whole
-    # document instead of letting this function re-read it per line (see the
-    # comment there - that repeated read was the actual cause of raw mode
-    # freezing/hanging on anything but a tiny metadata.txt).
     param([int]$LineIndex, [string]$LineText = $null, $Editor = $null)
     $eb = if ($Editor) { $Editor } else { $script:editorBox }
     if (-not $eb) { return }
@@ -2621,19 +2348,6 @@ function Paint-RawEditorLine {
 }
 
 function Highlight-RawEditorAll {
-    # Recolors every line. Used after bulk text changes (loading a
-    # collection, entering Raw view, Replace All, switching themes) rather
-    # than on every keystroke, since it's proportional to document size.
-    #
-    # Each recolored line is a real Win32 round-trip (RichEdit doesn't have
-    # a bulk "color these ranges" call), so on a very large metadata.txt this
-    # was the actual cause of the "raw mode freezes for 10+ seconds" report -
-    # tens of thousands of small synchronous calls with nothing pumping the
-    # message queue in between, so Windows shows the window as Not Responding
-    # even though it's still working. Two fixes: skip it outright above a
-    # size where it wouldn't finish in reasonable time, and otherwise pump
-    # Application.DoEvents() + update the status bar periodically so the UI
-    # stays alive and the person can see it's busy rather than stuck.
     if (-not $script:rawMode -or -not $script:editorBox) { return }
     $eb = $script:editorBox
     $linesArray = $eb.Lines
@@ -2641,21 +2355,14 @@ function Highlight-RawEditorAll {
     $maxColorLines = 6000
     if ($lineCount -gt $maxColorLines) {
         $script:rawEditorLastLineCount = $lineCount
-        if ($script:statusBar) { $script:statusBar.Text = "Raw view loaded ($lineCount lines) - syntax coloring skipped on files this large to stay responsive" }
-        Log-Message "Raw editor: skipped syntax coloring ($lineCount lines > $maxColorLines) to avoid a long freeze" "Yellow"
+        if ($script:statusBar) { $script:statusBar.Text = "Raw view loaded ($lineCount lines) - syntax coloring skipped" }
+        Log-Message "Raw editor: skipped syntax coloring ($lineCount lines > $maxColorLines)" "Yellow"
         return
     }
     $savedStart = $eb.SelectionStart
     $savedLen = $eb.SelectionLength
     $prevCursor = $null
     try { if ($script:mainForm) { $prevCursor = $script:mainForm.Cursor; $script:mainForm.Cursor = [System.Windows.Forms.Cursors]::WaitCursor } } catch {}
-    # Setting SelectionColor per line is formatting only, not a text edit -
-    # but RichTextBox can still raise TextChanged as a side effect of it, and
-    # that TextChanged handler marks the file dirty. Since this function only
-    # ever runs on programmatic recolors (load, Save, theme switch, entering
-    # Raw view - never on a keystroke anymore), suppress dirty tracking for
-    # its duration so the Save button doesn't flip on its own before any real
-    # edit has happened.
     $prevSuppress = $script:suppressDirtyTracking
     $script:suppressDirtyTracking = $true
     $WM_SETREDRAW = 0x000B
@@ -2680,26 +2387,7 @@ function Highlight-RawEditorAll {
     }
 }
 
-function Highlight-RawEditorCurrentLine {
-    # Cheap per-keystroke recolor of just the line the caret is on. Not
-    # currently called anywhere (see the editorBox TextChanged handler),
-    # but kept safe against the same SelectionColor/TextChanged quirk as
-    # Highlight-RawEditorAll in case it's ever wired back up.
-    if (-not $script:rawMode -or -not $script:editorBox) { return }
-    $eb = $script:editorBox
-    $prevSuppress = $script:suppressDirtyTracking
-    $script:suppressDirtyTracking = $true
-    try {
-        $idx = $eb.GetLineFromCharIndex($eb.SelectionStart)
-        Paint-RawEditorLine $idx
-    } catch {} finally {
-        $script:suppressDirtyTracking = $prevSuppress
-    }
-}
-
 function Show-RawReplaceBar {
-    # Opens the second (Replace) row of the raw editor's find bar - wired
-    # to Ctrl+H, with Ctrl+F just focusing the existing Find row.
     param([string]$Focus = "Find")
     if (-not $script:rawSearchBar) { return }
     if ($Focus -eq "Replace") {
@@ -2719,7 +2407,6 @@ function Show-RawReplaceBar {
 }
 
 function Replace-InRawEditor {
-    # Replace (current selection, if it matches Find) or Replace All.
     param([switch]$All)
     if (-not $script:editorBox -or -not $script:rawSearchBox) { return }
     $needle = $script:rawSearchBox.Text
@@ -2789,7 +2476,6 @@ function Set-EditorMode {
         if ($script:gamesOuter) { $script:gamesOuter.Visible = $false }
         if ($script:gameSearchBox) { $script:gameSearchBox.Visible = $false }
         if ($script:searchLabel) { $script:searchLabel.Visible = $false }
-        # Layout Find bar + editor + terminal without overlap
         Apply-RawEditorLayout
         Log-Message "Switched to Raw View" "Cyan"
     } else {
@@ -2801,7 +2487,6 @@ function Set-EditorMode {
         if ($script:rawSearchBar) { $script:rawSearchBar.Visible = $false }
         if ($script:editorBox) { $script:editorBox.Visible = $false }
         if ($script:metaOuter) { $script:metaOuter.Visible = $true }
-        # Show/hide fields + Games based on collapse state (also moves terminal)
         Apply-MetaAndGamesCollapseState
         $cnt = 0
         if ($null -ne $script:parsedGames) { $cnt = @($script:parsedGames).Count }
@@ -2812,135 +2497,65 @@ function Set-EditorMode {
 }
 
 function Get-DeveloperLogText {
-    # Built-in developer log shown in Settings -> Dev Log.
-    # Always append new versions here when shipping changes.
     return @"
 Developer Log
 Policy: All changes and updates must always be listed here.
 
-2.5.42 - 2026-09-18
-- Fixed the raw-mode/theme-switch freeze: RichTextBox.Lines rebuilds its
-  entire line array from .Text on every access, and the syntax-highlighter
-  was reading it twice per line inside a per-line loop, making a full
-  recolor accidentally O(n^2). Now reads .Lines once and passes each line's
-  text through directly.
-- Raw mode: full RichTextBox editing (copy/cut/paste/undo/redo/select-all/
-  arrow-navigation/double-click word select), Ctrl+V pastes as plain text,
-  Ctrl+Y redo, Ctrl+S save, Ctrl+F find, Ctrl+H opens a Replace row
-  (Replace / Replace All)
-- Raw mode syntax coloring: game: green; assets.*/shortname/collection/
-  launch/description cyan; file: and players: each get their own color;
-  developer/publisher/genre/release/rating/extra muted; everything else
-  plain text - all pulled live from the active theme
-- Added a busy cursor + status bar progress + periodic message-pump during
-  large recolors, and a 6000-line cap that skips coloring outright (with a
-  log message) rather than ever hanging
-- Switching Raw/Form view and applying a theme now show a status message
-  and busy cursor instead of looking frozen
-- New dedicated Theme picker (Settings -> Theme -> Choose Theme...): one
-  card per theme with a live color-swatch preview, 8 per row, dark themes
-  listed above light ones
-- 31 additional named themes (daisyUI/Upscayl-style set), colors derived
-  from daisyUI's own published theme source and converted from OKLCH,
-  with hand-tuned fixes for Cyberpunk (neon-on-near-black instead of a
-  yellow background), Acid (dark green base), Aqua (darker background than
-  its buttons), Emerald (deep emerald dark background), Cupcake (bakery
-  pink/cream pastel), and a genuinely pastel "Pastel" theme (old muted-gray
-  version renamed to "Silver")
-- Button outlines fixed: the +/- collapse toggles had BorderSize forced to
-  0 (no outline at all), and the general button border color was too close
-  in tone to the button fill in several dark themes (Night especially) -
-  now uses a guaranteed-contrast color everywhere
-- Title label's background color now updates on theme switch instead of
-  staying pinned to whichever theme was active at app startup
-- Save button now turns amber ("Save*") the moment a field or the raw text
-  is actually edited, and reverts once the save completes
+2.5.64 - box_front paths now written for all upscaled images on disk (recovers crashed runs).
 
-2.5.13 - 2026-08-31
-- Cover type descriptions (blue text) now include typical resolutions and quality tier
-  (LOW / MEDIUM / HIGH) so you can avoid low-res covers overwriting HQ box art
-- Cover Pack: "One game only" checkbox + searchable game dropdown (from selected collection)
-  - When checked, downloads only the selected game's art (GameTDB by game_id, Libretro by title)
-  - Search box filters the dropdown as you type
-- Still supports full collection / all-titles pack downloads when the checkbox is off
-- Cover Pack dialog: removed blank wasted space under Source description and Options
+2.5.63 - Progress window Close button fixed (also X works once finished).
 
-2.5.12 - 2026-08-30
-- New "Libretro Tools" left-panel section, separate from GameTDB Tools
-- Both GameTDB Tools and Libretro Tools have their own "Cover Downloader..."
-  button that opens the same shared Cover Pack dialog, preset to the
-  matching "Download from" option (GameTDB or Libretro-Thumbnails)
-- Show-GameTDBCoverPackDialog now takes -PreselectSource "gametdb"/"libretro"
+2.5.62 - Upscayl: literal-path handling for file names with brackets.
 
-2.5.11 - 2026-08-30
-- Cover Pack: new "Download from" source - Libretro-Thumbnails (github.com/libretro-thumbnails),
-  in addition to GameTDB. Free, no login/API key. Boxart only for now.
-- Libretro source matches games by normalized title (no GameTDB-style ID on this source);
-  region tags like (USA)/(Europe) in filenames are ignored automatically when matching
-- Same Only missing / Save into media / Write asset paths / boxFull / Rename / Convert to PNG
-  options work for both sources
-- Uses one GitHub API call per system (not per game) to list available boxart, cached
-  for the session - unauthenticated GitHub API calls are rate-limited (~60/hour/IP)
-- Local folder / ZIP import source: not in this build yet (planned next)
+2.5.61 - Upscayl failed instantly (paths with spaces unquoted; exit code blank).
+- Paths are quoted, errors are captured and shown, only collection thumbs upscaled.
 
-2.5.10 - 2026-08-30
-- Cover Pack Only-missing: also checks assets.boxFull / assets.box_full / assets.box_back
-  (not only assets.box_front) so Unicovers / Box Full themes work
-- Collection-only: filter game_ids against the chosen platform titles list
-  (stops Wii collection IDs driving DS downloads, etc.)
-- Cover Pack dialog shows the currently selected collection name
-- Guide: when a collection is required vs optional for Cover Pack
-- Guide: only-missing covers front / boxFull / box_full / back
+2.5.60 - Upscayl step fixed (it found 0 thumbnails because of a Get-ChildItem -Include quirk).
+- Upscale runs without freezing the window and logs progress every 10 images.
 
-2.5.9 - 2026-08-30
-- Cover Pack: boxFull (Unicovers), rename to game title, convert PNG
+2.5.59 - Libretro Count shows already-downloaded thumbs that will be upscaled.
 
-2.5.8 - 2026-08-30
-- GameTDB Cover Pack: collection-only filter (game_id)
-- Only missing art; region fallback (US/EN/...)
-- Multi cover-type select in one run
-- Save into media folders (box2dfront / box2dback / disc)
-- Write asset paths into metadata after download
-- failed_covers.csv report for retries
+2.5.58 - PNG to WebP quality raised to 100.
 
-2.5.7 - 2026-08-29
-- GameTDB: Download Cover Pack dialog (System + Cover type + Region)
-- Systems: Wii, GameCube, Wii U, Switch, 3DS, DS, PS3
-- Cover types per system (cover, coverHQ, coverfullHQ, coverM, back*, disc, cover3D)
-- Correct PNG/JPG extension by type
+2.5.57 - Libretro repo listing fixed (small calls, retries, no cached failures,
+  plus a fallback to the libretro thumbnail server when GitHub API fails).
+- Image Tools: Convert WebP to PNG / Convert PNG to WebP (Google cwebp/dwebp).
+- Build & Repair: Indent Descriptions (Pegasus needs indented continuation lines).
 
-2.5.6 - 2026-08-29
-- Add Box Art: better matching for long titles with dashes/colons
-  (e.g. Super Mario RPG - Legend of the Seven Stars)
-- Do not skip games that only have an empty assets.box_front: line
-- Fuzzy match: subtitle short form, starts-with, word overlap
+2.5.56 - Upscayl.exe selection auto-resolves upscayl-bin.exe (no extra step).
 
-2.5.5 - 2026-08-29
-- Settings: separate Pegasus, Guide, and Theme sections
-- Settings: Pegasus path, Dev Log, Workflow Guide, Apply Theme
-- Toolbar: Launch Pegasus; Theme and Guide moved into Settings
-- Config stores pegasusPath with theme mode
+2.5.55 - Settings: Get Latest Version buttons for Pegasus and Upscayl.
 
-2.5.4 - 2026-08-28
-- Raw mode Find bar (Find Next / Prev)
-- Save keeps game list scroll/selection and raw caret
-- Raw editor paste (Ctrl+V) fix
-- Themes: Steam, Light, High Contrast, Windows
-- UTF-8 BOM for Windows PowerShell 5.1
-- Raw layout: editor + terminal no overlap; terminal drag works
+2.5.54 - Settings: Upscayl section to link Upscayl.exe.
 
-2.5.3 - 2026-08-28
-- Remove Games w/ No File
-- Guide: SNES ROM headers explained
-- Sort Games A-Z; Games list fills GroupBox height
+2.5.53 - Libretro Tools: added Open Libretro Thumbnails (GitHub) button.
 
-2.5.2 - 2026-08-28
-- Sort Games A-Z in Build and Repair Tools
-- Games list height syncs with Item Metadata panel
+2.5.52 - Added TheCoverProject Tools and SteamGridDB Tools sections.
 
-2.5.1 / 2.5.0 - prior
-- ROM header detection, spaces preserved for matching,
-  boxFull support, bad header filtering, and core features
+2.5.51 - Cover Pack output folder defaults to the media folder (no Covers subfolder).
+
+2.5.50 - Libretro re-run now upscales existing thumbs to box2dfront.
+
+2.5.49 - Unzip All button moved to the empty slot beside Separate Game Blocks.
+
+2.5.48 - Libretro Cover Pack dialog fix.
+- The Libretro preset-run block ran before the Options group existed, so the
+  game_id checkbox was never hidden. It now runs after all controls are built.
+- Two checkboxes: "GameTDB: matches by game_id" and "matches by game title -
+  no game_id needed" (Libretro / SteamGridDB). Only the relevant one shows.
+
+2.5.47 - Adds "Unzip All" button (Build & Repair Tools).
+- Pick a folder; expands every .zip in that folder into the same folder,
+  with overwrite protection (existing files are skipped).
+- Adds 7 new themes: Midnight Blue, Graphite Lime, Obsidian Gold,
+  Violet Night, Arctic Blue, Sage & Cream, Rose Quartz.
+- Cover Pack dialog now shows two checkboxes (game_id vs title) and a
+  manual Count button next to the preview line.
+
+2.5.44 - Image Tools: "Include subfolders" checkbox (off by default).
+
+2.5.43 - Fixed "Update Metadata Extensions to PNG/JPG" corrupting metadata
+  (every "." became ".png_thumb"). Cause: unbraced "`$oldExt_thumb".
 
 When shipping a new version: bump the version number and add
 an entry at the top of this log.
@@ -2986,7 +2601,7 @@ function Show-DeveloperLogDialog {
 function Show-SettingsDialog {
     $dlg = New-Object System.Windows.Forms.Form
     $dlg.Text = "Settings"
-    $dlg.Size = New-Object System.Drawing.Size(480, 560)
+    $dlg.Size = New-Object System.Drawing.Size(480, 670)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
@@ -2994,14 +2609,12 @@ function Show-SettingsDialog {
     $dlg.BackColor = $script:theme.background
     $dlg.ForeColor = $script:theme.text
 
-    # Uniform button size used everywhere in this dialog
     $btnW = 100
     $btnH = 26
     $secW = 440
     $secX = 16
     $gap = 6
 
-    # ========== Section 1: Pegasus ==========
     $grpPeg = New-Object System.Windows.Forms.GroupBox
     $grpPeg.Text = " Pegasus "
     $grpPeg.Location = New-Object System.Drawing.Point($secX, 12)
@@ -3051,10 +2664,91 @@ function Show-SettingsDialog {
     })
     $grpPeg.Controls.Add($btnSavePeg)
 
-    # ========== Section 2: Guide ==========
+    $btnGetPeg = Create-Button "Get Latest Version" (12 + (($btnW + $gap) * 2)) 60 140 $btnH
+    $btnGetPeg.Add_Click({
+        try { Start-Process "https://pegasus-frontend.org/#download" } catch { Log-Message "Could not open browser: $_" "Red" }
+    })
+    $grpPeg.Controls.Add($btnGetPeg)
+
+    $grpUp = New-Object System.Windows.Forms.GroupBox
+    $grpUp.Text = " Upscayl "
+    $grpUp.Location = New-Object System.Drawing.Point($secX, 122)
+    $grpUp.Size = New-Object System.Drawing.Size($secW, 100)
+    $grpUp.ForeColor = $script:theme.text
+    $grpUp.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $grpUp.BackColor = $script:theme.background
+    $dlg.Controls.Add($grpUp)
+
+    $txtUpscayl = New-Object System.Windows.Forms.TextBox
+    $txtUpscayl.Location = New-Object System.Drawing.Point(12, 28)
+    $txtUpscayl.Size = New-Object System.Drawing.Size(($secW - 24), 22)
+    $txtUpscayl.BackColor = $script:theme.editor
+    $txtUpscayl.ForeColor = $script:theme.text
+    $txtUpscayl.BorderStyle = "FixedSingle"
+    $txtUpscayl.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $txtUpscayl.Text = $(if ($script:upscaylPath) { $script:upscaylPath } else { "" })
+    $grpUp.Controls.Add($txtUpscayl)
+
+    $btnBrowseUp = Create-Button "Browse" 12 60 $btnW $btnH
+    $btnBrowseUp.Add_Click({
+        $of = New-Object System.Windows.Forms.OpenFileDialog
+        $of.Title = "Select Upscayl.exe (or upscayl-bin.exe)"
+        $of.Filter = "Upscayl (Upscayl.exe;upscayl-bin.exe)|Upscayl.exe;upscayl-bin.exe|Executable (*.exe)|*.exe|All Files (*.*)|*.*"
+        $of.FileName = "Upscayl.exe"
+        if ($txtUpscayl.Text -and (Test-Path $txtUpscayl.Text)) {
+            try { $of.InitialDirectory = [System.IO.Path]::GetDirectoryName($txtUpscayl.Text) } catch {}
+        } else {
+            foreach ($try in @(
+                "$env:LOCALAPPDATA\Programs\Upscayl",
+                "$env:ProgramFiles\Upscayl",
+                "${env:ProgramFiles(x86)}\Upscayl"
+            )) {
+                if ($try -and (Test-Path $try)) { $of.InitialDirectory = $try; break }
+            }
+        }
+        if ($of.ShowDialog() -eq "OK") {
+            $bin = Set-UpscaylPathFromSelection $of.FileName
+            if ($bin) {
+                $txtUpscayl.Text = $bin
+            } else {
+                $txtUpscayl.Text = $of.FileName
+                [System.Windows.Forms.MessageBox]::Show(
+                    "Could not find upscayl-bin.exe next to that file.`n`nExpected: <Upscayl folder>\resources\bin\upscayl-bin.exe",
+                    "Upscayl", "OK", "Warning") | Out-Null
+            }
+        }
+    })
+    $grpUp.Controls.Add($btnBrowseUp)
+
+    $btnSaveUp = Create-Button "Save Path" (12 + $btnW + $gap) 60 $btnW $btnH
+    $btnSaveUp.Add_Click({
+        $entered = $txtUpscayl.Text.Trim()
+        if ([string]::IsNullOrWhiteSpace($entered)) {
+            $script:upscaylPath = ""
+            try { Save-Config } catch {}
+            Log-Message "Upscayl path cleared (auto-detect will be used)." "Cyan"
+            return
+        }
+        $bin = Set-UpscaylPathFromSelection $entered
+        if ($bin) {
+            $txtUpscayl.Text = $bin
+        } else {
+            [System.Windows.Forms.MessageBox]::Show(
+                "Could not find upscayl-bin.exe from that location.`n`nPick Upscayl.exe from the install folder (usually under AppData\Local\Programs\Upscayl) - the tool looks for resources\bin\upscayl-bin.exe next to it.",
+                "Upscayl", "OK", "Warning") | Out-Null
+        }
+    })
+    $grpUp.Controls.Add($btnSaveUp)
+
+    $btnGetUp = Create-Button "Get Latest Version" (12 + (($btnW + $gap) * 2)) 60 140 $btnH
+    $btnGetUp.Add_Click({
+        try { Start-Process "https://github.com/upscayl/upscayl/releases/latest" } catch { Log-Message "Could not open browser: $_" "Red" }
+    })
+    $grpUp.Controls.Add($btnGetUp)
+
     $grpGuide = New-Object System.Windows.Forms.GroupBox
     $grpGuide.Text = " Guide "
-    $grpGuide.Location = New-Object System.Drawing.Point($secX, 122)
+    $grpGuide.Location = New-Object System.Drawing.Point($secX, 232)
     $grpGuide.Size = New-Object System.Drawing.Size($secW, 70)
     $grpGuide.ForeColor = $script:theme.text
     $grpGuide.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -3069,10 +2763,9 @@ function Show-SettingsDialog {
     $btnDevLog.Add_Click({ Show-DeveloperLogDialog })
     $grpGuide.Controls.Add($btnDevLog)
 
-    # ========== Section 3: Theme ==========
     $grpTheme = New-Object System.Windows.Forms.GroupBox
     $grpTheme.Text = " Theme "
-    $grpTheme.Location = New-Object System.Drawing.Point($secX, 202)
+    $grpTheme.Location = New-Object System.Drawing.Point($secX, 312)
     $grpTheme.Size = New-Object System.Drawing.Size($secW, 70)
     $grpTheme.ForeColor = $script:theme.text
     $grpTheme.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -3099,8 +2792,6 @@ function Show-SettingsDialog {
     $btnChooseTheme.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $btnChooseTheme.Add_Click({
         Show-ThemePickerDialog
-        # The picker applies live to the main window; bring this dialog's
-        # own colors and the preview swatch in line with whatever was picked.
         try {
             Apply-ThemeToControl $dlg
             $dlg.BackColor = $script:theme.background
@@ -3113,10 +2804,9 @@ function Show-SettingsDialog {
     })
     $grpTheme.Controls.Add($btnChooseTheme)
 
-    # ========== Section 4: API Keys ==========
     $grpApi = New-Object System.Windows.Forms.GroupBox
     $grpApi.Text = " API Keys "
-    $grpApi.Location = New-Object System.Drawing.Point($secX, 282)
+    $grpApi.Location = New-Object System.Drawing.Point($secX, 392)
     $grpApi.Size = New-Object System.Drawing.Size($secW, 190)
     $grpApi.ForeColor = $script:theme.text
     $grpApi.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
@@ -3225,11 +2915,10 @@ function Show-SettingsDialog {
     })
     $grpApi.Controls.Add($lnkRaGet)
 
-    # ========== Close ==========
-    $btnClose = Create-Button "Close" ([Math]::Floor(($dlg.ClientSize.Width - $btnW) / 2)) 482 $btnW $btnH
-    # Fixed position relative to dialog content
-    $btnClose.Location = New-Object System.Drawing.Point( (16 + [Math]::Floor(($secW - $btnW) / 2)) , 482)
+    $btnClose = Create-Button "Close" ([Math]::Floor(($dlg.ClientSize.Width - $btnW) / 2)) 592 $btnW $btnH
+    $btnClose.Location = New-Object System.Drawing.Point( (16 + [Math]::Floor(($secW - $btnW) / 2)) , 592)
     $btnClose.Tag = $txtPegasus
+    $script:__settingsUpscaylBox = $txtUpscayl
     $btnClose.Add_Click({
         param($sender, $e)
         $tb = $sender.Tag
@@ -3237,6 +2926,13 @@ function Show-SettingsDialog {
             $script:pegasusPath = $tb.Text.Trim()
             try { Save-Config } catch {}
         }
+        try {
+            $ub = $script:__settingsUpscaylBox
+            if ($ub -and -not [string]::IsNullOrWhiteSpace($ub.Text)) {
+                $resolved = Resolve-UpscaylBinaryPath $ub.Text
+                if ($resolved -and $resolved -ne $script:upscaylPath) { [void](Set-UpscaylPathFromSelection $resolved) }
+            }
+        } catch {}
         $sender.FindForm().Close()
     })
     $dlg.Controls.Add($btnClose)
@@ -3297,37 +2993,26 @@ function Update-SnsCodeList {
 # ADD ALL MEDIA TYPES
 # ============================================================================
 function Get-MatchTitleKey {
-    # Normalize a title/filename for fuzzy media matching.
-    # Handles No-Intro: "Legend of Zelda, The - A Link to the Past (USA)"
-    # vs clean metadata: "The Legend of Zelda: A Link to the Past"
-    # Also: "Super Mario RPG - Legend of the Seven Stars" vs colon/underscore variants.
     param([string]$Name)
     if ([string]::IsNullOrWhiteSpace($Name)) { return "" }
     $n = $Name.Trim()
-    # Remove bracket dump tags: [!], [b1], [T+Eng], etc.
     $n = $n -replace '\[[^\]]*\]', ''
-    # Remove parenthetical region / revision tags: (USA), (Europe), (Rev 1), etc.
     $n = $n -replace '\([^)]*\)', ''
-    # "Title, The" / "Title, A" / "Title, An" -> "The Title" (No-Intro article form)
     if ($n -match '^(.+),\s+(The|A|An)\s*([-:].*)?$') {
         $rest = if ($matches[3]) { $matches[3] } else { '' }
         $n = ($matches[2] + ' ' + $matches[1] + ' ' + $rest).Trim()
     } elseif ($n -match '^(.+),\s+(The|A|An)\s*$') {
         $n = ($matches[2] + ' ' + $matches[1]).Trim()
     }
-    # Unify separators: colon, underscore, any dash style -> space
     $n = $n -replace '[_:]+', ' '
     $n = $n -replace '[\u2010-\u2015\u2212\-]+', ' '
     $n = $n -replace '&', ' and '
-    # Drop remaining punctuation
     $n = $n -replace '[^a-zA-Z0-9\s]', ''
-    # Collapse whitespace
     $n = $n -replace '\s+', ' '
     return $n.Trim().ToLowerInvariant()
 }
 
 function Get-MatchTitleKeyVariants {
-    # Primary key plus shorter form before " - " / ": " subtitle.
     param([string]$Name)
     $keys = New-Object System.Collections.ArrayList
     $primary = Get-MatchTitleKey $Name
@@ -3383,11 +3068,6 @@ function Find-ImageByMatchKeys {
 }
 
 function Find-MediaFileForGame {
-    # Locate a media file for a game inside a folder.
-    # Pegasus auto-discovery (Skraper-style media/<type>/) matches the ROM basename
-    # or game title, typically WITH spaces: "Super Mario World.png", "Contra (U).png".
-    # Explicit assets.* paths in metadata can point to any real file; we still prefer
-    # the on-disk name Pegasus expects so packs stay consistent.
     param(
         [string]$FolderPath,
         [string]$GameTitle,
@@ -3395,35 +3075,31 @@ function Find-MediaFileForGame {
         [string[]]$Extensions = @('png', 'jpg', 'jpeg', 'webp', 'mp4', 'webm')
     )
     if ([string]::IsNullOrWhiteSpace($FolderPath) -or -not (Test-Path $FolderPath)) { return $null }
-    
+
     $candidates = New-Object System.Collections.ArrayList
-    
+
     function Add-Candidate([string]$name) {
         if ([string]::IsNullOrWhiteSpace($name)) { return }
         $n = $name.Trim()
         if (-not $n) { return }
         if ($candidates -notcontains $n) { [void]$candidates.Add($n) }
     }
-    
-    # 1) ROM basename (Skraper / Pegasus media auto-match primary)
+
     if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
         try {
             $romBase = [System.IO.Path]::GetFileNameWithoutExtension($RomPath)
             Add-Candidate $romBase
         } catch {}
     }
-    
-    # 2) Exact game title with spaces (Pegasus-native)
+
     $trimmed = if ($GameTitle) { $GameTitle.Trim() } else { "" }
     Add-Candidate $trimmed
-    
-    # 3) Mild cleanups that KEEP spaces (strip only illegal path chars)
+
     if ($trimmed) {
         $spacey = $trimmed -replace '[<>:"/\\|?*]', '' -replace '\s+', ' '
         Add-Candidate $spacey.Trim()
     }
-    
-    # 4) Fallbacks for older packs / this tool's prior underscore naming
+
     if ($trimmed) {
         $underscored = $trimmed -replace '[^\w\s-]', '' -replace '\s+', ' ' -replace ' ', '_'
         Add-Candidate $underscored
@@ -3432,19 +3108,16 @@ function Find-MediaFileForGame {
         $nospace = ($trimmed -replace '[^\w-]', '')
         Add-Candidate $nospace
     }
-    
+
     if ($candidates.Count -eq 0) { return $null }
-    
-    # Fast path: literal existence checks (preserves exact on-disk path including spaces)
+
     foreach ($base in $candidates) {
         foreach ($ext in $Extensions) {
             $tryPath = Join-Path $FolderPath "$base.$ext"
             if (Test-Path -LiteralPath $tryPath) { return $tryPath }
         }
     }
-    
-    # Slow path: case-insensitive + region-tag-aware scan
-    # Matches "Super Mario World" to "Super Mario World (USA).jpg"
+
     try {
         $files = @(Get-ChildItem -LiteralPath $FolderPath -File -ErrorAction SilentlyContinue)
         if ($files.Count -eq 0) { return $null }
@@ -3472,7 +3145,6 @@ function Find-MediaFileForGame {
                 return $f.FullName
             }
         }
-        # Fuzzy fallback for long titles with dashes/colons (e.g. Super Mario RPG - ...)
         $imageByKey = @{}
         foreach ($f in $files) {
             $ext = $f.Extension.TrimStart('.').ToLowerInvariant()
@@ -3493,20 +3165,17 @@ function Find-MediaFileForGame {
 }
 
 function Add-AllMediaTypes {
-    # Safely link media files into Pegasus asset fields without string-mangling the metadata.
-    # Uses Parse -> mutate Fields hashtables -> Build-PegasusMetadata (same path as Save).
-    # Writes BOTH assets.box_full (common scrapers) and assets.boxFull (many themes) when files exist.
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "ADDING ALL MEDIA TYPES - $($c.name)" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $p = $c.metadataPath
         $bp = $c.mediaPath
-        
+
         if ([string]::IsNullOrWhiteSpace($p) -or -not (Test-Path $p)) {
             Log-Message "ERROR: Metadata file not found: $p" "Red"
             return
@@ -3520,27 +3189,22 @@ function Add-AllMediaTypes {
             Log-Message "ERROR: Media folder does not exist: $bp" "Red"
             return
         }
-        
+
         Log-Message "Metadata: $p" "White"
         Log-Message "Media: $bp" "White"
-        
-        # --- Structured parse (never regex-edit the whole file) ---
+
         $content = Get-Content $p -Raw -ErrorAction Stop
         if ([string]::IsNullOrWhiteSpace($content)) {
             Log-Message "ERROR: Metadata file is empty." "Red"
             return
         }
-        
+
         Parse-PegasusMetadata $content
         if ($null -eq $script:parsedGames -or @($script:parsedGames).Count -eq 0) {
             Log-Message "No game entries found after parse." "Yellow"
             return
         }
-        
-        # Primary folder map. box_full and boxFull are SEPARATE keys on purpose:
-        # - assets.box_full  -> scrapers / Skraper-style packs often use box2dfull
-        # - assets.boxFull   -> many Pegasus themes (incl. yours) look for boxFull
-        # Alternate folders are tried so either layout still fills both fields when possible.
+
         $assetMap = [ordered]@{
             "assets.box_front"       = @{ Primary = "box2dfront";     Alts = @("boxFront", "covers", "box") }
             "assets.box_full"        = @{ Primary = "box2dfull";      Alts = @("boxFull", "boxfull", "box3d") }
@@ -3557,10 +3221,10 @@ function Add-AllMediaTypes {
             "assets.banner"          = @{ Primary = "banner";         Alts = @("banners", "steamgrid") }
             "assets.box_front_thumb" = @{ Primary = "box2dThumb";     Alts = @("box2dthumb", "thumbs", "thumb") }
         }
-        
+
         $imageExts = @('png', 'jpg', 'jpeg', 'webp')
         $videoExts = @('mp4', 'webm', 'avi', 'mkv')
-        
+
         $folderStatus = @{}
         foreach ($assetKey in $assetMap.Keys) {
             $info = $assetMap[$assetKey]
@@ -3572,7 +3236,7 @@ function Add-AllMediaTypes {
             }
             $folderStatus[$assetKey] = $resolved
         }
-        
+
         $present = @($folderStatus.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object { Split-Path $_.Value -Leaf } | Select-Object -Unique)
         $absentKeys = @($folderStatus.GetEnumerator() | Where-Object { -not $_.Value } | ForEach-Object { $_.Key })
         Log-Message "Media folders found: $(if ($present.Count) { $present -join ', ' } else { '(none)' })" "Cyan"
@@ -3584,55 +3248,50 @@ function Add-AllMediaTypes {
             Log-Message "Expected e.g. box2dfront, boxFull, box2dfull, screenshot, wheel..." "Yellow"
             return
         }
-        
+
         $gamesTouched = 0
         $totalAssets = 0
         $perField = @{}
         foreach ($k in $assetMap.Keys) { $perField[$k] = 0 }
-        
+
         for ($i = 0; $i -lt $script:parsedGames.Count; $i++) {
             $game = $script:parsedGames[$i]
             $fields = @{}
             foreach ($k in @($game.Fields.Keys)) { $fields[$k] = $game.Fields[$k] }
             $title = if ($fields.ContainsKey("game")) { [string]$fields["game"] } else { [string]$game.Title }
             if ([string]::IsNullOrWhiteSpace($title)) { continue }
-            
-            # ROM path helps match Skraper-style names: "Contra (U).png"
+
             $romPath = $null
             if ($fields.ContainsKey("file") -and -not [string]::IsNullOrWhiteSpace([string]$fields["file"])) {
                 $romPath = [string]$fields["file"]
             } elseif ($fields.ContainsKey("files") -and -not [string]::IsNullOrWhiteSpace([string]$fields["files"])) {
-                # multi-line files: use first line
                 $romPath = ([string]$fields["files"] -split "`n")[0].Trim()
             }
-            
+
             $addedThisGame = 0
             $addedKeys = @()
-            
+
             foreach ($assetKey in $assetMap.Keys) {
-                # Never overwrite an existing non-empty value
                 if ($fields.ContainsKey($assetKey) -and -not [string]::IsNullOrWhiteSpace([string]$fields[$assetKey])) {
                     continue
                 }
-                
+
                 $folderPath = $folderStatus[$assetKey]
                 if (-not $folderPath) { continue }
-                
+
                 $exts = if ($assetKey -eq "assets.video") { $videoExts + $imageExts } else { $imageExts }
                 $found = Find-MediaFileForGame -FolderPath $folderPath -GameTitle $title -RomPath $romPath -Extensions $exts
                 if (-not $found) { continue }
-                
-                # Store the real on-disk path (spaces preserved). Pegasus accepts absolute
-                # or metadata-relative paths; absolute is unambiguous across setups.
+
                 $fields[$assetKey] = $found
                 $addedThisGame++
                 $totalAssets++
                 $perField[$assetKey]++
                 $addedKeys += $assetKey
             }
-            
+
             if ($addedThisGame -eq 0) { continue }
-            
+
             $script:parsedGames[$i] = [PSCustomObject]@{
                 Fields = $fields
                 Title  = $title
@@ -3640,7 +3299,7 @@ function Add-AllMediaTypes {
             $gamesTouched++
             Log-Message "  +$addedThisGame  $title  ($($addedKeys -join ', '))" "Green"
         }
-        
+
         if ($gamesTouched -eq 0) {
             Log-Message "No new media matched." "Yellow"
             Log-Message "Pegasus / Skraper expect names like the ROM or game title, usually WITH spaces:" "Yellow"
@@ -3649,16 +3308,15 @@ function Add-AllMediaTypes {
             Log-Message "Underscore names still match as a fallback if that is how your pack is named." "Cyan"
             return
         }
-        
-        # Rebuild metadata from structured data (safe, ordered, no partial regex edits)
+
         Apply-HeaderFieldsFromUI
         $text = Build-PegasusMetadata
         $text = $text -replace "`r`n", "`n" -replace "`r", "`n"
-        
+
         CreateBackup
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($p, $text, $utf8NoBom)
-        
+
         Log-Message "----------------------------------------" "Cyan"
         Log-Message "Updated $gamesTouched game(s), $totalAssets new asset path(s)" "Green"
         foreach ($k in $assetMap.Keys) {
@@ -3668,10 +3326,9 @@ function Add-AllMediaTypes {
         }
         Log-Message "Note: assets.box_full and assets.boxFull are both written when files exist" "Cyan"
         Log-Message "  (scraper packs often use box_full; many themes use boxFull)." "Cyan"
-        
+
         UpdateEditor
         UpdateStats
-        
     } catch {
         Log-Message "ERROR in Add-AllMediaTypes: $($_.Exception.Message)" "Red"
         if ($_.InvocationInfo -and $_.InvocationInfo.ScriptLineNumber) {
@@ -3684,2524 +3341,960 @@ function Add-AllMediaTypes {
 }
 
 # ============================================================================
-# MAIN WINDOW
+# GAMETDB HELPERS
 # ============================================================================
-function Show-MainWindow {
-    try { Load-Config } catch { $script:collections = @{} }
-    # Apply saved theme mode (Steam / Windows) after config load
-    try { Initialize-SystemTheme } catch {}
-    
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = "Metadata Repair Tool"
-    # Fit primary screen working area (excludes taskbar) so the window never opens underneath it
-    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $initW = [Math]::Min(1600, [Math]::Max(1100, $wa.Width - 40))
-    $initH = [Math]::Min(980, [Math]::Max(700, $wa.Height - 20))
-    $form.Size = New-Object System.Drawing.Size($initW, $initH)
-    $form.MinimumSize = New-Object System.Drawing.Size(1100, 420)
-    $form.MaximizeBox = $true
-    $form.StartPosition = "Manual"
-    $form.Location = New-Object System.Drawing.Point(
-        [Math]::Max(0, $wa.Left + (($wa.Width - $initW) / 2)),
-        [Math]::Max(0, $wa.Top + (($wa.Height - $initH) / 2))
-    )
-    $script:mainForm = $form
-    $form.BackColor = $script:theme.background
-    
-    # ============================================================
-    # TABLE LAYOUT PANEL - left tools | right editor + terminal
-    # ============================================================
-    $tableLayout = New-Object System.Windows.Forms.TableLayoutPanel
-    $tableLayout.Dock = "Fill"
-    $tableLayout.ColumnCount = 2
-    $tableLayout.RowCount = 1
-    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 410)))
-    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    $tableLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    $tableLayout.BackColor = $script:theme.background
-    $form.Controls.Add($tableLayout)
-    
-    # ============================================================
-    # LEFT PANEL
-    # ============================================================
-    $leftPanel = New-Object System.Windows.Forms.Panel
-    $leftPanel.Dock = "Fill"
-    $leftPanel.AutoScroll = $true
-    $leftPanel.AutoScrollMargin = New-Object System.Drawing.Size(12, 20)
-    $leftPanel.BackColor = $script:theme.background
-    $leftPanel.Padding = New-Object System.Windows.Forms.Padding(6, 4, 18, 8)
-    $tableLayout.Controls.Add($leftPanel, 0, 0)
-    $script:leftPanelRef = $leftPanel
-    $script:leftSections = New-Object System.Collections.ArrayList
-    $leftW = 378
-    
-    # Title (single clean header row - same height/border as top action bar)
-    $titleLabel = New-Object System.Windows.Forms.Label
-    $titleLabel.Text = "Metadata Repair Tool"
-    $titleLabel.Location = New-Object System.Drawing.Point(5, 2)
-    $titleLabel.Size = New-Object System.Drawing.Size($leftW, 36)
-    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
-    $titleLabel.ForeColor = $script:theme.accent
-    $titleLabel.Tag = "accent"
-    $titleLabel.BackColor = $script:theme.background
-    $titleLabel.BorderStyle = "FixedSingle"
-    $titleLabel.TextAlign = "MiddleCenter"
-    $leftPanel.Controls.Add($titleLabel)
-    
-    # ============================================================
-    # COLLECTIONS GROUP
-    # ============================================================
-    $colGroup = New-Object System.Windows.Forms.GroupBox
-    $colGroup.Text = " Collections "
-    $colGroup.Location = New-Object System.Drawing.Point(5, 40)
-    $colGroup.Size = New-Object System.Drawing.Size($leftW, 230)
-    $colGroup.ForeColor = $script:theme.text
-    $colGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($colGroup)
-    
-    $collectionList = New-Object System.Windows.Forms.ListBox
-    $collectionList.Location = New-Object System.Drawing.Point(8, 22)
-    $collectionList.Size = New-Object System.Drawing.Size(($leftW - 16), 155)
-    $collectionList.BackColor = $script:theme.editor
-    $collectionList.ForeColor = $script:theme.text
-    $collectionList.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $collectionList.BorderStyle = "FixedSingle"
-    $colGroup.Controls.Add($collectionList)
-    $script:collectionList = $collectionList
-    
-    $colBtnY = 182
-    $colBtnH = 26
-    $colBtnGap = 5
-    $colBtnW = [Math]::Floor(($leftW - 16 - 4 * $colBtnGap) / 5)
-    $cx = 8
-    
-    $btnCreate = Create-Button "Create" $cx $colBtnY $colBtnW $colBtnH
-    $btnCreate.Add_Click({ Show-CreateCollectionDialog })
-    $colGroup.Controls.Add($btnCreate)
-    $cx += $colBtnW + $colBtnGap
-    
-    $btnAdd = Create-Button "Add" $cx $colBtnY $colBtnW $colBtnH
-    $btnAdd.Add_Click({ Show-AddCollectionDialog })
-    $colGroup.Controls.Add($btnAdd)
-    $cx += $colBtnW + $colBtnGap
-    
-    $btnRemove = Create-Button "Remove" $cx $colBtnY $colBtnW $colBtnH
-    $btnRemove.Add_Click({
-        if ($collectionList.SelectedItem) {
-            $name = $collectionList.SelectedItem.ToString()
-            if (Remove-Collection $name) {
-                RefreshCollectionList
-                Log-Message "Removed: $name" "Yellow"
-                if ($collectionList.Items.Count -gt 0) {
-                    $collectionList.SelectedIndex = 0
-                    UpdateEditor
-                } else {
-                    $script:editorBox.Text = "No collections. Click 'Create' or 'Add' to add one."
-                    $script:statusBar.Text = "No collections loaded"
-                    $script:currentCollection = $null
-                }
-            }
+function Get-GameTDBRegionCode {
+    param([string]$GameId)
+    if ([string]::IsNullOrWhiteSpace($GameId)) { return "US" }
+    $id = $GameId.Trim().ToUpper()
+    if ($id -match '^[A-Z0-9]{6}$') {
+        $r = $id[3]
+        switch ($r) {
+            'E' { return "US" }
+            'J' { return "JA" }
+            'K' { return "KO" }
+            'W' { return "TW" }
+            'R' { return "RU" }
+            'A' { return "US" }
+            default { return "EN" }
         }
-    })
-    $colGroup.Controls.Add($btnRemove)
-    $cx += $colBtnW + $colBtnGap
-    
-    $btnRefresh = Create-Button "Refresh" $cx $colBtnY $colBtnW $colBtnH
-    $btnRefresh.Add_Click({
-        RefreshCollectionList
-        Log-Message "Refreshed" "Cyan"
-    })
-    $colGroup.Controls.Add($btnRefresh)
-    $cx += $colBtnW + $colBtnGap
-    
-    $btnLoad = Create-Button "Load" $cx $colBtnY $colBtnW $colBtnH
-    
-    $btnLoad.Add_Click({
-        if ($collectionList.SelectedItem) {
-            UpdateEditor
-            UpdateStats
-            Log-Message "Loaded: $($collectionList.SelectedItem)" "Green"
-        }
-    })
-    $colGroup.Controls.Add($btnLoad)
-    
-    $collectionList.Add_SelectedIndexChanged({
-        if ($collectionList.SelectedItem) {
-            $name = $collectionList.SelectedItem.ToString()
-            $script:currentCollection = $script:collections[$name]
-            UpdateEditor
-            UpdateStats
-        }
-    })
-    
-    # ============================================================
-    # SECTION 1: METADATA TOOLS
-    # ============================================================
-    $toolsGroup = New-Object System.Windows.Forms.GroupBox
-    $toolsGroup.Text = " Metadata Tools "
-    $toolsGroup.Location = New-Object System.Drawing.Point(5, 294)
-    $toolsGroup.Size = New-Object System.Drawing.Size($leftW, 120)
-    $toolsGroup.ForeColor = $script:theme.text
-    $toolsGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($toolsGroup)
-    
-    $ty = 22
-    $ts = 30
-    $bw = [Math]::Floor(($leftW - 24) / 2)
-    $col2X = 8 + $bw + 6
-    $row4W = [Math]::Floor(($leftW - 16 - 18) / 4)
-    $row4Gap = 6
-    
-    $btn1 = Create-Button "Check Health" 8 $ty $bw 26
-    $btn1.Add_Click({ CheckHealth })
-    $toolsGroup.Controls.Add($btn1)
-    
-    $btn2 = Create-Button "Statistics" $col2X $ty $bw 26
-    $btn2.Add_Click({ ShowStats })
-    $toolsGroup.Controls.Add($btn2)
-    
-    $ty += $ts
-    $btn3 = Create-Button "Find Missing Covers" 8 $ty $bw 26
-    $btn3.Add_Click({ FindMissing })
-    $toolsGroup.Controls.Add($btn3)
-    
-    $btn4 = Create-Button "Fix Duplicates" $col2X $ty $bw 26
-    $btn4.Add_Click({ FixDup })
-    $toolsGroup.Controls.Add($btn4)
-    
-    $ty += $ts
-    $row3W = [Math]::Floor(($leftW - 16 - 12) / 3)
-    $row3Gap = 6
-    $btn5 = Create-Button "Backup" 8 $ty $row3W 26
-    $btn5.Add_Click({ CreateBackup })
-    $toolsGroup.Controls.Add($btn5)
-    
-    $btn6 = Create-Button "Restore" (8 + $row3W + $row3Gap) $ty $row3W 26
-    $btn6.Add_Click({ RestoreBackup })
-    $toolsGroup.Controls.Add($btn6)
-    
-    $btn7 = Create-Button "Refresh" (8 + 2 * ($row3W + $row3Gap)) $ty $row3W 26
-    $btn7.Add_Click({
-        RefreshCollectionList
-        Log-Message "Refreshed" "Cyan"
-    })
-    $toolsGroup.Controls.Add($btn7)
-    
-    # ============================================================
-    # SECTION 2: IMAGE TOOLS
-    # ============================================================
-    $imageGroup = New-Object System.Windows.Forms.GroupBox
-    $imageGroup.Text = " Image Tools "
-    $imageGroup.Location = New-Object System.Drawing.Point(5, 422)
-    $imageGroup.Size = New-Object System.Drawing.Size($leftW, 424)
-    $imageGroup.ForeColor = $script:theme.text
-    $imageGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($imageGroup)
-    
-    $iy = 22
-    $is = 28
-    $fullW = $leftW - 16
-    
-    # Universal toggle read by the image tools that scan for files
-    # (see Get-ImgIncludeSubfolders).
-    $script:chkImgSubfolders = New-Object System.Windows.Forms.CheckBox
-    $script:chkImgSubfolders.Text = "Include subfolders (image converters)"
-    $script:chkImgSubfolders.Location = New-Object System.Drawing.Point(10, $iy)
-    $script:chkImgSubfolders.Size = New-Object System.Drawing.Size(($fullW - 4), 22)
-    $script:chkImgSubfolders.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $script:chkImgSubfolders.ForeColor = $script:theme.text
-    $script:chkImgSubfolders.BackColor = [System.Drawing.Color]::Transparent
-    $script:chkImgSubfolders.Checked = $false
-    $imageGroup.Controls.Add($script:chkImgSubfolders)
-    $iy += $is
-    
-    $btnImg3 = Create-Button "Add Box Art to Metadata" 8 $iy $fullW 26
-    $btnImg3.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg3.Add_Click({ AddBoxArt })
-    $imageGroup.Controls.Add($btnImg3)
-    
-    $iy += $is
-    $btnImgAll = Create-Button "Add All Media Types (boxFull, logo, etc.)" 8 $iy $fullW 26
-    $btnImgAll.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImgAll.Add_Click({ Add-AllMediaTypes })
-    $imageGroup.Controls.Add($btnImgAll)
-    
-    $iy += $is
-    $btnImg1 = Create-Button "Rename Images to Game Titles (strip USA/EUR/JPN)" 8 $iy $fullW 26
-    $btnImg1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg1.Add_Click({ RenameImages })
-    $imageGroup.Controls.Add($btnImg1)
-    
-    $iy += $is
-    $btnImgSns = Create-Button "Rename SNS-Coded Images to Titles" 8 $iy $fullW 26
-    $btnImgSns.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImgSns.Add_Click({ Rename-ImagesFromSnsCodes })
-    $imageGroup.Controls.Add($btnImgSns)
-    
-    $iy += $is
-    $btnImg2 = Create-Button "Update Metadata Names from Images" 8 $iy $fullW 26
-    $btnImg2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg2.Add_Click({ UpdateMetadataNames })
-    $imageGroup.Controls.Add($btnImg2)
-    
-    $iy += $is
-    $btnImg4 = Create-Button "Convert All PNG Images to JPG" 8 $iy $fullW 26
-    $btnImg4.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg4.Add_Click({ ConvertImagesPNGtoJPG $true })
-    $imageGroup.Controls.Add($btnImg4)
-    
-    $iy += $is
-    $btnImg5 = Create-Button "Convert All JPG Images to PNG" 8 $iy $fullW 26
-    $btnImg5.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg5.Add_Click({ ConvertImagesJPGtoPNG $true })
-    $imageGroup.Controls.Add($btnImg5)
-    
-    $iy += $is
-    $btnImg6 = Create-Button "Convert Selected PNG Images to JPG" 8 $iy $fullW 26
-    $btnImg6.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg6.Add_Click({ ConvertImagesPNGtoJPG $false })
-    $imageGroup.Controls.Add($btnImg6)
-    
-    $iy += $is
-    $btnImg7 = Create-Button "Convert Selected JPG Images to PNG" 8 $iy $fullW 26
-    $btnImg7.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg7.Add_Click({ ConvertImagesJPGtoPNG $false })
-    $imageGroup.Controls.Add($btnImg7)
-    
-    $iy += $is
-    $btnImg8 = Create-Button "Update Metadata Extensions to JPG" 8 $iy $fullW 26
-    $btnImg8.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg8.Add_Click({ UpdateMetadataExtensions "jpg" })
-    $imageGroup.Controls.Add($btnImg8)
-    
-    $iy += $is
-    $btnImg9 = Create-Button "Update Metadata Extensions to PNG" 8 $iy $fullW 26
-    $btnImg9.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg9.Add_Click({ UpdateMetadataExtensions "png" })
-    $imageGroup.Controls.Add($btnImg9)
-    
-    $iy += $is
-    $btnImg10 = Create-Button "Convert JPG to PNG (Pick Any Folder)" 8 $iy $fullW 26
-    $btnImg10.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg10.Add_Click({ ConvertJpgToPng })
-    $imageGroup.Controls.Add($btnImg10)
-    
-    $iy += $is
-    $btnImg11 = Create-Button "Convert Illustrator (.ai) to PNG" 8 $iy $fullW 26
-    $btnImg11.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnImg11.Add_Click({ ConvertAiToPng })
-    $imageGroup.Controls.Add($btnImg11)
-    
-    # ============================================================
-    # SECTION 3: SNS CODE TOOLS
-    # ============================================================
-    # 7 button rows below list+info, last row (SNS Stats) bottoms at y=384
-    $snsExpandedH = 396
-    $snsGroup = New-Object System.Windows.Forms.GroupBox
-    $snsGroup.Text = " SNS Code Tools "
-    $snsGroup.Location = New-Object System.Drawing.Point(5, 720)
-    $snsGroup.Size = New-Object System.Drawing.Size($leftW, $snsExpandedH)
-    $snsGroup.ForeColor = $script:theme.text
-    $snsGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($snsGroup)
-    
-    $snsCodeList = New-Object System.Windows.Forms.ListBox
-    $snsCodeList.Location = New-Object System.Drawing.Point(8, 20)
-    $snsCodeList.Size = New-Object System.Drawing.Size(($leftW - 16), 130)
-    $snsCodeList.BackColor = $script:theme.editor
-    $snsCodeList.ForeColor = $script:theme.text
-    $snsCodeList.Font = New-Object System.Drawing.Font("Consolas", 8)
-    $snsCodeList.BorderStyle = "FixedSingle"
-    $snsGroup.Controls.Add($snsCodeList)
-    $script:snsCodeList = $snsCodeList
-    
-    $snsInfo = New-Object System.Windows.Forms.Label
-    $snsInfo.Text = "0 codes loaded"
-    $snsInfo.Location = New-Object System.Drawing.Point(8, 152)
-    $snsInfo.Size = New-Object System.Drawing.Size(($leftW - 16), 16)
-    $snsInfo.ForeColor = $script:theme.textDim
-    $snsInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-    $snsGroup.Controls.Add($snsInfo)
-    $script:snsInfoLabel = $snsInfo
-    
-    $sy = 172
-    $btnH = 26
-    $gap = 5
-    $snsBtnW = [Math]::Floor(($leftW - 16 - $gap) / 2)
-    $snsCol2X = 8 + $snsBtnW + $gap
-    
-    $btnX = Create-Button "From XML" 8 $sy $snsBtnW $btnH
-    $btnX.Add_Click({ ExtractXML })
-    $snsGroup.Controls.Add($btnX)
-    
-    $btnI = Create-Button "From Images" $snsCol2X $sy $snsBtnW $btnH
-    $btnI.Add_Click({ ExtractImages })
-    $snsGroup.Controls.Add($btnI)
-    
-    $sy += $btnH + $gap
-    $btnMapCode = Create-Button "Map by Product Code" 8 $sy $snsBtnW $btnH
-    $btnMapCode.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnMapCode.Add_Click({ CreateIDMapping -OutputFileName "sns_mappings.txt" -MatchMode ProductCode })
-    $snsGroup.Controls.Add($btnMapCode)
-    
-    $btnMapTitles = Create-Button "Map by Titles File" $snsCol2X $sy $snsBtnW $btnH
-    $btnMapTitles.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnMapTitles.Add_Click({ CreateIDMapping -OutputFileName "sns_mappings.txt" -MatchMode Titles })
-    $snsGroup.Controls.Add($btnMapTitles)
-    
-    $sy += $btnH + $gap
-    $btnSnsMap = Create-Button "Create SNS Mapping" 8 $sy $snsBtnW $btnH
-    $btnSnsMap.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnSnsMap.Add_Click({ CreateIDMapping -OutputFileName "sns_mappings.txt" -MatchMode Auto })
-    $snsGroup.Controls.Add($btnSnsMap)
-    
-    $btnViewMapping = Create-Button "View SNS Mapping" $snsCol2X $sy $snsBtnW $btnH
-    $btnViewMapping.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnViewMapping.Add_Click({
-        $c = Get-Col
-        if (-not $c) { return }
-        $mapFile = Join-Path (Split-Path $c.metadataPath -Parent) "sns_mappings.txt"
-        if (Test-Path $mapFile) {
-            $content = Get-Content $mapFile -Raw
-            if (-not [string]::IsNullOrWhiteSpace($content)) {
-                [System.Windows.Forms.MessageBox]::Show($content, "SNS Mappings", "OK", "Information")
-            } else {
-                [System.Windows.Forms.MessageBox]::Show("Mapping file is empty.", "SNS Mappings", "OK", "Information")
-            }
-        } else {
-            [System.Windows.Forms.MessageBox]::Show("No mapping file found. Run a Map / Create SNS Mapping first.", "SNS Mappings", "OK", "Information")
-        }
-    })
-    $snsGroup.Controls.Add($btnViewMapping)
-
-    $sy += $btnH + $gap
-    $btnDlSnsTitles = Create-Button "DL SNS Titles DB" 8 $sy $snsBtnW $btnH
-    $btnDlSnsTitles.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnDlSnsTitles.Add_Click({ Download-SnsTitlesDatabase })
-    $snsGroup.Controls.Add($btnDlSnsTitles)
-
-    $btnChecksumMatch = Create-Button "Match ROMs by Checksum" $snsCol2X $sy $snsBtnW $btnH
-    $btnChecksumMatch.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnChecksumMatch.Add_Click({ Match-RomsByChecksum })
-    $snsGroup.Controls.Add($btnChecksumMatch)
-    
-    $sy += $btnH + $gap
-    $btnSnsBox = Create-Button "Add Box Art (Mapping)" 8 $sy $snsBtnW $btnH
-    $btnSnsBox.Add_Click({ AddBoxArt -Mode Mapping })
-    $snsGroup.Controls.Add($btnSnsBox)
-    
-    $btnSnsBoxName = Create-Button "Add Box Art (Game Name)" $snsCol2X $sy $snsBtnW $btnH
-    $btnSnsBoxName.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnSnsBoxName.Add_Click({ AddBoxArt -Mode GameName })
-    $snsGroup.Controls.Add($btnSnsBoxName)
-    
-    $sy += $btnH + $gap
-    $btnLoadSns = Create-Button "Load SNS File" 8 $sy $snsBtnW $btnH
-    $btnLoadSns.Add_Click({
-        $of = New-Object System.Windows.Forms.OpenFileDialog
-        $of.Title = "Load SNS Codes from File"
-        $of.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
-        if ($of.ShowDialog() -eq "OK") {
-            $codes = @(Get-Content $of.FileName | Where-Object { $_ -match '^SNS-' } | ForEach-Object { $_.Trim() })
-            if ($codes.Count -gt 0) {
-                Update-SnsCodeList $codes $of.FileName
-                Log-Message "Loaded $($codes.Count) SNS codes from: $($of.FileName)" "Green"
-            } else {
-                Log-Message "No SNS codes found in file" "Yellow"
-            }
-        }
-    })
-    $snsGroup.Controls.Add($btnLoadSns)
-    
-    $btnClearSns = Create-Button "Clear List" $snsCol2X $sy $snsBtnW $btnH
-    $btnClearSns.Add_Click({ 
-        $script:lastSnsCodes = @()
-        $script:lastSnsCodesFile = $null
-        if ($null -ne $script:snsCodeList) {
-            $script:snsCodeList.Items.Clear()
-            if ($null -ne $script:snsInfoLabel) {
-                $script:snsInfoLabel.Text = "0 codes loaded"
-            }
-        }
-        Log-Message "SNS list cleared" "Yellow"
-    })
-    $snsGroup.Controls.Add($btnClearSns)
-    
-    $sy += $btnH + $gap
-    $btnSnsStats = Create-Button "SNS Stats" 8 $sy ($leftW - 16) $btnH
-    $btnSnsStats.Add_Click({
-        $count = $script:lastSnsCodes.Count
-        $file = if ($script:lastSnsCodesFile) { $script:lastSnsCodesFile } else { "None" }
-        [System.Windows.Forms.MessageBox]::Show("SNS Codes Loaded: $count`nSource File: $file", "SNS Statistics", "OK", "Information")
-    })
-    $snsGroup.Controls.Add($btnSnsStats)
-    
-    # ============================================================
-    # SECTION 4: GAME ID TOOLS
-    # ============================================================
-    $gameIDGroup = New-Object System.Windows.Forms.GroupBox
-    $gameIDGroup.Text = " Game ID Tools "
-    $gameIDGroup.Location = New-Object System.Drawing.Point(5, 1098)
-    $gameIDGroup.Size = New-Object System.Drawing.Size($leftW, 90)
-    $gameIDGroup.ForeColor = $script:theme.text
-    $gameIDGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($gameIDGroup)
-    
-    $gy = 22
-    $idBw = [Math]::Floor(($leftW - 24) / 2)
-    $btnID1 = Create-Button "Extract Game IDs" 8 $gy $idBw 26
-    $btnID1.Add_Click({ ExtractGameIDsFromImages })
-    $gameIDGroup.Controls.Add($btnID1)
-    
-    $btnID2 = Create-Button "Create Game ID Mapping" (8 + $idBw + 6) $gy $idBw 26
-    $btnID2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnID2.Add_Click({ CreateIDMapping -OutputFileName "game_id_mappings.txt" })
-    $gameIDGroup.Controls.Add($btnID2)
-    
-    $gy += 28
-    $btnID3 = Create-Button "Apply Game IDs" 8 $gy $idBw 26
-    $btnID3.Add_Click({ ApplyGameIDsToMetadata })
-    $gameIDGroup.Controls.Add($btnID3)
-    
-    $btnID4 = Create-Button "Console ID Reference" (8 + $idBw + 6) $gy $idBw 26
-    $btnID4.Add_Click({ ShowConsoleIDList })
-    $gameIDGroup.Controls.Add($btnID4)
-    
-    # ============================================================
-    # SECTION 5: GAMETDB TOOLS
-    # ============================================================
-    # 4 rows x 2 equal half-width buttons
-    $gtdbExpandedH = 148
-    $gtdbGroup = New-Object System.Windows.Forms.GroupBox
-    $gtdbGroup.Text = " GameTDB Tools "
-    $gtdbGroup.Location = New-Object System.Drawing.Point(5, 1196)
-    $gtdbGroup.Size = New-Object System.Drawing.Size($leftW, $gtdbExpandedH)
-    $gtdbGroup.ForeColor = $script:theme.text
-    $gtdbGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($gtdbGroup)
-    
-    $gty = 22
-    $gtBw = [Math]::Floor(($leftW - 24) / 2)
-    $gtCol2 = 8 + $gtBw + 6
-    $btnGt1 = Create-Button "Download Titles DB" 8 $gty $gtBw 26
-    $btnGt1.Add_Click({ Download-GameTDBTitles })
-    $gtdbGroup.Controls.Add($btnGt1)
-    
-    $btnGt2 = Create-Button "Download Covers by ID" $gtCol2 $gty $gtBw 26
-    $btnGt2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnGt2.Add_Click({ Download-GameTDBCovers })
-    $gtdbGroup.Controls.Add($btnGt2)
-    
-    $gty += 30
-    $btnGtPack = Create-Button "Download Cover Pack..." 8 $gty $gtBw 26
-    $btnGtPack.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnGtPack.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "gametdb" })
-    $gtdbGroup.Controls.Add($btnGtPack)
-    
-    $btnGt3 = Create-Button "Lookup Title by ID" $gtCol2 $gty $gtBw 26
-    $btnGt3.Add_Click({ Lookup-GameTDBTitle })
-    $gtdbGroup.Controls.Add($btnGt3)
-    
-    $gty += 30
-    $btnGt4 = Create-Button "Open GameTDB Page" 8 $gty $gtBw 26
-    $btnGt4.Add_Click({ Open-GameTDBPage })
-    $gtdbGroup.Controls.Add($btnGt4)
-    
-    $btnGt5 = Create-Button "Apply Titles from GameTDB" $gtCol2 $gty $gtBw 26
-    $btnGt5.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnGt5.Add_Click({ Apply-GameTDBTitles })
-    $gtdbGroup.Controls.Add($btnGt5)
-    
-    $gty += 30
-    $btnGt7 = Create-Button "Fill Missing Box Art Paths" 8 $gty $gtBw 26
-    $btnGt7.Add_Click({ Fill-GameTDBBoxArtPaths })
-    $gtdbGroup.Controls.Add($btnGt7)
-    
-    $btnGt8 = Create-Button "DL Covers from Game List" $gtCol2 $gty $gtBw 26
-    $btnGt8.Add_Click({ Download-CoversFromGameList })
-    $gtdbGroup.Controls.Add($btnGt8)
-    
-    # ============================================================
-    # SECTION 5b: LIBRETRO-THUMBNAILS TOOLS
-    # ============================================================
-    # Separate from GameTDB Tools since it's a different source (no ID
-    # lookup, boxart only) - both just open the shared Cover Downloader
-    # dialog, preset to the matching "Download from" option.
-    $libretroExpandedH = 56
-    $libretroGroup = New-Object System.Windows.Forms.GroupBox
-    $libretroGroup.Text = " Libretro Tools "
-    $libretroGroup.Location = New-Object System.Drawing.Point(5, 1350)
-    $libretroGroup.Size = New-Object System.Drawing.Size($leftW, $libretroExpandedH)
-    $libretroGroup.ForeColor = $script:theme.text
-    $libretroGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($libretroGroup)
-
-    $lry = 22
-    $btnLr1 = Create-Button "Cover Downloader (Libretro)..." 8 $lry ($leftW - 16) 26
-    $btnLr1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnLr1.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "libretro" })
-    $libretroGroup.Controls.Add($btnLr1)
-
-    # ============================================================
-    # SECTION 5b: HASH MATCH TOOLS
-    # ============================================================
-    # ROM-hash based title matching (#5 in the roadmap): identifies games
-    # by the exact CRC32 of the ROM file against an imported No-Intro/
-    # Redump DAT database, instead of fuzzy title/filename matching. Same
-    # underlying MrtCrc32 engine SNS Code Tools' "Match ROMs by Checksum"
-    # already uses for GameDB-SNES, generalized to any platform.
-    $hashExpandedH = 86
-    $hashGroup = New-Object System.Windows.Forms.GroupBox
-    $hashGroup.Text = " Hash Match Tools "
-    $hashGroup.Location = New-Object System.Drawing.Point(5, 1360)
-    $hashGroup.Size = New-Object System.Drawing.Size($leftW, $hashExpandedH)
-    $hashGroup.ForeColor = $script:theme.text
-    $hashGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($hashGroup)
-
-    $hashBtnW = [Math]::Floor(($leftW - 16 - $gap) / 2)
-    $btnHashImport = Create-Button "Import DAT File..." 8 22 $hashBtnW 26
-    $btnHashImport.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnHashImport.Add_Click({ Import-DatFileDatabase })
-    $hashGroup.Controls.Add($btnHashImport)
-
-    $btnHashMatch = Create-Button "Match by Checksum" (8 + $hashBtnW + $gap) 22 $hashBtnW 26
-    $btnHashMatch.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnHashMatch.Add_Click({ Match-RomsByChecksumGeneric })
-    $hashGroup.Controls.Add($btnHashMatch)
-
-    $btnHashRa = Create-Button "Check RetroAchievements..." 8 52 ($leftW - 16) 26
-    $btnHashRa.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnHashRa.Add_Click({ Start-RetroAchievementsCheck })
-    $hashGroup.Controls.Add($btnHashRa)
-
-    # ============================================================
-    # SECTION 6: BUILDER / REPAIR TOOLS
-    # ============================================================
-    # 11 button rows: y=22, step 30, btn h=26 -> last bottom 22+10*30+26=348 -> height 386 (extra row for Sort)
-    $builderExpandedH = 386
-    $builderGroup = New-Object System.Windows.Forms.GroupBox
-    $builderGroup.Text = " Build & Repair Tools "
-    $builderGroup.Location = New-Object System.Drawing.Point(5, 1384)
-    $builderGroup.Size = New-Object System.Drawing.Size($leftW, $builderExpandedH)
-    $builderGroup.ForeColor = $script:theme.text
-    $builderGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $leftPanel.Controls.Add($builderGroup)
-    
-    $by = 22
-    $bBw = [Math]::Floor(($leftW - 24) / 2)
-    $bCol2 = 8 + $bBw + 6
-    
-    $btnB1 = Create-Button "Scan Folder for Games" 8 $by $bBw 26
-    $btnB1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB1.Add_Click({ Scan-GamesFromFolder })
-    $builderGroup.Controls.Add($btnB1)
-    
-    $btnB2 = Create-Button "Titles from Covers" $bCol2 $by $bBw 26
-    $btnB2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB2.Add_Click({ Scan-TitlesFromCoverImages })
-    $builderGroup.Controls.Add($btnB2)
-    
-    $by += 30
-    $btnB3 = Create-Button "Build Meta from Folder" 8 $by $bBw 26
-    $btnB3.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB3.Add_Click({ Build-MetadataFromFolder })
-    $builderGroup.Controls.Add($btnB3)
-    
-    $btnB4 = Create-Button "Import Games from List" $bCol2 $by $bBw 26
-    $btnB4.Add_Click({ Import-GamesFromList })
-    $builderGroup.Controls.Add($btnB4)
-    
-    $by += 30
-    $btnB5 = Create-Button "Sync File Paths" 8 $by $bBw 26
-    $btnB5.Add_Click({ Sync-FilePathsFromFolder })
-    $builderGroup.Controls.Add($btnB5)
-    
-    $btnB6 = Create-Button "Export Game List" $bCol2 $by $bBw 26
-    $btnB6.Add_Click({ Export-GameList })
-    $builderGroup.Controls.Add($btnB6)
-    
-    $by += 30
-    $btnB7 = Create-Button "DL Covers from Mapping" 8 $by $bBw 26
-    $btnB7.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB7.Add_Click({ Download-CoversFromMapping })
-    $builderGroup.Controls.Add($btnB7)
-    
-    $btnB8 = Create-Button "Export Missing List" $bCol2 $by $bBw 26
-    $btnB8.Add_Click({ Export-MissingCoversList })
-    $builderGroup.Controls.Add($btnB8)
-    
-    $by += 30
-    $btnB9 = Create-Button "Read SNES ROM Headers" 8 $by $bBw 26
-    $btnB9.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB9.Add_Click({ Read-SnesRomHeaders })
-    $builderGroup.Controls.Add($btnB9)
-    
-    $btnB11 = Create-Button "Strip All Box Art Paths" $bCol2 $by $bBw 26
-    $btnB11.Add_Click({ Strip-BoxArtPaths })
-    $builderGroup.Controls.Add($btnB11)
-    
-    $by += 30
-    $btnB12 = Create-Button "Clean Bogus Games" 8 $by $bBw 26
-    $btnB12.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB12.Add_Click({ CleanBogusGames })
-    $builderGroup.Controls.Add($btnB12)
-    
-    $btnB13 = Create-Button "Hide Multi-Disc + M3U" $bCol2 $by $bBw 26
-    $btnB13.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB13.Add_Click({ Hide-MultiDiscAndBuildM3U })
-    $builderGroup.Controls.Add($btnB13)
-    
-    $by += 30
-    $btnB14 = Create-Button "Strip All Assets" 8 $by $bBw 26
-    $btnB14.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB14.Add_Click({ Strip-AllAssetPaths })
-    $builderGroup.Controls.Add($btnB14)
-    
-    $btnB15 = Create-Button "Backup All Meta (Zip)" $bCol2 $by $bBw 26
-    $btnB15.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB15.Add_Click({ Backup-AllMetadataZip })
-    $builderGroup.Controls.Add($btnB15)
-    
-    $by += 30
-    $btnB16 = Create-Button "Edit Genres" 8 $by $bBw 26
-    $btnB16.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB16.Add_Click({ Edit-Genres })
-    $builderGroup.Controls.Add($btnB16)
-    
-    $btnB17 = Create-Button "Full File Check Report" $bCol2 $by $bBw 26
-    $btnB17.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB17.Add_Click({ Check-AllFilesReport })
-    $builderGroup.Controls.Add($btnB17)
-    
-    $by += 30
-    $btnB18 = Create-Button "Export EmulationStation XML" 8 $by $bBw 26
-    $btnB18.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB18.Add_Click({ Export-EmulationStationXml })
-    $builderGroup.Controls.Add($btnB18)
-    
-    $btnB19 = Create-Button "Import EmulationStation XML" $bCol2 $by $bBw 26
-    $btnB19.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB19.Add_Click({ Import-EmulationStationXml })
-    $builderGroup.Controls.Add($btnB19)
-    
-    $by += 30
-    $btnB20 = Create-Button "Backup Orphan Media" 8 $by $bBw 26
-    $btnB20.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB20.Add_Click({ Backup-OrphanMedia })
-    $builderGroup.Controls.Add($btnB20)
-    
-    $btnB21 = Create-Button "Batch Import Library" $bCol2 $by $bBw 26
-    $btnB21.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB21.Add_Click({ Batch-ImportFromLibraryRoot })
-    $builderGroup.Controls.Add($btnB21)
-    
-    $by += 30
-    $btnB22 = Create-Button "Sort Games A-Z" 8 $by $bBw 26
-    $btnB22.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB22.Add_Click({ Sort-GamesAlphabetically })
-    $builderGroup.Controls.Add($btnB22)
-    
-    $btnB23 = Create-Button "Remove Games w/ No File" $bCol2 $by $bBw 26
-    $btnB23.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnB23.Add_Click({ Remove-GamesWithoutFile })
-    $builderGroup.Controls.Add($btnB23)
-    
-    # Register left sections
-    Register-LeftSection -Group $colGroup -ExpandedHeight 230 -Collapsible $true -StartExpanded $true -Title "Collections"
-    Register-LeftSection -Group $toolsGroup -ExpandedHeight 120 -Collapsible $true -StartExpanded $true -Title "Metadata Tools"
-    Register-LeftSection -Group $imageGroup -ExpandedHeight 424 -Collapsible $true -StartExpanded $false -Title "Image Tools"
-    Register-LeftSection -Group $snsGroup -ExpandedHeight $snsExpandedH -Collapsible $true -StartExpanded $false -Title "SNS Code Tools"
-    Register-LeftSection -Group $gameIDGroup -ExpandedHeight 90 -Collapsible $true -StartExpanded $false -Title "Game ID Tools"
-    Register-LeftSection -Group $gtdbGroup -ExpandedHeight $gtdbExpandedH -Collapsible $true -StartExpanded $false -Title "GameTDB Tools"
-    Register-LeftSection -Group $libretroGroup -ExpandedHeight $libretroExpandedH -Collapsible $true -StartExpanded $false -Title "Libretro Tools"
-    Register-LeftSection -Group $hashGroup -ExpandedHeight $hashExpandedH -Collapsible $true -StartExpanded $false -Title "Hash Match Tools"
-    Register-LeftSection -Group $builderGroup -ExpandedHeight $builderExpandedH -Collapsible $true -StartExpanded $true -Title "Build & Repair Tools"
-    
-    # Delay relayout until after form is shown to avoid layout issues
-    $form.Add_Shown({
-        Relayout-LeftSections
-        try {
-            Apply-MetaAndGamesCollapseState
-            Relayout-TerminalPosition
-        } catch {}
-    })
-    
-    # ============================================================
-    # RIGHT PANEL - Fields (left) + Game list (right)
-    # ============================================================
-    $rightPanel = New-Object System.Windows.Forms.Panel
-    $rightPanel.Dock = "Fill"
-    $rightPanel.BackColor = $script:theme.background
-    $rightPanel.Padding = New-Object System.Windows.Forms.Padding(6, 6, 22, 8)
-    $rightPanel.AutoScroll = $true
-    $tableLayout.Controls.Add($rightPanel, 1, 0)
-    $script:rightPanelRef = $rightPanel
-    $rightPanel.Add_Resize({
-        if ($script:rawMode) { Apply-RawEditorLayout }
-        else { Relayout-TerminalPosition }
-    })
-    
-    # ---- Item Metadata (GroupBox includes fields + action buttons) ----
-    # Tall enough to show all fields through Description without inner scrolling
-    $script:metaExpandedH = 640
-    $script:metaCollapsedH = 28
-    $script:metaExpanded = $true
-    $script:metaNarrowW = 800
-    $script:contentFullW = 1132
-    $metaOuter = New-Object System.Windows.Forms.GroupBox
-    $metaOuter.Text = "      Item Metadata "
-    $metaOuter.Location = New-Object System.Drawing.Point(5, 48)
-    $metaOuter.Size = New-Object System.Drawing.Size($script:metaNarrowW, $script:metaExpandedH)
-    $metaOuter.ForeColor = $script:theme.text
-    $metaOuter.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $metaOuter.BackColor = $script:theme.background
-    $rightPanel.Controls.Add($metaOuter)
-    
-    $btnMetaToggle = New-Object System.Windows.Forms.Button
-    $btnMetaToggle.Size = New-Object System.Drawing.Size(22, 18)
-    $btnMetaToggle.Location = New-Object System.Drawing.Point(6, 1)
-    $btnMetaToggle.FlatStyle = "Flat"
-    $btnMetaToggle.FlatAppearance.BorderSize = 1
-    $btnMetaToggle.FlatAppearance.BorderColor = $script:theme.textDim
-    $btnMetaToggle.BackColor = $script:theme.button
-    $btnMetaToggle.ForeColor = $script:theme.accent
-    $btnMetaToggle.Tag = "accent"
-    $btnMetaToggle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnMetaToggle.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $btnMetaToggle.TabStop = $false
-    $btnMetaToggle.Text = "-"
-    $btnMetaToggle.Add_Click({
-        $script:metaExpanded = -not $script:metaExpanded
-        Apply-MetaAndGamesCollapseState
-    })
-    $metaOuter.Controls.Add($btnMetaToggle)
-    $btnMetaToggle.BringToFront()
-    $script:btnMetaToggle = $btnMetaToggle
-
-    # Bottom edge drag grip - resize Item Metadata (and Games) height
-    $script:metaDragging = $false
-    $script:metaDragStartY = 0
-    $script:metaDragStartH = 0
-    $metaGrip = New-Object System.Windows.Forms.Panel
-    $metaGrip.Size = New-Object System.Drawing.Size(696, 8)
-    $metaGrip.Location = New-Object System.Drawing.Point(2, 916)
-    $metaGrip.BackColor = [System.Drawing.Color]::FromArgb(45, 50, 75)
-    $metaGrip.Cursor = [System.Windows.Forms.Cursors]::SizeNS
-    $metaOuter.Controls.Add($metaGrip)
-    $script:metaGrip = $metaGrip
-    $metaGrip.BringToFront()
-
-    $metaGrip.Add_MouseDown({
-        param($sender, $e)
-        if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
-        if (-not $script:metaExpanded) {
-            $script:metaExpanded = $true
-            Apply-MetaAndGamesCollapseState
-        }
-        $script:metaDragging = $true
-        $script:metaDragStartY = [System.Windows.Forms.Cursor]::Position.Y
-        $script:metaDragStartH = $script:metaOuter.Height
-        $sender.Capture = $true
-    })
-    $metaGrip.Add_MouseMove({
-        param($sender, $e)
-        if (-not $script:metaDragging) { return }
-        $dy = [System.Windows.Forms.Cursor]::Position.Y - $script:metaDragStartY
-        $newH = $script:metaDragStartH + $dy
-        if ($newH -lt 160) { $newH = 160 }
-        if ($newH -gt 1200) { $newH = 1200 }
-        $script:metaExpandedH = $newH
-        $script:metaOuter.Height = $newH
-        $script:gamesExpandedH = $newH
-        if ($script:gamesOuter -and $script:gamesOuter.Visible) {
-            $script:gamesOuter.Height = $newH
-        }
-        Apply-MetaInnerLayout
-        Relayout-TerminalPosition
-        try {
-            $f = $script:mainForm
-            if ($f -and $f.WindowState -eq "Normal") {
-                $bottom = $script:termOuter.Bottom + 58
-                $needed = [Math]::Max($f.MinimumSize.Height, $bottom)
-                if ($f.Height -lt $needed) { $f.Height = $needed }
-            }
-        } catch {}
-    })
-    $metaGrip.Add_MouseUp({
-        param($sender, $e)
-        $script:metaDragging = $false
-        $sender.Capture = $false
-        if ($script:metaOuter) {
-            $script:metaExpandedH = $script:metaOuter.Height
-            $script:gamesExpandedH = $script:metaOuter.Height
-        }
-        Relayout-TerminalPosition
-    })
-    
-    # ---- Detail panel (collection header + game fields) ----
-    # Leave ~22px on the right inside the panel for the vertical scrollbar so it
-    # never covers field text. Content width is kept under the client area so a
-    # horizontal scrollbar does not appear over the description box.
-    $detailPanel = New-Object System.Windows.Forms.Panel
-    $detailPanel.Location = New-Object System.Drawing.Point(8, 18)
-    $detailPanel.Size = New-Object System.Drawing.Size(784, 612)
-    $detailPanel.BackColor = $script:theme.editor
-    $detailPanel.BorderStyle = "FixedSingle"
-    $detailPanel.AutoScroll = $true
-    # Extra right padding so the vertical scrollbar does not cover field text
-    $detailPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 28, 4)
-    $metaOuter.Controls.Add($detailPanel)
-    $script:detailPanel = $detailPanel
-    $script:metaOuter = $metaOuter
-    $btnMetaToggle.BringToFront()
-    
-    $script:fieldControls = @{}
-    $script:headerControls = @{}
-    $fy = 6
-    
-    # Collection header section
-    $hdrTitle = New-Object System.Windows.Forms.Label
-    $hdrTitle.Text = "Collection Metadata"
-    $hdrTitle.Location = New-Object System.Drawing.Point(6, $fy)
-    $hdrTitle.Size = New-Object System.Drawing.Size(520, 20)
-    $hdrTitle.ForeColor = $script:theme.success
-    $hdrTitle.Tag = "success"
-    $hdrTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $detailPanel.Controls.Add($hdrTitle)
-    $fy += 24
-    
-    $headerDefs = @(
-        @{ Label = "Collection"; FieldName = "collection"; IsMulti = $false; Hint = "collection" },
-        @{ Label = "Shortname"; FieldName = "shortname"; IsMulti = $false; Hint = "shortname" },
-        @{ Label = "Launch"; FieldName = "launch"; IsMulti = $false; Hint = "launch" },
-        @{ Label = "Box Front"; FieldName = "assets.box_front"; IsMulti = $false; Hint = "box2dfront" },
-        @{ Label = "Logo"; FieldName = "assets.logo"; IsMulti = $false; Hint = "wheel" },
-        @{ Label = "Description"; FieldName = "description"; IsMulti = $true; Hint = "description" }
-    )
-    
-    # Label (blue) + folder hint (gray) + field
-    # Wide enough for "Title Screen" / "Steam Grid" without clipping
-    $labelW = 102
-    $hintW  = 90
-    $hintX  = 6 + $labelW
-    $fieldX = 200
-    $fieldW = 559
-    $hintColor = [System.Drawing.Color]::FromArgb(150, 155, 175)
-    
-    foreach ($fd in $headerDefs) {
-        $fLabel = $fd["Label"]
-        $fName  = $fd["FieldName"]
-        $fMulti = $fd["IsMulti"]
-        $fHint  = $fd["Hint"]
-        
-        $lbl = New-Object System.Windows.Forms.Label
-        $lbl.Text = $fLabel
-        $lbl.Location = New-Object System.Drawing.Point(6, $fy)
-        $lbl.Size = New-Object System.Drawing.Size($labelW, 20)
-        $lbl.ForeColor = $script:theme.accent
-        $lbl.Tag = "accent"
-        $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-        $lbl.AutoSize = $false
-        $lbl.AutoEllipsis = $false
-        $detailPanel.Controls.Add($lbl)
-        
-        if ($fHint) {
-            $hintLbl = New-Object System.Windows.Forms.Label
-            $hintLbl.Text = $fHint
-            $hintLbl.Location = New-Object System.Drawing.Point($hintX, ($fy + 1))
-            $hintLbl.Size = New-Object System.Drawing.Size($hintW, 18)
-            $hintLbl.ForeColor = $hintColor
-            $hintLbl.Tag = "hint"
-            $hintLbl.Font = New-Object System.Drawing.Font("Consolas", 8)
-            $hintLbl.AutoSize = $false
-            $hintLbl.AutoEllipsis = $false
-            $detailPanel.Controls.Add($hintLbl)
-        }
-        
-        $tb = New-Object System.Windows.Forms.TextBox
-        $tb.Location = New-Object System.Drawing.Point($fieldX, $fy)
-        $tb.BackColor = $script:theme.panel
-        $tb.ForeColor = $script:theme.text
-        $tb.BorderStyle = "FixedSingle"
-        $tb.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $tb.Tag = "header:$fName"
-        
-        if ($fMulti) {
-            $tb.Size = New-Object System.Drawing.Size($fieldW, 48)
-            $tb.Multiline = $true
-            $tb.ScrollBars = "Vertical"
-            $tb.AcceptsReturn = $true
-            $fy += 52
-        } else {
-            $tb.Size = New-Object System.Drawing.Size($fieldW, 22)
-            $fy += 24
-        }
-        $detailPanel.Controls.Add($tb)
-        $script:headerControls[$fName] = $tb
-        $tb.Add_TextChanged({ if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true } })
     }
-    
-    $fy += 6
-    $gameTitle = New-Object System.Windows.Forms.Label
-    $gameTitle.Text = "Game Metadata"
-    $gameTitle.Location = New-Object System.Drawing.Point(6, $fy)
-    $gameTitle.Size = New-Object System.Drawing.Size(520, 20)
-    $gameTitle.ForeColor = $script:theme.success
-    $gameTitle.Tag = "success"
-    $gameTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $detailPanel.Controls.Add($gameTitle)
-    $fy += 24
-    
-    # Asset fields include BOTH box_full (scrapers) and boxFull (themes)
-    # Hint = media subfolder name shown in light gray next to the blue label
-    $fieldDefs = @(
-        @{ Label = "Title"; FieldName = "game"; IsMulti = $false; Hint = "game" },
-        @{ Label = "Sort Title"; FieldName = "sort_title"; IsMulti = $false; Hint = "sort-title" },
-        @{ Label = "File"; FieldName = "file"; IsMulti = $false; Hint = "file" },
-        @{ Label = "Developer"; FieldName = "developer"; IsMulti = $false; Hint = "developer" },
-        @{ Label = "Publisher"; FieldName = "publisher"; IsMulti = $false; Hint = "publisher" },
-        @{ Label = "Genre"; FieldName = "genre"; IsMulti = $false; Hint = "genre" },
-        @{ Label = "Players"; FieldName = "players"; IsMulti = $false; Hint = "players" },
-        @{ Label = "Release"; FieldName = "release"; IsMulti = $false; Hint = "release" },
-        @{ Label = "Rating"; FieldName = "rating"; IsMulti = $false; Hint = "rating" },
-        @{ Label = "Game ID"; FieldName = "game_id"; IsMulti = $false; Hint = "game_id" },
-        @{ Label = "Box Front"; FieldName = "assets.box_front"; IsMulti = $false; Hint = "box2dfront" },
-        @{ Label = "Box Full"; FieldName = "assets.box_full"; IsMulti = $false; Hint = "box2dfull" },
-        @{ Label = "boxFull"; FieldName = "assets.boxFull"; IsMulti = $false; Hint = "boxFull" },
-        @{ Label = "Box Back"; FieldName = "assets.box_back"; IsMulti = $false; Hint = "box2dback" },
-        @{ Label = "Screenshot"; FieldName = "assets.screenshot"; IsMulti = $false; Hint = "screenshot" },
-        @{ Label = "Video"; FieldName = "assets.video"; IsMulti = $false; Hint = "videos" },
-        @{ Label = "Logo"; FieldName = "assets.logo"; IsMulti = $false; Hint = "wheel" },
-        @{ Label = "Title Screen"; FieldName = "assets.titlescreen"; IsMulti = $false; Hint = "titlescreen" },
-        @{ Label = "Fanart"; FieldName = "assets.fanart"; IsMulti = $false; Hint = "fanart" },
-        @{ Label = "Cartridge"; FieldName = "assets.cartridge"; IsMulti = $false; Hint = "cartridge" },
-        @{ Label = "Steam Grid"; FieldName = "assets.steamgrid"; IsMulti = $false; Hint = "steamgrid" },
-        @{ Label = "Marquee"; FieldName = "assets.marquee"; IsMulti = $false; Hint = "marquee" },
-        @{ Label = "Banner"; FieldName = "assets.banner"; IsMulti = $false; Hint = "banner" },
-        @{ Label = "Box Thumb"; FieldName = "assets.box_front_thumb"; IsMulti = $false; Hint = "box2dThumb" },
-        @{ Label = "Description"; FieldName = "description"; IsMulti = $true; Hint = "description" }
-    )
-    
-    foreach ($fd in $fieldDefs) {
-        $fLabel = $fd["Label"]
-        $fName  = $fd["FieldName"]
-        $fMulti = $fd["IsMulti"]
-        $fHint  = $fd["Hint"]
-        
-        $lbl = New-Object System.Windows.Forms.Label
-        $lbl.Text = $fLabel
-        $lbl.Location = New-Object System.Drawing.Point(6, $fy)
-        $lbl.Size = New-Object System.Drawing.Size($labelW, 20)
-        $lbl.ForeColor = $script:theme.accent
-        $lbl.Tag = "accent"
-        $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-        $lbl.AutoSize = $false
-        $lbl.AutoEllipsis = $false
-        $detailPanel.Controls.Add($lbl)
-        
-        if ($fHint) {
-            $hintLbl = New-Object System.Windows.Forms.Label
-            $hintLbl.Text = $fHint
-            $hintLbl.Location = New-Object System.Drawing.Point($hintX, ($fy + 1))
-            $hintLbl.Size = New-Object System.Drawing.Size($hintW, 18)
-            $hintLbl.ForeColor = $hintColor
-            $hintLbl.Tag = "hint"
-            $hintLbl.Font = New-Object System.Drawing.Font("Consolas", 8)
-            $hintLbl.AutoSize = $false
-            $hintLbl.AutoEllipsis = $false
-            $detailPanel.Controls.Add($hintLbl)
+    if ($id -match '-(USA|EUR|JPN|AUS|FRA|GER|ITA|SPA|UK|KOR|CAN)$') {
+        switch ($matches[1]) {
+            'USA' { return "US" }
+            'JPN' { return "JA" }
+            'KOR' { return "KO" }
+            'EUR' { return "EN" }
+            'UK'  { return "EN" }
+            'FRA' { return "FR" }
+            'GER' { return "DE" }
+            'ITA' { return "IT" }
+            'SPA' { return "ES" }
+            'AUS' { return "AU" }
+            'CAN' { return "US" }
+            default { return "EN" }
         }
-        
-        $tb = New-Object System.Windows.Forms.TextBox
-        $tb.Location = New-Object System.Drawing.Point($fieldX, $fy)
-        $tb.BackColor = $script:theme.panel
-        $tb.ForeColor = $script:theme.text
-        $tb.BorderStyle = "FixedSingle"
-        $tb.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $tb.Tag = $fName
-        
-        if ($fMulti) {
-            $tb.Size = New-Object System.Drawing.Size($fieldW, 80)
-            $tb.Multiline = $true
-            $tb.ScrollBars = "Vertical"
-            $tb.AcceptsReturn = $true
-            $fy += 84
-        } else {
-            $tb.Size = New-Object System.Drawing.Size($fieldW, 22)
-            $fy += 24
-        }
-        $detailPanel.Controls.Add($tb)
-        $script:fieldControls[$fName] = $tb
-        $tb.Add_TextChanged({ if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true } })
     }
-    
-    # Prevent horizontal scrollbar from covering the description area
-    try {
-        $detailPanel.HorizontalScroll.Maximum = 0
-        $detailPanel.AutoScroll = $false
-        $detailPanel.HorizontalScroll.Visible = $false
-        $detailPanel.AutoScroll = $true
-        $detailPanel.HorizontalScroll.Enabled = $false
-    } catch {}
-    
-    # ---- Games list (GroupBox border) ----
-    # Collapses with Item Metadata via Apply-MetaAndGamesCollapseState
-    $script:gamesExpandedH = 640
-    $script:gamesCollapsedH = 28
-    $gamesOuter = New-Object System.Windows.Forms.GroupBox
-    $gamesOuter.Text = " Games "
-    $gamesOuter.Location = New-Object System.Drawing.Point(812, 48)
-    $gamesOuter.Size = New-Object System.Drawing.Size(320, $script:gamesExpandedH)
-    $gamesOuter.ForeColor = $script:theme.text
-    $gamesOuter.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $gamesOuter.BackColor = $script:theme.background
-    $rightPanel.Controls.Add($gamesOuter)
-    $script:gamesOuter = $gamesOuter
-    
-    $searchLabel = New-Object System.Windows.Forms.Label
-    $searchLabel.Text = "Search:"
-    $searchLabel.Location = New-Object System.Drawing.Point(8, 18)
-    $searchLabel.Size = New-Object System.Drawing.Size(50, 20)
-    $searchLabel.ForeColor = $script:theme.textDim
-    $gamesOuter.Controls.Add($searchLabel)
-    $script:searchLabel = $searchLabel
-    
-    $gameSearchBox = New-Object System.Windows.Forms.TextBox
-    $gameSearchBox.Location = New-Object System.Drawing.Point(58, 16)
-    $gameSearchBox.Size = New-Object System.Drawing.Size(252, 22)
-    $gameSearchBox.BackColor = $script:theme.editor
-    $gameSearchBox.ForeColor = $script:theme.text
-    $gameSearchBox.BorderStyle = "FixedSingle"
-    $gameSearchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $gamesOuter.Controls.Add($gameSearchBox)
-    $script:gameSearchBox = $gameSearchBox
-    $gameSearchBox.Add_TextChanged({ FilterGameList })
-    
-    $gameListBox = New-Object System.Windows.Forms.ListBox
-    $gameListBox.Location = New-Object System.Drawing.Point(8, 44)
-    $gameListBox.Size = New-Object System.Drawing.Size(304, 590)
-    $gameListBox.BackColor = $script:theme.editor
-    $gameListBox.ForeColor = $script:theme.text
-    $gameListBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $gameListBox.BorderStyle = "FixedSingle"
-    $gameListBox.IntegralHeight = $false
-    $gamesOuter.Controls.Add($gameListBox)
-    $script:gameListBox = $gameListBox
-    $gameListBox.Add_SelectedIndexChanged({
-        if (-not $script:suppressGameSelect) { LoadSelectedGameFields }
-    })
-    
-    # Raw editor (hidden by default). A RichTextBox rather than a plain
-    # TextBox: this is what actually gets us reliable Ctrl+V/Enter plus
-    # per-line color, since a plain TextBox can only ever be one solid color.
-    $editorBox = New-Object System.Windows.Forms.RichTextBox
-    $editorBox.Location = New-Object System.Drawing.Point(5, 80)
-    $editorBox.Size = New-Object System.Drawing.Size(1132, 598)
-    $editorBox.Multiline = $true
-    $editorBox.ScrollBars = "Both"
-    $editorBox.WordWrap = $false
-    $editorBox.AcceptsTab = $true
-    $editorBox.ShortcutsEnabled = $true
-    $editorBox.DetectUrls = $false
-    $editorBox.HideSelection = $false
-    $editorBox.Font = New-Object System.Drawing.Font("Consolas", 9)
-    $editorBox.BackColor = $script:theme.editor
-    $editorBox.ForeColor = $script:theme.text
-    $editorBox.BorderStyle = "FixedSingle"
-    $editorBox.Visible = $false
-    $editorBox.Text = "Select a collection to view metadata..."
-
-    # Ctrl+C / Ctrl+X / Ctrl+A / Ctrl+Z / arrows / Home / End / Page Up-Down /
-    # Delete / Backspace / double-click-to-select-word are all native
-    # RichTextBox behavior and need no code here. The handful below either
-    # aren't wired to anything by default (paste-as-plain-text, redo) or need
-    # to be pointed at this app's own Save/Find/Replace instead of a no-op.
-    $editorBox.Add_KeyDown({
-        param($sender, $e)
-        if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::V) {
-            # Paste as plain text - so text copied from Word/a browser/etc.
-            # picks up this editor's own font and theme color instead of
-            # bringing its source formatting along with it.
-            try {
-                if ([System.Windows.Forms.Clipboard]::ContainsText()) {
-                    $sender.SelectedText = [System.Windows.Forms.Clipboard]::GetText()
-                }
-            } catch {}
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::Y) {
-            try { if ($sender.CanRedo) { $sender.Redo() } } catch {}
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::F) {
-            Show-RawReplaceBar -Focus "Find"
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::H) {
-            Show-RawReplaceBar -Focus "Replace"
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::S) {
-            SaveMeta
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        }
-    })
-    $editorBox.Add_TextChanged({
-        # Recoloring is deliberately NOT done here. It used to re-run on
-        # every keystroke (a full Highlight-RawEditorAll whenever the line
-        # count changed - which includes just pressing Enter), and on a
-        # large metadata.txt that made every edit feel cumbersome even with
-        # the WM_SETREDRAW/DoEvents optimizations in Highlight-RawEditorAll.
-        # Per the requested behavior, syntax coloring should only refresh on
-        # Save (see SaveMeta -> UpdateEditor -> Highlight-RawEditorAll) and
-        # on a theme switch (see Set-AppThemeMode) - never while typing.
-        if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true }
-    })
-    $rightPanel.Controls.Add($editorBox)
-    $script:editorBox = $editorBox
-
-    # ---- Raw editor search bar (under action buttons; shown only in Raw mode) ----
-    $rawSearchBar = New-Object System.Windows.Forms.Panel
-    $rawSearchBar.Location = New-Object System.Drawing.Point(5, 48)
-    $rawSearchBar.Size = New-Object System.Drawing.Size(1132, 30)
-    $rawSearchBar.BackColor = $script:theme.background
-    $rawSearchBar.Visible = $false
-    $rightPanel.Controls.Add($rawSearchBar)
-    $script:rawSearchBar = $rawSearchBar
-
-    $rawSearchLbl = New-Object System.Windows.Forms.Label
-    $rawSearchLbl.Text = "Find:"
-    $rawSearchLbl.Location = New-Object System.Drawing.Point(4, 5)
-    $rawSearchLbl.Size = New-Object System.Drawing.Size(40, 20)
-    $rawSearchLbl.ForeColor = $script:theme.textDim
-    $rawSearchBar.Controls.Add($rawSearchLbl)
-
-    $rawSearchBox = New-Object System.Windows.Forms.TextBox
-    $rawSearchBox.Location = New-Object System.Drawing.Point(48, 3)
-    $rawSearchBox.Size = New-Object System.Drawing.Size(420, 24)
-    $rawSearchBox.BackColor = $script:theme.editor
-    $rawSearchBox.ForeColor = $script:theme.text
-    $rawSearchBox.BorderStyle = "FixedSingle"
-    $rawSearchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $rawSearchBar.Controls.Add($rawSearchBox)
-    $script:rawSearchBox = $rawSearchBox
-    $rawSearchBox.Add_KeyDown({
-        param($sender, $e)
-        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
-            Find-InRawEditor -Forward $true
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        }
-    })
-
-    $btnRawFindNext = Create-Button "Find Next" 478 2 90 24
-    $btnRawFindNext.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnRawFindNext.Add_Click({ Find-InRawEditor -Forward $true })
-    $rawSearchBar.Controls.Add($btnRawFindNext)
-
-    $btnRawFindPrev = Create-Button "Find Prev" 574 2 90 24
-    $btnRawFindPrev.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnRawFindPrev.Add_Click({ Find-InRawEditor -Forward $false })
-    $rawSearchBar.Controls.Add($btnRawFindPrev)
-
-    $btnRawReplaceToggle = Create-Button "Replace" 670 2 90 24
-    $btnRawReplaceToggle.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnRawReplaceToggle.Add_Click({
-        if ($script:rawReplaceVisible) {
-            $script:rawReplaceVisible = $false
-            if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $false }
-            Apply-RawEditorLayout
-        } else {
-            Show-RawReplaceBar -Focus "Replace"
-        }
-    })
-    $rawSearchBar.Controls.Add($btnRawReplaceToggle)
-
-    $rawSearchStatus = New-Object System.Windows.Forms.Label
-    $rawSearchStatus.Text = ""
-    $rawSearchStatus.Location = New-Object System.Drawing.Point(766, 5)
-    $rawSearchStatus.Size = New-Object System.Drawing.Size(360, 20)
-    $rawSearchStatus.ForeColor = $script:theme.textDim
-    $rawSearchBar.Controls.Add($rawSearchStatus)
-    $script:rawSearchStatus = $rawSearchStatus
-
-    # ---- Replace row (2nd row of the find bar; Ctrl+H, hidden until used) ----
-    $rawReplaceRow = New-Object System.Windows.Forms.Panel
-    $rawReplaceRow.Location = New-Object System.Drawing.Point(0, 32)
-    $rawReplaceRow.Size = New-Object System.Drawing.Size(1132, 30)
-    $rawReplaceRow.BackColor = $script:theme.background
-    $rawReplaceRow.Visible = $false
-    $rawSearchBar.Controls.Add($rawReplaceRow)
-    $script:rawReplaceRow = $rawReplaceRow
-
-    $rawReplaceLbl = New-Object System.Windows.Forms.Label
-    $rawReplaceLbl.Text = "Replace:"
-    $rawReplaceLbl.Location = New-Object System.Drawing.Point(4, 5)
-    $rawReplaceLbl.Size = New-Object System.Drawing.Size(60, 20)
-    $rawReplaceLbl.ForeColor = $script:theme.textDim
-    $rawReplaceRow.Controls.Add($rawReplaceLbl)
-
-    $rawReplaceBox = New-Object System.Windows.Forms.TextBox
-    $rawReplaceBox.Location = New-Object System.Drawing.Point(68, 3)
-    $rawReplaceBox.Size = New-Object System.Drawing.Size(400, 24)
-    $rawReplaceBox.BackColor = $script:theme.editor
-    $rawReplaceBox.ForeColor = $script:theme.text
-    $rawReplaceBox.BorderStyle = "FixedSingle"
-    $rawReplaceBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $rawReplaceRow.Controls.Add($rawReplaceBox)
-    $script:rawReplaceBox = $rawReplaceBox
-    $rawReplaceBox.Add_KeyDown({
-        param($sender, $e)
-        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
-            Replace-InRawEditor
-            $e.SuppressKeyPress = $true
-            $e.Handled = $true
-        }
-    })
-
-    $btnRawReplaceOne = Create-Button "Replace" 478 2 90 24
-    $btnRawReplaceOne.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnRawReplaceOne.Add_Click({ Replace-InRawEditor })
-    $rawReplaceRow.Controls.Add($btnRawReplaceOne)
-
-    $btnRawReplaceAll = Create-Button "Replace All" 574 2 90 24
-    $btnRawReplaceAll.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnRawReplaceAll.Add_Click({ Replace-InRawEditor -All })
-    $rawReplaceRow.Controls.Add($btnRawReplaceAll)
-
-    $btnRawReplaceClose = Create-Button "Close" 670 2 90 24
-    $btnRawReplaceClose.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
-    $btnRawReplaceClose.Add_Click({
-        $script:rawReplaceVisible = $false
-        if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $false }
-        Apply-RawEditorLayout
-    })
-    $rawReplaceRow.Controls.Add($btnRawReplaceClose)
-    
-    # ---- Top header row: action buttons (left) + stats (right) ----
-    # Single clean row across the full content width
-    $actionBarLabels = @(
-        "Apply", "Refresh",
-        "Form", "Raw", "Save", "Guide"
-    )
-    $actionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnW = 0
-    foreach ($lab in $actionBarLabels) {
-        $m = [System.Windows.Forms.TextRenderer]::MeasureText($lab, $actionFont)
-        $need = $m.Width + 14
-        if ($need -gt $btnW) { $btnW = $need }
-    }
-    if ($btnW -lt 56) { $btnW = 56 }
-    $btnY = 5
-    $bg = 6
-    $pad = 6
-    $actionBarW = if ($script:contentFullW) { $script:contentFullW } else { 1132 }
-    $actionBar = New-Object System.Windows.Forms.Panel
-    $actionBar.Location = New-Object System.Drawing.Point(5, 2)
-    $actionBar.Size = New-Object System.Drawing.Size($actionBarW, 36)
-    $actionBar.BackColor = $script:theme.background
-    $actionBar.BorderStyle = "FixedSingle"
-    $rightPanel.Controls.Add($actionBar)
-    $script:actionBar = $actionBar
-    $actionBar.BringToFront()
-    
-    # Left group: Apply / Refresh / Form / Raw / Save / Launch / Guide
-    $bx = $pad
-    $btnApplyFields = Create-Button "Apply" $bx $btnY $btnW 26
-    $btnApplyFields.Add_Click({ ApplyGameFields })
-    $actionBar.Controls.Add($btnApplyFields)
-    $bx += $btnW + $bg
-    $btnRef = Create-Button "Refresh" $bx $btnY $btnW 26
-    $btnRef.Add_Click({ UpdateEditor })
-    $actionBar.Controls.Add($btnRef)
-    $bx += $btnW + $bg
-    $btnFormView = Create-Button "Form" $bx $btnY $btnW 26
-    $btnFormView.Add_Click({ Set-EditorMode $false })
-    $actionBar.Controls.Add($btnFormView)
-    $bx += $btnW + $bg
-    $btnRaw = Create-Button "Raw" $bx $btnY $btnW 26
-    $btnRaw.Add_Click({ Set-EditorMode $true })
-    $actionBar.Controls.Add($btnRaw)
-    $script:btnRaw = $btnRaw
-    $bx += $btnW + $bg
-    $btnSave = Create-Button "Save" $bx $btnY $btnW 26
-    $btnSave.Add_Click({ SaveMeta })
-    $actionBar.Controls.Add($btnSave)
-    $script:btnSave = $btnSave
-    Update-SaveButtonAppearance
-    
-    $bx += $btnW + $bg
-    $btnLaunch = Create-Button "Launch" $bx $btnY $btnW 26
-    $btnLaunch.Add_Click({ Launch-Pegasus })
-    $ttLaunch = New-Object System.Windows.Forms.ToolTip
-    $ttLaunch.SetToolTip($btnLaunch, "Launch Pegasus Frontend (set path in Settings)")
-    $actionBar.Controls.Add($btnLaunch)
-    $script:btnLaunch = $btnLaunch
-    
-    # Log tools - compact widths, just right of Launch (Guide is in Settings)
-    $logFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $logLabels = @("Clear Log", "Copy Log", "Export Log")
-    $logWidths = @{}
-    foreach ($lab in $logLabels) {
-        $m = [System.Windows.Forms.TextRenderer]::MeasureText($lab, $logFont)
-        $logWidths[$lab] = [Math]::Max(52, $m.Width + 12)
-    }
-    $bx += $btnW + $bg
-    $btnClear = Create-Button "Clear Log" $bx $btnY $logWidths["Clear Log"] 26
-    $btnClear.Add_Click({ if ($script:logBox) { $script:logBox.Clear() } })
-    $actionBar.Controls.Add($btnClear)
-    $script:btnClearLog = $btnClear
-    $bx += $logWidths["Clear Log"] + $bg
-    $btnCopyLog = Create-Button "Copy Log" $bx $btnY $logWidths["Copy Log"] 26
-    $btnCopyLog.Add_Click({
-        if ($script:logBox -and -not [string]::IsNullOrEmpty($script:logBox.Text)) {
-            [System.Windows.Forms.Clipboard]::SetText($script:logBox.Text)
-            Log-Message "Log copied to clipboard" "Green"
-        } else {
-            Log-Message "Log is empty" "Yellow"
-        }
-    })
-    $actionBar.Controls.Add($btnCopyLog)
-    $script:btnCopyLog = $btnCopyLog
-    $bx += $logWidths["Copy Log"] + $bg
-    $btnExport = Create-Button "Export Log" $bx $btnY $logWidths["Export Log"] 26
-    $btnExport.Add_Click({
-        $save = New-Object System.Windows.Forms.SaveFileDialog
-        $save.Title = "Export Log"
-        $save.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
-        $save.FileName = "metadata_repair_log.txt"
-        if ($save.ShowDialog() -eq "OK") {
-            if ($script:logBox) {
-                $script:logBox.Text | Out-File $save.FileName -Encoding UTF8
-                Log-Message "Log exported to: $($save.FileName)" "Green"
-            }
-        }
-    })
-    $actionBar.Controls.Add($btnExport)
-    $script:btnExportLog = $btnExport
-
-    $bx += $logWidths["Export Log"] + $bg
-    $btnSettings = Create-Button "Settings" $bx $btnY 72 26
-    $btnSettings.Add_Click({ Show-SettingsDialog })
-    $actionBar.Controls.Add($btnSettings)
-    $script:btnSettings = $btnSettings
-    
-    # Stats right-aligned on the same row
-    $countLabel = New-Object System.Windows.Forms.Label
-    $countLabel.Text = "Ready  |  Collections: 0"
-    $countLabel.Size = New-Object System.Drawing.Size(420, 26)
-    $countLabel.Location = New-Object System.Drawing.Point(($actionBarW - 426), 5)
-    $countLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $countLabel.ForeColor = $script:theme.success
-    $countLabel.TextAlign = "MiddleRight"
-    $countLabel.Name = "countLabel"
-    $actionBar.Controls.Add($countLabel)
-    $script:countLabel = $countLabel
-    
-    # ============================================================
-    # TERMINAL
-    # ============================================================
-    $script:termExpandedH = 220
-    $script:termCollapsedH = 28
-    $script:termExpanded = $true    # start expanded (matches preferred default layout)
-    $termOuter = New-Object System.Windows.Forms.GroupBox
-    $termOuter.Text = "      Terminal Output "
-    $termOuter.Location = New-Object System.Drawing.Point(5, 978)
-    $termOuter.Size = New-Object System.Drawing.Size(1132, $script:termExpandedH)
-    $termOuter.ForeColor = $script:theme.text
-    $termOuter.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $termOuter.BackColor = $script:theme.background
-    $rightPanel.Controls.Add($termOuter)
-    $script:termOuter = $termOuter
-    
-    $btnTermToggle = New-Object System.Windows.Forms.Button
-    $btnTermToggle.Size = New-Object System.Drawing.Size(22, 18)
-    $btnTermToggle.Location = New-Object System.Drawing.Point(6, 1)
-    $btnTermToggle.FlatStyle = "Flat"
-    $btnTermToggle.FlatAppearance.BorderSize = 1
-    $btnTermToggle.FlatAppearance.BorderColor = $script:theme.textDim
-    $btnTermToggle.BackColor = $script:theme.button
-    $btnTermToggle.ForeColor = $script:theme.accent
-    $btnTermToggle.Tag = "accent"
-    $btnTermToggle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-    $btnTermToggle.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $btnTermToggle.TabStop = $false
-    $btnTermToggle.Text = "-"
-    $btnTermToggle.Add_Click({
-        $script:termExpanded = -not $script:termExpanded
-        $tb = $script:btnTermToggle
-        if ($script:termExpanded) {
-            if (-not $script:termExpandedH -or $script:termExpandedH -lt 120) { $script:termExpandedH = 360 }
-            $script:termOuter.Height = $script:termExpandedH
-            $script:termOuter.Text = "      Terminal Output "
-            if ($tb) { $tb.Text = "-" }
-            foreach ($ctrl in @($script:termOuter.Controls)) {
-                if ($null -eq $tb -or $ctrl -ne $tb) { $ctrl.Visible = $true }
-            }
-            if ($tb) { $tb.Visible = $true; $tb.BringToFront() }
-            if ($script:termGrip) { $script:termGrip.Visible = $true; $script:termGrip.BringToFront() }
-        } else {
-            foreach ($ctrl in @($script:termOuter.Controls)) {
-                if ($null -eq $tb -or $ctrl -ne $tb) { $ctrl.Visible = $false }
-            }
-            $script:termOuter.Height = $script:termCollapsedH
-            $script:termOuter.Text = "      Terminal Output "
-            if ($tb) {
-                $tb.Text = "+"
-                $tb.Visible = $true
-                $tb.BringToFront()
-            }
-            # Keep bottom grip visible so user can drag to expand
-            if ($script:termGrip) { $script:termGrip.Visible = $true; $script:termGrip.BringToFront() }
-        }
-        Relayout-TerminalPosition
-    })
-    $termOuter.Controls.Add($btnTermToggle)
-    $btnTermToggle.BringToFront()
-    $script:btnTermToggle = $btnTermToggle
-
-    # Bottom edge drag grip - click and drag up/down to resize terminal height
-    $script:termDragging = $false
-    $script:termDragStartY = 0
-    $script:termDragStartH = 0
-    $termGrip = New-Object System.Windows.Forms.Panel
-    $termGrip.Size = New-Object System.Drawing.Size(963, 8)
-    $termGrip.Location = New-Object System.Drawing.Point(2, 20)
-    $termGrip.BackColor = [System.Drawing.Color]::FromArgb(45, 50, 75)
-    $termGrip.Cursor = [System.Windows.Forms.Cursors]::SizeNS
-    $termGrip.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
-    $termOuter.Controls.Add($termGrip)
-    $script:termGrip = $termGrip
-    $termGrip.BringToFront()
-
-    $termGrip.Add_MouseDown({
-        param($sender, $e)
-        if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
-        if (-not $script:termExpanded) {
-            $script:termExpanded = $true
-            $tb = $script:btnTermToggle
-            if ($tb) { $tb.Text = "-" }
-            if ($script:termOuter.Height -lt 100) {
-                $script:termExpandedH = 360
-                $script:termOuter.Height = 360
-            }
-            foreach ($ctrl in @($script:termOuter.Controls)) {
-                if ($script:btnTermToggle -and $ctrl -eq $script:btnTermToggle) { continue }
-                $ctrl.Visible = $true
-            }
-        }
-        $script:termDragging = $true
-        $script:termDragStartY = [System.Windows.Forms.Cursor]::Position.Y
-        $script:termDragStartH = $script:termOuter.Height
-        $sender.Capture = $true
-    })
-    $termGrip.Add_MouseMove({
-        param($sender, $e)
-        if (-not $script:termDragging) { return }
-        $dy = [System.Windows.Forms.Cursor]::Position.Y - $script:termDragStartY
-        $newH = $script:termDragStartH + $dy
-        # Min ~ header+log; max ~ large log view
-        if ($newH -lt 120) { $newH = 120 }
-        if ($newH -gt 900) { $newH = 900 }
-        $script:termExpandedH = $newH
-        if ($script:rawMode) {
-            # Keep editor and terminal sharing the panel without overlap
-            Apply-RawEditorLayout
-        } else {
-            $script:termOuter.Height = $newH
-            Apply-TerminalInnerLayout
-            try {
-                $f = $script:mainForm
-                if ($f -and $f.WindowState -eq "Normal") {
-                    $bottom = $script:termOuter.Bottom + 58
-                    $needed = [Math]::Max($f.MinimumSize.Height, $bottom)
-                    if ($f.Height -lt $needed) { $f.Height = $needed }
-                }
-            } catch {}
-        }
-    })
-    $termGrip.Add_MouseUp({
-        param($sender, $e)
-        $script:termDragging = $false
-        $sender.Capture = $false
-        if ($script:termOuter) {
-            $script:termExpandedH = $script:termOuter.Height
-        }
-        Relayout-TerminalPosition
-    })
-    
-    $logBox = New-Object System.Windows.Forms.TextBox
-    $logBox.Location = New-Object System.Drawing.Point(8, 20)
-    $logBox.Size = New-Object System.Drawing.Size(951, 300)
-    $logBox.Multiline = $true
-    $logBox.ScrollBars = "Vertical"
-    $logBox.ReadOnly = $true
-    $logBox.Font = New-Object System.Drawing.Font("Consolas", 9)
-    $logBox.BackColor = $script:theme.terminal
-    $logBox.ForeColor = $script:theme.text
-    $logBox.BorderStyle = "FixedSingle"
-    $logBox.Text = "Ready. Select a collection to begin..."
-    $termOuter.Controls.Add($logBox)
-    $script:logBox = $logBox
-    
-    # Log action buttons are on the top action bar (Clear / Copy / Export Log)
-    
-    # Terminal starts expanded by default; toggle still works
-    if ($btnTermToggle) {
-        $btnTermToggle.Visible = $true
-        $btnTermToggle.BringToFront()
-    }
-    
-    # ============================================================
-    # STATUS BAR
-    # ============================================================
-    $statusStrip = New-Object System.Windows.Forms.StatusStrip
-    $statusStrip.BackColor = $script:theme.panel
-    $statusStrip.ForeColor = $script:theme.text
-    $statusStrip.SizingGrip = $false
-    $form.Controls.Add($statusStrip)
-    
-    $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $statusLabel.Text = "Ready"
-    $statusLabel.ForeColor = $script:theme.text
-    $statusLabel.Spring = $true
-    $statusStrip.Items.Add($statusLabel)
-    $script:statusBar = $statusLabel
-    
-    $statusCount = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $statusCount.Text = "Collections: $($script:collections.Count)"
-    $statusCount.ForeColor = $script:theme.textDim
-    $statusStrip.Items.Add($statusCount)
-    
-    $statusColl = New-Object System.Windows.Forms.ToolStripStatusLabel
-    $statusColl.Text = "No collection loaded"
-    $statusColl.ForeColor = $script:theme.textDim
-    $statusStrip.Items.Add($statusColl)
-    
-    # ============================================================
-    # INIT
-    # ============================================================
-    try {
-        RefreshCollectionList
-        
-        if ($collectionList.Items.Count -gt 0) {
-            $collectionList.SelectedIndex = 0
-            $name = $collectionList.SelectedItem.ToString()
-            $script:currentCollection = $script:collections[$name]
-            $statusColl.Text = "Loaded: $name"
-            UpdateEditor
-            UpdateStats
-            Log-Message "Loaded collection: $name" "Green"
-        } else {
-            Log-Message "No collections found. Click 'Add' to add one." "Yellow"
-        }
-    } catch {
-        Log-Message "Init warning: $_" "Yellow"
-    }
-    
-    $form.ShowDialog() | Out-Null
+    return "US"
 }
 
-# ============================================================================
-# WORKFLOW DIALOG
-# ============================================================================
-function ShowWorkflowDialog {
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Workflow Guide"
-    $dlg.Size = New-Object System.Drawing.Size(980, 720)
-    $dlg.MinimumSize = New-Object System.Drawing.Size(800, 500)
-    $dlg.StartPosition = "CenterParent"
-    $dlg.BackColor = $script:theme.background
-    $dlg.ForeColor = $script:theme.text
-    
-    $root = New-Object System.Windows.Forms.TableLayoutPanel
-    $root.Dock = "Fill"
-    $root.ColumnCount = 2
-    $root.RowCount = 2
-    $root.BackColor = $script:theme.background
-    [void]$root.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 280)))
-    [void]$root.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
-    [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 56)))
-    $dlg.Controls.Add($root)
-    
-    $tree = New-Object System.Windows.Forms.TreeView
-    $tree.Dock = "Fill"
-    $tree.BackColor = $script:theme.editor
-    $tree.ForeColor = $script:theme.text
-    $tree.BorderStyle = "FixedSingle"
-    $tree.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
-    $tree.HideSelection = $false
-    $tree.FullRowSelect = $true
-    $tree.ShowLines = $true
-    $tree.ShowPlusMinus = $true
-    $tree.ShowRootLines = $true
-    $root.Controls.Add($tree, 0, 0)
-    
-    $detail = New-Object System.Windows.Forms.RichTextBox
-    $detail.Dock = "Fill"
-    $detail.ReadOnly = $true
-    $detail.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $detail.BackColor = $script:theme.editor
-    $detail.ForeColor = $script:theme.text
-    $detail.BorderStyle = "FixedSingle"
-    $detail.DetectUrls = $false
-    $detail.ScrollBars = "Vertical"
-    $root.Controls.Add($detail, 1, 0)
-    
-    $script:__wfContent = @{}
-    
-    $nIntro = $tree.Nodes.Add("Introduction")
-    [void]$tree.Nodes.Add("About")
-    $script:__wfContent["Introduction"] = @"
-WORKFLOW GUIDE
-
-Use the expandable list on the left. Click a topic to read steps on the right.
-
-This tool repairs and builds Pegasus frontend metadata: collections, game entries, box art paths, SNS/Game IDs, and GameTDB helpers.
-
-Version $($script:version)
-
-ASSET FOLDER REFERENCE:
-- box2dfront/  -> assets.box_front (fallback)
-- box2dfull/   -> assets.box_full (standard)
-- boxFull/     -> assets.boxFull (YOUR THEME USES THIS)
-- box2dback/   -> assets.box_back
-- screenshot/  -> assets.screenshot
-- videos/      -> assets.video
-- wheel/       -> assets.logo
-- titlescreen/ -> assets.titlescreen
-- fanart/      -> assets.fanart
-- cartridge/   -> assets.cartridge
-- steamgrid/   -> assets.steamgrid
-- hero/        -> assets.background (SteamGridDB "Heroes")
-- tile/        -> assets.tile (SteamGridDB "Icons" - loose fit, check your theme)
-- marquee/     -> assets.marquee
-- banner/      -> assets.banner
-"@
-    
-    $nScen = $tree.Nodes.Add("Scenarios")
-    
-
-    $script:__wfContent["About"] = @"
-ABOUT - Metadata Repair Tool
-
-Version: see app title bar / status (v$($script:version) at runtime)
-
-Application developed by jacktrabblt72380
-
-Complete metadata management tool for Pegasus Frontend.
-
-Features
-  Add / Remove / Edit Pegasus collections
-  View and edit metadata files (Form + Raw modes)
-  Auto-load collections on selection
-  Workflow Guide for common scenarios
-  Metadata health checks and statistics
-  Find missing cover art
-  Add box art and all media types automatically
-  Rename images to match game names
-  Update metadata names to match images
-  Fix duplicate game entries
-  SNS Code Tools (product codes, titles, box art mapping)
-  Game ID Tools (Extract, Create Mapping, Apply)
-  GameTDB Tools (Titles, Covers by ID, Covers from Game List)
-  Build & Repair Tools (scan, build, import, sync, ES XML)
-  Import EmulationStation / Skraper gamelist.xml
-  Batch Import Library and Backup Orphan Media
-  PNG <-> JPG conversion
-  Backup / Restore (.bkup.txt)
-  Collapsible tool sections
-
-Sections
-  Collections - Create / Add / Remove / Load
-  Metadata Tools - Health, Stats, Missing, Duplicates, Backup
-  Image Tools - Rename, Box Art, All Media Types, Conversion
-  SNS Code Tools - Extract, Map, Add Box Art
-  Game ID Tools - Extract, Map, Apply, Console Reference
-  GameTDB Tools - Titles, Covers, Lookup
-  Build & Repair Tools - Scan, Build, Import, Sync, ES XML, orphan cleanup
-
-Theme
-  Use Settings -> Theme to choose Default / Steam / Light / High Contrast / Windows (applies immediately).
-
-Developer note
-  All changes and updates must always be listed in the developer log
-  (Settings -> Dev Log). Include version, date, and a short description.
-
-Developed by jacktrabblt72380
-"@
-
-    $script:__wfContent["SNS covers already on disk"] = @"
-SCENARIO: SNS / product-code cover images on disk (e.g. SNS-XXXX-USA.png)
-
-1. SNS Code Tools -> From Images
-   - Pick the folder with cover images
-   - Builds SNS list + sns_codes_from_images.txt
-
-2. Choose a mapping method:
-   - Map by Product Code
-   - Map by Titles File (needs sns_titles.txt)
-   - Create SNS Mapping (Auto)
-
-3. SNS Code Tools -> Add Box Art (Mapping)
-   - Writes assets.box_front from sns_mappings.txt
-
-4. Save Changes
-"@
-    [void]$nScen.Nodes.Add("SNS covers already on disk")
-    
-    $script:__wfContent["Covers named like game titles"] = @"
-SCENARIO: Images already named like the game (Super_Mario_World.png)
-
-1. SNS Code Tools -> Add Box Art (Game Name)
-   OR Image Tools -> Add Box Art to Metadata
-
-2. Save Changes
-"@
-    [void]$nScen.Nodes.Add("Covers named like game titles")
-    
-    $script:__wfContent["Build collection from ROM folder"] = @"
-SCENARIO: Build or expand a collection from a ROM folder
-
-1. Collections -> Create (or Add existing metadata)
-
-2. Build & Repair Tools -> Scan Folder for Games
-
-3. Build & Repair Tools -> Build Meta from Folder
-
-4. Optional: Sync File Paths if ROMs moved
-
-5. Add box art using SNS or GameTDB flows
-
-6. Save Changes
-"@
-    [void]$nScen.Nodes.Add("Build collection from ROM folder")
-    
-    $script:__wfContent["SNES ROM headers explained"] = @"
-SCENARIO: How Read SNES ROM Headers works (and what not to do)
-
-What the tool does
-  Build & Repair -> Read SNES ROM Headers scans .sfc/.smc (and similar)
-  files and reads the internal title stored in the ROM header.
-
-  Those internal names are usually SHORT and ALL CAPS, e.g.:
-    SUPER MARIOWORLD
-    ACCELEBRID
-    ARKANOID DOH IT AGAIN
-
-  That is normal for SNES dumps - it is NOT the pretty display title
-  from the box or No-Intro filename.
-
-What it writes (under media\Tools\ when possible)
-  snes_rom_headers.txt
-    filename_title|internal_header|status|full_path
-  titles_from_rom_headers.txt
-    unique internal titles only (for reference / mapping)
-  bad_rom_headers.txt
-    ROMs with BAD or EMPTY headers (consider clean dumps)
-
-What it does NOT do
-  It does not add game: blocks to your metadata by itself.
-  It does not set file: paths on existing games.
-
-Common mistake
-  Importing titles_from_rom_headers.txt (or similar) via
-  Import Games from List creates game entries that are ALL CAPS
-  and have NO file: path. In the Games list they appear after your
-  real titles (or mixed in after Sort A-Z). Clicking them shows an
-  empty File field.
-
-  Clean Bogus Games will NOT remove them - those titles look like
-  valid words, just uppercase.
-
-How to fix it
-  1. Metadata Tools -> Backup (optional; the next step also backs up)
-  2. Build & Repair -> Remove Games w/ No File
-  3. Confirm the list of titles to delete, then Yes
-  4. Save / reload and confirm File paths on remaining games
-
-Correct uses for header data
-  - Cross-check which ROMs have valid vs bad headers
-  - Build mappings (filename <-> internal name) for other tools
-  - Do NOT treat the internal title list as a full game list
-
-Build Meta from Folder uses ROM filenames for game: and file: -
-prefer that when creating a collection from a ROM directory.
-"@
-    [void]$nScen.Nodes.Add("SNES ROM headers explained")
-    
-    $script:__wfContent["Add all media types"] = @"
-SCENARIO: Add all asset types (boxFull, logo, fanart, etc.)
-
-1. Image Tools -> Add All Media Types (boxFull, logo, etc.)
-
-2. This scans all asset folders and adds paths for:
-   - assets.box_front (box2dfront/)
-   - assets.box_full (box2dfull/)
-   - assets.boxFull (boxFull/) <- YOUR THEME
-   - assets.box_back (box2dback/)
-   - assets.screenshot (screenshot/)
-   - assets.video (videos/)
-   - assets.logo (wheel/)
-   - assets.titlescreen (titlescreen/)
-   - assets.fanart (fanart/)
-   - assets.cartridge (cartridge/)
-   - assets.steamgrid (steamgrid/)
-   - assets.marquee (marquee/)
-   - assets.banner (banner/)
-
-3. Apply Changes -> Save Changes
-"@
-    [void]$nScen.Nodes.Add("Add all media types")
-    
-    $nTools = $tree.Nodes.Add("Tool reference")
-    
-    $script:__wfContent["Collections"] = @"
-COLLECTIONS
-
-Create  - New folder + metadata .txt + media subfolders
-Add     - Attach an existing Pegasus metadata file
-Remove  - Drop collection from the list (does not delete files)
-Refresh - Reload list
-Load    - Open selected collection into the editor
-"@
-    [void]$nTools.Nodes.Add("Collections")
-    
-    $script:__wfContent["Metadata Tools"] = @"
-METADATA TOOLS
-
-Check Health         - Counts games, box art, missing images
-Statistics           - Collection stats
-Find Missing Covers  - missing_covers.txt report
-Fix Duplicates       - Clean duplicate game blocks
-Backup / Restore     - .bkup.txt safety copies
-Refresh              - Reload collection list
-
-See the About page in this Guide for version and credits.
-"@
-    [void]$nTools.Nodes.Add("Metadata Tools")
-    
-    $script:__wfContent["Image Tools"] = @"
-IMAGE TOOLS
-
-Rename Images to Match Game Names
-Update Metadata Names from Images
-Add Box Art to Metadata
-Add All Media Types (boxFull, logo, etc.)  <- NEW
-Convert PNG/JPG (all or selected)
-Convert JPG to PNG (Pick Any Folder)  <- NEW: any folder, updates metadata
-Convert Illustrator (.ai) to PNG  <- NEW: needs Illustrator or Ghostscript
-Update Metadata Extensions to PNG/JPG
-"@
-    [void]$nTools.Nodes.Add("Image Tools")
-    
-    $script:__wfContent["SNS Code Tools"] = @"
-SNS CODE TOOLS
-
-From XML / From Images  - Build SNS code list
-Map by Product Code     - Match 4-letter code inside title
-Map by Titles File      - sns_titles.txt: SNS-XXXX-USA=Game Title
-Create SNS Mapping      - Auto (titles then product code)
-View SNS Mapping
-DL SNS Titles DB        - Downloads GameDB-SNES checksum database
-Match ROMs by Checksum  - Matches ROMs to real titles by CRC32,
-                          since SNES has no SNS-code database online
-Add Box Art (Mapping)   - Paths from mapping
-Add Box Art (Game Name) - Paths from game-named images
-Load SNS File / Clear List / SNS Stats
-"@
-    [void]$nTools.Nodes.Add("SNS Code Tools")
-    
-    $script:__wfContent["Game ID Tools"] = @"
-GAME ID TOOLS
-
-Extract Game IDs from image filenames
-Create Game ID Mapping
-Apply Game IDs into metadata
-Console ID Reference
-"@
-    [void]$nTools.Nodes.Add("Game ID Tools")
-    
-    $script:__wfContent["GameTDB Tools"] = @"
-GAMETDB TOOLS
-
-GameTDB (gametdb.com) has no official REST API.
-This tool uses their public downloads and art CDN.
-
-Platforms
-  Wii, GameCube, Wii U, Switch, 3DS, DS, PS3
-
-Download Titles DB
-  - Fetches platform titles list (e.g. wiitdb.txt)
-  - Saves gametdb_<platform>_titles.txt under media/Tools
-
-Download Covers by ID
-  - For each game with game_id in the current collection
-  - Downloads cover from art.gametdb.com into box2dfront
-
-Download Cover Pack...
-  - System + multi cover types + primary region
-  - Dialog shows the currently selected collection name
-  - Options: current collection only (game_id on this platform),
-    only missing art (front / boxFull / box_full / back),
-    region fallback, save into media folders, write asset paths,
-    full covers -> boxFull (Unicovers) or box2dfull
-  - Media folders: box2dfront / boxFull or box2dfull / box2dback / disc
-  - Writes assets.box_front / boxFull or box_full / box_back / cartridge
-  - Failures logged to failed_covers.csv (media/Tools or out folder)
-  - Skips files that already exist; abortable progress window
-
-  When is a collection required?
-  - YES if any of these are checked (defaults are on):
-      Current collection only
-      Save into media folders
-      Write asset paths into metadata
-  - NO if all three are unchecked: downloads the full platform
-    list into the Output folder you choose
-  - Only missing art uses the selected collection's metadata
-    to decide what is already present. With no collection,
-    it cannot skip by metadata (still skips if the image file
-    already exists on disk).
-
-  Collection only + platform
-  - Only game_id values that also appear in the chosen system's
-    titles list are downloaded. A Wii collection will not drive
-    Nintendo DS downloads. Pick the system that matches the
-    selected collection.
-
-Download Cover Pack... - "Download from" dropdown
-  - GameTDB (default, described above) or Libretro-Thumbnails
-  - Libretro-Thumbnails: free box art from
-    github.com/libretro-thumbnails, no login or API key
-      - Boxart only for now (no back covers on this source)
-      - No GameTDB-style ID - games are matched by title.
-        Region tags in filenames, e.g. (USA)/(Europe)/(Japan),
-        are ignored automatically when matching
-      - Same Only missing / Save into media / Write asset paths /
-        boxFull / Rename to title / Convert to PNG options apply
-      - Uses one GitHub API call per system to list available
-        files (not one per game), cached for the session.
-        Unauthenticated GitHub API calls are rate-limited to
-        about 60/hour per IP - if a system's list comes back
-        empty, wait a bit and try again
-      - Collection only: matches by normalized game title against
-        this collection's "game:" entries (game_id is not needed
-        or used for this source)
-
-Lookup Title by ID / Open GameTDB Page / Apply Titles
-Fill Missing Box Art Paths / DL Covers from Game List
-
-SNES (SNS-XXXX-USA) is not on GameTDB art CDN -
-use SNS Code Tools for those.
-"@
-    [void]$nTools.Nodes.Add("GameTDB Tools")
-
-    $script:__wfContent["Hash Match Tools"] = @"
-HASH MATCH TOOLS
-
-Identifies games by the exact CRC32 checksum of the ROM file itself,
-instead of guessing from filenames or titles. This is the same engine
-SNS Code Tools' "Match ROMs by Checksum" already uses for SNES (via
-GameDB-SNES), generalized here to any platform using standard
-No-Intro / Redump / TOSEC DAT files.
-
-Import DAT File...
-  - Pick a .dat/.xml file you've downloaded yourself from
-    datomatic.no-intro.org or redump.org (no login/API is scripted
-    here - these sites require a manual download)
-  - Parses every <game name="..."><rom crc="..."/></game> entry into
-    a CRC32 -> title lookup, saved as <name>_dat_titles.json in the
-    collection's media/Tools folder for reuse
-  - You choose the short name (e.g. "NES", "PSX") used for the file
-
-Match by Checksum
-  - Pick which imported database to use (if more than one), then a
-    folder of ROMs to check
-  - Computes each file's real CRC32 and looks it up - no filename or
-    title guessing involved at all, so mismatched/renamed files still
-    match correctly
-  - Optional: strip a 512-byte copier header before hashing (only
-    needed for platforms like SNES that have one - leave off for
-    most platforms, since No-Intro/Redump hash files as distributed)
-  - Produces rom_checksum_report_<db>.txt (every file, matched or
-    not) and checksum_titles_<db>.txt (KEY=Title, keyed by ROM
-    filename) - same non-destructive, report-first shape as the
-    SNES-specific tool
-  - If a collection is loaded: also cross-checks each hash-confirmed
-    title against that game's CURRENT metadata title (matched by the
-    file: field) and flags any mismatch as "TITLE MISMATCH" in the
-    report - catches real typos/mislabels/wrong-region titles with
-    certainty, for you to review and fix by hand. Nothing is changed
-    in metadata automatically.
-
-Check RetroAchievements...
-  - Requires a RetroAchievements username + Web API key under
-    Settings -> API Keys (free account; key at
-    retroachievements.org/settings)
-  - For each ROM: computes its MD5, resolves it to a RetroAchievements
-    game ID by hash (same "identify by exact file content" principle
-    as Match by Checksum, just against RA's own hash database instead
-    of a No-Intro DAT), then pulls that game's achievement count and
-    how many the configured user has unlocked
-  - CAVEAT: a plain file MD5 only matches RA's hash for cartridge-style
-    platforms (SNES, Genesis, GB/GBA, N64, etc.) - disc-based systems
-    and a few others (NES, PSX, Sega CD) use special hashing rules
-    this tool doesn't replicate, so expect "no match" there even for
-    games RA does support. RetroAchievements' own RAHasher tool is the
-    correct way to hash those.
-  - Report-only: writes retroachievements_report.txt (filename, md5,
-    RA game ID, title, unlocked/total, completion %) - never touches
-    metadata
-"@
-    [void]$nTools.Nodes.Add("Hash Match Tools")
-
-    $script:__wfContent["TheCoverProject & SteamGridDB"] = @"
-DOWNLOAD COVER PACK - OTHER SITES
-
-Same "Download Cover Pack..." dialog as GameTDB/Libretro, via the
-Site dropdown at the top.
-
-TheCoverProject
-  - No API, blocks scripted access (Cloudflare) - System/Region are
-    hidden since neither applies (title search only, no filters)
-  - Click Start to scan for games missing box_front art and get a
-    list of ready-made search links - opens a separate assist
-    window instead of downloading automatically
-  - Double-click a row (or select + Open Selected) to search that
-    game on the actual site in your browser
-  - Assign Saved Cover: pick the file you saved, then say whether
-    it's a Box Front, Box Full, or Box Back - no renaming needed,
-    the app already knows which game it's for. TheCoverProject
-    only lists full box scans for some platforms, so a Box Full
-    pick offers to crop it into Front/Back/Thumb right there
-  - No Cover / Retry: mark a game as checked-with-nothing-found
-    (timestamped, persisted per collection) so it stops showing up
-    as open work, or clear that mark and re-check any time
-  - Match & Import in the same window matches saved files back to
-    games by title and imports them, converting to PNG
-
-SteamGridDB
-  - Has a real API - fully automated like GameTDB, no browser tabs
-  - Requires a free API key: steamgriddb.com/profile/preferences/api,
-    entered under Settings -> API Keys
-  - System/Region are hidden (SteamGridDB has neither) - the cover
-    types list is replaced with SteamGridDB's own categories:
-      Grids  -> assets.steamgrid (steamgrid/)   [checked by default]
-      Logos  -> assets.logo (wheel/)            [checked by default]
-      Heroes -> assets.background (hero/) - closest official match,
-        not an exact equivalent to SteamGridDB's own "Hero" concept
-      Icons  -> assets.tile (tile/) - Pegasus has no dedicated icon
-        field; this is a loose fit, check your theme actually reads
-        "tile" before relying on it
-  - Matches by game title (like Libretro-Thumbnails/TheCoverProject),
-    not GameTDB's game_id - works for any collection regardless of
-    platform ID scheme
-  - Same Only missing / Save into media / Write asset paths /
-    Rename to title / Convert to PNG options apply
-  - Confirmed "no art of this type" results are remembered per
-    collection (steamgriddb_no_art_marks.json) and skipped on
-    future scans for 30 days, same idea as GameTDB's tracking
-  - Repeated real errors (not "no results") stop the whole run
-    after 8 in a row, logged clearly rather than mislabeling
-    hundreds of games as having no art
-"@
-    [void]$nTools.Nodes.Add("TheCoverProject & SteamGridDB")
-
-    $script:__wfContent["Build & Repair Tools"] = @"
-BUILD & REPAIR TOOLS
-
-Scan Folder for Games - list ROM filenames from a folder
-Titles from Covers - build a title list from box art names
-Build Meta from Folder - create game: entries from ROMs on disk
-Import Games from List - import titles from a text list
-Sync File Paths - match file: paths to ROMs in the folder
-Export Game List / Export Missing List
-DL Covers from Mapping - download covers using a mapping file
-Read SNES ROM Headers - scan SNES ROM internal titles into Tools files
-  (does NOT add games to metadata - see scenario "SNES ROM headers explained")
-
-Strip All Box Art Paths - remove assets.box_front lines only
-Strip All Assets - remove every assets.* line
-Hide Multi-Disc + M3U - (disc N) files -> .m3u + ignore-files
-Backup All Meta (Zip) - zip all metadata under a root folder
-Edit Genres - multi-select rename/merge genre tags
-Full File Check Report - ROMs vs metadata vs media gaps
-Clean Bogus Games - remove garbled/junk titles
-  (symbol-heavy garbage only - does NOT remove ALL CAPS header titles)
-Sort Games A-Z - reorder all game blocks alphabetically by title
-  (uses sort_title when set, otherwise game title; case-insensitive)
-Remove Games w/ No File - delete game: blocks that have no file: path
-  Use this when the Games list has extra ALL CAPS names (SNES internal
-  headers) that show no ROM path when selected.
-
-Import EmulationStation XML
-  Imports from gamelist.xml into the current collection.
-  Prompt: "Only import games whose ROM exists on disk?"
-  Yes (recommended) = skip XML entries with no matching file
-  No = import every game from the XML
-  Also converts ES ratings (0.85) to percent (85%).
-
-Export EmulationStation XML
-  Writes gamelist.xml next to the collection metadata.
-
-Backup Orphan Media
-  Finds media files that do not match any ROM or game title
-  and moves them to: <collection>\media.backup\<type>\
-  Files are moved, not deleted (safe cleanup after scraping).
-
-Batch Import Library
-  Pick a library root folder (contains system folders).
-  Finds every gamelist.xml, creates/adds collections as needed,
-  and imports games. Same "ROM must exist" option as single import.
-  After batch import: open a collection -> Image Tools ->
-  Add All Media Types to link box art, screenshots, etc.
-
-Typical post-scrape workflow
-  1. Batch Import Library (or Import ES XML on one collection)
-  2. Image Tools -> Add All Media Types
-  3. Full File Check Report
-  4. Backup Orphan Media (optional cleanup)
-"@
-    [void]$nTools.Nodes.Add("Build & Repair Tools")
-
-    $script:__wfContent["Import from EmulationStation / Skraper"] = @"
-IMPORT FROM EMULATIONSTATION / SKRAPER
-
-Bellerophon-style workflow built into this tool:
-
-1. Scrape with Skraper (or similar) so each system folder has:
-   - ROMs
-   - gamelist.xml
-   - media\ (box2dfront, screenshot, wheel, etc.)
-
-2. Single collection:
-   Build & Repair -> Import EmulationStation XML
-   Choose Yes when asked to only import games whose ROM exists.
-
-3. Whole library at once:
-   Build & Repair -> Batch Import Library
-   Select the root folder that contains your system folders.
-
-4. Link media:
-   Image Tools -> Add All Media Types
-   Matches files in media subfolders to game titles / ROM names.
-
-5. Verify:
-   Full File Check Report
-
-6. Optional cleanup:
-   Backup Orphan Media
-   Moves unmatched art to media.backup (not deleted).
-"@
-    [void]$nTools.Nodes.Add("Import from EmulationStation / Skraper")
-    
-    $nFiles = $tree.Nodes.Add("Files created")
-    $script:__wfContent["Files created"] = @"
-FILES WRITTEN NEXT TO YOUR METADATA
-
-sns_codes_from_images.txt
-sns_codes_from_xml.txt
-sns_mappings.txt
-sns_titles.txt
-game_ids_from_images.txt
-game_id_mappings.txt
-missing_covers.txt
-games_list_export.txt
-games_from_folder.txt
-games_from_folder_paths.txt
-unresolved_cover_names.txt
-titles_from_covers.txt
-titles_from_rom_headers.txt
-filename.bkup.txt
-media.backup\ (orphan media moved by Backup Orphan Media)
-full_file_check_report.txt
-"@
-    
-    # Select intro by default
-    if ($nIntro) { $tree.SelectedNode = $nIntro }
-    $tree.ExpandAll()
-    
-    if ($script:__wfContent.ContainsKey("Introduction")) {
-        $detail.Clear()
-        $detail.AppendText([string]$script:__wfContent["Introduction"])
+function Get-GameTDBPlatformKey {
+    param([string]$GameId)
+    if ([string]::IsNullOrWhiteSpace($GameId)) { return $script:lastGameTdbPlatform }
+    $id = $GameId.Trim().ToUpper()
+    if ($id -match '^(BLES|BLUS|BLAS|BLJM|NPUB|NPEB|NPHB)') { return "ps3" }
+    if ($id -match '^(HAC|XCI)') { return "switch" }
+    if ($id -match '^[A-Z0-9]{16}$') { return "switch" }
+    if ($id -match '^[A-Z0-9]{4}$' -and $id -notmatch '^[A-Z]{3}[EJP]') {
+        return "ds"
     }
-    
-    $tree.Add_AfterSelect({
-        $node = $this.SelectedNode
-        if ($null -eq $node) { return }
-        $title = $node.Text
-        $d = $script:__wfDetail
-        if ($null -eq $d) { return }
-        $d.Clear()
-        if ($script:__wfContent -and $script:__wfContent.ContainsKey($title)) {
-            $d.SelectionColor = $script:theme.text
-            $d.AppendText([string]$script:__wfContent[$title])
-        } else {
-            $d.SelectionColor = $script:theme.textDim
-            $d.AppendText("Select a topic on the left.")
-        }
-        $d.SelectionStart = 0
-        $d.ScrollToCaret()
-    })
-    $script:__wfDetail = $detail
-    
-    $footer = New-Object System.Windows.Forms.Panel
-    $footer.Dock = "Fill"
-    $footer.BackColor = $script:theme.background
-    $root.Controls.Add($footer, 0, 1)
-    $root.SetColumnSpan($footer, 2)
-    
-    $lblDev = New-Object System.Windows.Forms.Label
-    $lblDev.Text = "Developed by jacktrabblt72380  |  v$($script:version)"
-    $lblDev.Location = New-Object System.Drawing.Point(12, 16)
-    $lblDev.Size = New-Object System.Drawing.Size(500, 24)
-    $lblDev.ForeColor = $script:theme.textDim
-    $lblDev.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $footer.Controls.Add($lblDev)
-    
-    $btnExpand = Create-Button "Expand All" 520 12 100 30
-    $btnExpand.Add_Click({ $tree.ExpandAll() })
-    $footer.Controls.Add($btnExpand)
-    
-    $btnCollapse = Create-Button "Collapse All" 630 12 100 30
-    $btnCollapse.Add_Click({ $tree.CollapseAll() })
-    $footer.Controls.Add($btnCollapse)
-    
-    $btnOK = Create-Button "Close" 850 12 100 30
-    $btnOK.Add_Click({ $dlg.Close() })
-    $footer.Controls.Add($btnOK)
-    
-    $dlg.ShowDialog()
+    if ($id -match '^[A-Z0-9]{6}$') {
+        $first = $id[0]
+        if ($first -eq 'G') { return "wii" }
+        if ($first -eq 'R' -or $first -eq 'S' -or $first -eq 'H') { return "wii" }
+        return "wii"
+    }
+    if ($id -match '^SNS-') { return $null }
+    return $script:lastGameTdbPlatform
 }
 
-# ============================================================================
-# ABOUT DIALOG
-# ============================================================================
-function ShowAboutDialog {
+function Get-GameTDBShortId {
+    param([string]$GameId)
+    if ([string]::IsNullOrWhiteSpace($GameId)) { return $null }
+    $id = $GameId.Trim().ToUpper()
+    if ($id -match '^[A-Z]{3,4}-([A-Z0-9]{4})-') { return $matches[1] }
+    if ($id -match '^[A-Z0-9]{4,16}$') { return $id }
+    return $id
+}
+
+function Select-GameTDBPlatform {
+    $keys = @($script:gameTdbPlatforms.Keys | Sort-Object)
     $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "About Metadata Repair Tool"
-    $dlg.Size = New-Object System.Drawing.Size(500, 550)
+    $dlg.Text = "Select GameTDB Platform"
+    $dlg.Size = New-Object System.Drawing.Size(360, 220)
     $dlg.StartPosition = "CenterParent"
     $dlg.FormBorderStyle = "FixedDialog"
     $dlg.MaximizeBox = $false
     $dlg.BackColor = $script:theme.background
     $dlg.ForeColor = $script:theme.text
-    
-    $mainPanel = New-Object System.Windows.Forms.Panel
-    $mainPanel.Dock = "Fill"
-    $mainPanel.BackColor = $script:theme.background
-    $mainPanel.Padding = New-Object System.Windows.Forms.Padding(15)
-    $dlg.Controls.Add($mainPanel)
-    
-    $textBox = New-Object System.Windows.Forms.RichTextBox
-    $textBox.Dock = "Fill"
-    $textBox.ReadOnly = $true
-    $textBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $textBox.BackColor = $script:theme.editor
-    $textBox.ForeColor = $script:theme.text
-    $textBox.BorderStyle = "FixedSingle"
-    $textBox.ScrollBars = "Vertical"
-    
-    $textBox.SelectionColor = $script:theme.accent
-    $textBox.AppendText("Metadata Repair Tool  v$($script:version)" + "`n`n")
-    
-    $textBox.SelectionColor = $script:theme.success
-    $textBox.AppendText("Application developed by jacktrabblt72380" + "`n`n")
-    
-    $textBox.SelectionColor = $script:theme.textDim
-    $textBox.AppendText("Complete metadata management tool for Pegasus frontend." + "`n`n")
-    
-    $textBox.SelectionColor = $script:theme.accent
-    $textBox.AppendText("Features:" + "`n")
-    $textBox.SelectionColor = $script:theme.text
-    $textBox.AppendText("  Add/Remove/Edit Pegasus collections" + "`n")
-    $textBox.AppendText("  View and edit metadata files directly" + "`n")
-    $textBox.AppendText("  Auto-load collections on selection" + "`n")
-    $textBox.AppendText("  Complete workflow guide for all scenarios" + "`n")
-    $textBox.AppendText("  Check metadata health and find issues" + "`n")
-    $textBox.AppendText("  Show detailed statistics" + "`n")
-    $textBox.AppendText("  Find missing cover art" + "`n")
-    $textBox.AppendText("  Add box art to games automatically" + "`n")
-    $textBox.AppendText("  Rename images to match game names" + "`n")
-    $textBox.AppendText("  Update metadata names to match images" + "`n")
-    $textBox.AppendText("  Fix duplicate game entries" + "`n")
-    $textBox.AppendText("  SNS Code Tools (map by product code, titles, dual Add Box Art)" + "`n")
-    $textBox.AppendText("  Game ID Tools (Extract, Create Mapping, Apply)" + "`n")
-    $textBox.AppendText("  GameTDB Tools (Titles, Covers by ID, Covers from Game List)" + "`n")
-    $textBox.AppendText("  Build & Repair Tools (scan folder, build meta, import list, sync paths)" + "`n")
-    $textBox.AppendText("  Download covers from mapping or game list" + "`n")
-    $textBox.AppendText("  PNG to JPG and JPG to PNG conversion" + "`n")
-    $textBox.AppendText("  Backup / Restore (.bkup.txt)" + "`n")
-    $textBox.AppendText("  Collapsible tool sections + workflow guide" + "`n")
-    $textBox.AppendText("  ALL ASSET TYPES SUPPORTED: boxFront, boxFull, boxFull (theme), boxBack, screenshot, video, logo, titlescreen, fanart, cartridge, steamgrid, marquee, banner" + "`n")
-    $textBox.AppendText("  ALL SCRIPTS EMBEDDED - No external files!" + "`n`n")
-    
-    $textBox.SelectionColor = $script:theme.accentDark
-    $textBox.AppendText("Sections:" + "`n")
-    $textBox.SelectionColor = $script:theme.text
-    $textBox.AppendText("  Collections - Create/Add/Remove/Load" + "`n")
-    $textBox.AppendText("  Metadata Tools - Health, Stats, Missing, Duplicates, Backup" + "`n")
-    $textBox.AppendText("  Image Tools - Rename, Update Names, Add Box Art, All Media Types, Conversion" + "`n")
-    $textBox.AppendText("  SNS Code Tools - Extract, Map, Add Box Art" + "`n")
-    $textBox.AppendText("  Game ID Tools - Extract, Map, Apply, Console Reference" + "`n")
-    $textBox.AppendText("  GameTDB Tools - Titles, Covers, Lookup, Apply Titles" + "`n")
-    $textBox.AppendText("  Build & Repair Tools - Scan, Build, Import, Sync, DL covers" + "`n`n")
-    
-    $textBox.SelectionColor = $script:theme.success
-    $textBox.AppendText("Developed by jacktrabblt72380" + "`n`n")
-    $textBox.SelectionColor = $script:theme.textDim
-    $textBox.AppendText("Note: All changes and updates should always be listed in the developer log (Settings -> Dev Log)." + "`n")
-    
-    $mainPanel.Controls.Add($textBox)
-    
-    $btnPanel = New-Object System.Windows.Forms.Panel
-    $btnPanel.Dock = "Bottom"
-    $btnPanel.Height = 50
-    $btnPanel.BackColor = $script:theme.background
-    $btnPanel.Padding = New-Object System.Windows.Forms.Padding(10)
-    $mainPanel.Controls.Add($btnPanel)
 
-    $btnOK = Create-Button "OK" 200 8 100 35
-    $btnOK.BackColor = $script:theme.accentDark
-    $btnOK.ForeColor = [System.Drawing.Color]::White
-    $btnOK.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $btnOK.Add_Click({ $dlg.Close() })
-    $btnPanel.Controls.Add($btnOK)
-
-    # Small theme switch icon: Steam (S) <-> Windows (W)
-    $btnTheme = New-Object System.Windows.Forms.Button
-    $btnTheme.Size = New-Object System.Drawing.Size(36, 32)
-    $btnTheme.Location = New-Object System.Drawing.Point(12, 8)
-    $btnTheme.FlatStyle = "Flat"
-    $btnTheme.FlatAppearance.BorderSize = 1
-    $btnTheme.FlatAppearance.BorderColor = $script:theme.textDim
-    $btnTheme.BackColor = $script:theme.button
-    $btnTheme.ForeColor = [System.Drawing.Color]::White
-    $btnTheme.Font = New-Object System.Drawing.Font("Segoe UI", 11, [System.Drawing.FontStyle]::Bold)
-    $btnTheme.Cursor = [System.Windows.Forms.Cursors]::Hand
-    $btnTheme.TabStop = $false
-    $tt = New-Object System.Windows.Forms.ToolTip
-    $lblTheme = New-Object System.Windows.Forms.Label
-    $lblTheme.Text = "Theme"
-    $lblTheme.Location = New-Object System.Drawing.Point(50, 14)
-    $lblTheme.Size = New-Object System.Drawing.Size(50, 20)
-    $lblTheme.ForeColor = $script:theme.textDim
-    $lblTheme.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-    if ($script:themeMode -eq "Windows") {
-        $btnTheme.Text = "W"
-        $tt.SetToolTip($btnTheme, "Theme: Windows (click for Steam)")
-    } else {
-        $btnTheme.Text = "S"
-        $tt.SetToolTip($btnTheme, "Theme: Steam (click for Windows)")
+    $lb = New-Object System.Windows.Forms.ListBox
+    $lb.Location = New-Object System.Drawing.Point(20, 20)
+    $lb.Size = New-Object System.Drawing.Size(300, 110)
+    $lb.BackColor = $script:theme.editor
+    $lb.ForeColor = $script:theme.text
+    foreach ($k in $keys) {
+        [void]$lb.Items.Add("$k  -  $($script:gameTdbPlatforms[$k].Label)")
     }
-    $btnTheme.Add_Click({
-        if ($script:themeMode -eq "Windows") {
-            Set-AppThemeMode -Mode "Steam"
-            $btnTheme.Text = "S"
-            $tt.SetToolTip($btnTheme, "Theme: Steam (click for Windows)")
-        } else {
-            Set-AppThemeMode -Mode "Windows"
-            $btnTheme.Text = "W"
-            $tt.SetToolTip($btnTheme, "Theme: Windows (click for Steam)")
+    $idx = [array]::IndexOf($keys, $script:lastGameTdbPlatform)
+    if ($idx -ge 0) { $lb.SelectedIndex = $idx } else { $lb.SelectedIndex = 0 }
+    $dlg.Controls.Add($lb)
+
+    $chosen = $null
+    $ok = Create-Button "OK" 80 140 90 30
+    $ok.Add_Click({
+        if ($lb.SelectedIndex -ge 0) {
+            $script:__gtdbPick = $keys[$lb.SelectedIndex]
+            $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+            $dlg.Close()
         }
-        $dlg.BackColor = $script:theme.background
-        $dlg.ForeColor = $script:theme.text
-        $mainPanel.BackColor = $script:theme.background
-        $btnPanel.BackColor = $script:theme.background
-        $textBox.BackColor = $script:theme.editor
-        $textBox.ForeColor = $script:theme.text
-        $btnTheme.BackColor = $script:theme.button
-        $btnTheme.ForeColor = [System.Drawing.Color]::White
-        $btnTheme.FlatAppearance.BorderColor = $script:theme.textDim
-        $btnOK.BackColor = $script:theme.accentDark
-        $lblTheme.ForeColor = $script:theme.textDim
     })
-    $btnPanel.Controls.Add($btnTheme)
-    $btnPanel.Controls.Add($lblTheme)
-    
-    $dlg.ShowDialog()
-}
+    $dlg.Controls.Add($ok)
+    $cn = Create-Button "Cancel" 190 140 90 30
+    $cn.Add_Click({ $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $dlg.Close() })
+    $dlg.Controls.Add($cn)
 
-# ============================================================================
-# CONSOLE ID LIST
-# ============================================================================
-function ShowConsoleIDList {
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Console ID Reference"
-    $dlg.Size = New-Object System.Drawing.Size(500, 600)
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.BackColor = $script:theme.background
-    $dlg.ForeColor = $script:theme.text
-    
-    $mainPanel = New-Object System.Windows.Forms.Panel
-    $mainPanel.Dock = "Fill"
-    $mainPanel.BackColor = $script:theme.background
-    $mainPanel.Padding = New-Object System.Windows.Forms.Padding(15)
-    $dlg.Controls.Add($mainPanel)
-    
-    $textBox = New-Object System.Windows.Forms.RichTextBox
-    $textBox.Dock = "Fill"
-    $textBox.ReadOnly = $true
-    $textBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
-    $textBox.BackColor = $script:theme.editor
-    $textBox.ForeColor = $script:theme.text
-    $textBox.BorderStyle = "FixedSingle"
-    $textBox.ScrollBars = "Vertical"
-    
-    $textBox.SelectionColor = $script:theme.accent
-    $textBox.AppendText("CONSOLE ID REFERENCE" + "`n`n")
-    $textBox.SelectionColor = $script:theme.textDim
-    $textBox.AppendText("GameTDB Console ID Prefixes:" + "`n`n")
-    
-    $textBox.SelectionColor = $script:theme.text
-    foreach ($key in $script:consoleIDs.Keys | Sort-Object) {
-        $textBox.AppendText("  " + $key + "  ->  " + $script:consoleIDs[$key] + "`n")
+    $script:__gtdbPick = $null
+    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK -and $script:__gtdbPick) {
+        $script:lastGameTdbPlatform = $script:__gtdbPick
+        return $script:__gtdbPick
     }
-    
-    $textBox.AppendText("`n")
-    $textBox.SelectionColor = $script:theme.accentDark
-    $textBox.AppendText("Example Game IDs:" + "`n")
-    $textBox.SelectionColor = $script:theme.text
-    $textBox.AppendText("  SNS-ABCD-USA  ->  SNES game, USA region" + "`n")
-    $textBox.AppendText("  NUS-ABCD-USA  ->  N64 game, USA region" + "`n")
-    $textBox.AppendText("  RVL-ABCD-USA  ->  Wii game, USA region" + "`n")
-    $textBox.AppendText("  HAC-ABCD-USA  ->  Switch game, USA region" + "`n")
-    
-    $mainPanel.Controls.Add($textBox)
-    
-    $btnPanel = New-Object System.Windows.Forms.Panel
-    $btnPanel.Dock = "Bottom"
-    $btnPanel.Height = 50
-    $btnPanel.BackColor = $script:theme.background
-    $btnPanel.Padding = New-Object System.Windows.Forms.Padding(10)
-    $mainPanel.Controls.Add($btnPanel)
-    
-    $btnOK = Create-Button "Close" 200 8 100 35
-    $btnOK.BackColor = $script:theme.accentDark
-    $btnOK.ForeColor = [System.Drawing.Color]::White
-    $btnOK.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-    $btnOK.Add_Click({ $dlg.Close() })
-    $btnPanel.Controls.Add($btnOK)
-    
-    $dlg.ShowDialog()
+    return $null
 }
 
-# ============================================================================
-# EXTRACT GAME IDs FROM IMAGES
-# ============================================================================
-function ExtractGameIDsFromImages {
+function Download-GameTDBTitles {
     $c = Get-Col
     if (-not $c) { return }
-    
+
+    $plat = Select-GameTDBPlatform
+    if (-not $plat) {
+        Log-Message "GameTDB titles download cancelled." "Yellow"
+        return
+    }
+
+    $info = $script:gameTdbPlatforms[$plat]
+    Log-Message "========================================" "Cyan"
+    Log-Message "DOWNLOADING GAMETDB TITLES - $($info.Label)" "Cyan"
+    Log-Message "========================================" "Cyan"
+
+    try {
+        $outDir = Get-ToolsFolder $c.mediaPath
+        if (-not $outDir) { $outDir = Split-Path $c.metadataPath -Parent }
+        $outFile = Join-Path $outDir "gametdb_${plat}_titles.txt"
+
+        Log-Message "Fetching: $($info.TitlesUrl)" "White"
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        $data = $wc.DownloadString($info.TitlesUrl)
+        $wc.Dispose()
+
+        $data | Out-File -FilePath $outFile -Encoding UTF8
+        $lines = @($data -split "`r?`n" | Where-Object { $_ -match '^\s*[A-Z0-9]' })
+        $map = @{}
+        foreach ($line in $lines) {
+            if ($line -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
+                $map[$matches[1].Trim()] = $matches[2].Trim()
+            }
+        }
+        $script:gameTdbTitlesCache[$plat] = $map
+        $script:lastGameTdbPlatform = $plat
+
+        Log-Message "Saved: $outFile" "Green"
+        Log-Message "Parsed: $($map.Count) titles" "Green"
+        Log-Message "Platform set to: $plat" "Cyan"
+    } catch {
+        Log-Message "ERROR downloading titles: $_" "Red"
+        Log-Message "Check internet access and that GameTDB is reachable." "Yellow"
+    }
+}
+
+function Load-GameTDBTitlesCache {
+    param([string]$Platform)
+    if ($script:gameTdbTitlesCache.ContainsKey($Platform) -and $script:gameTdbTitlesCache[$Platform].Count -gt 0) {
+        return $script:gameTdbTitlesCache[$Platform]
+    }
+    $c = Get-Col
+    if ($c) {
+        $metaDir = Split-Path $c.metadataPath -Parent
+        $outFile = Resolve-ToolsFile $c.mediaPath "gametdb_${Platform}_titles.txt" $metaDir
+        if ($outFile -and (Test-Path $outFile)) {
+            $map = @{}
+            Get-Content $outFile | ForEach-Object {
+                if ($_ -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
+                    $map[$matches[1].Trim()] = $matches[2].Trim()
+                }
+            }
+            $script:gameTdbTitlesCache[$Platform] = $map
+            return $map
+        }
+    }
+    return @{}
+}
+
+function Lookup-GameTDBTitle {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $gameId = ""
+    if ($script:fieldControls -and $script:fieldControls.ContainsKey("game_id")) {
+        $gameId = $script:fieldControls["game_id"].Text.Trim()
+    }
+    if ([string]::IsNullOrWhiteSpace($gameId) -and $script:gameListBox -and $script:gameListBox.SelectedItem) {
+        $title = $script:gameListBox.SelectedItem.ToString()
+        $g = $script:parsedGames | Where-Object { $_.Title -eq $title } | Select-Object -First 1
+        if ($g -and $g.Fields.ContainsKey("game_id")) { $gameId = [string]$g.Fields["game_id"] }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($gameId)) {
+        $input = Show-InputBox "Enter GameTDB / product Game ID (e.g. RMGE01):" "Lookup Title" ""
+        if ([string]::IsNullOrWhiteSpace($input)) { return }
+        $gameId = $input.Trim()
+    }
+
+    $shortId = Get-GameTDBShortId $gameId
+    $plat = Get-GameTDBPlatformKey $gameId
+    if (-not $plat) {
+        Log-Message "No GameTDB platform mapping for: $gameId (SNES codes use SNS tools)" "Yellow"
+        return
+    }
+
+    $map = Load-GameTDBTitlesCache $plat
+    if ($map.Count -eq 0) {
+        Log-Message "No titles cache for $plat. Run 'Download Titles DB' first." "Yellow"
+        return
+    }
+
+    $found = $null
+    if ($map.ContainsKey($shortId)) { $found = $map[$shortId] }
+    elseif ($map.ContainsKey($gameId)) { $found = $map[$gameId] }
+
+    if ($found) {
+        Log-Message "GameTDB: $shortId -> $found  [$plat]" "Green"
+        [System.Windows.Forms.MessageBox]::Show("ID: $shortId`nPlatform: $plat`nTitle: $found", "GameTDB Lookup", "OK", "Information")
+    } else {
+        Log-Message "No title found for $shortId on $plat" "Yellow"
+    }
+}
+
+function Get-GameTDBCoverExt {
+    param([string]$Platform, [string]$ArtType = "cover")
+    if ($ArtType -match '^(disc|discHQ|discCustom|discCustomHQ|cover3D)$') { return "png" }
+    $info = $script:gameTdbPlatforms[$Platform]
+    if ($info -and $info.Ext) { return $info.Ext }
+    return "jpg"
+}
+
+function Build-GameTDBCoverUrl {
+    param(
+        [string]$GameId,
+        [string]$ArtType = "cover",
+        [string]$Platform = $null,
+        [string]$Region = $null
+    )
+    $plat = if ($Platform) { $Platform } else { Get-GameTDBPlatformKey $GameId }
+    if (-not $plat) { return $null }
+    if ($plat -eq "gamecube") { $plat = "wii" }
+    $info = $script:gameTdbPlatforms[$plat]
+    if (-not $info) { $info = $script:gameTdbPlatforms["wii"] }
+    $shortId = Get-GameTDBShortId $GameId
+    if (-not $Region) { $Region = Get-GameTDBRegionCode $GameId }
+    $ext = Get-GameTDBCoverExt $plat $ArtType
+    return "https://art.gametdb.com/$($info.ArtPath)/$ArtType/$Region/$shortId.$ext"
+}
+
+function Get-GameTDBCoverTypeDescription {
+    param([string]$CoverType)
+    $map = @{
+        "cover"        = "Standard res (~512x340). Good for boxFront / box2dfront."
+        "coverHQ"      = "High res (~768x680+). Good for boxFront / box2dfront."
+        "coverfullHQ"  = "High-res full wrap (1500px+). Good for boxFull / box2dfull."
+        "coverM"       = "Medium res (~350-450px). Good for thumbnails only."
+        "cover3D"      = "3D box render (~512-768px). Decorative, not a flat scan."
+        "back"         = "Standard res (~512x340). Good for boxBack / box2dback."
+        "backHQ"       = "High res (~768x680+). Good for boxBack / box2dback."
+        "backM"        = "Medium res, smaller file. Good for boxBack (lighter)."
+        "disc"         = "Disc/label art (~512-1000px). Good for disc art."
+        "discCustom"   = "Custom disc art. Use if the official disc art is missing."
+    }
+    if ($map.ContainsKey($CoverType)) { return $map[$CoverType] }
+    return "GameTDB art type from art.gametdb.com."
+}
+
+function Get-GameTDBCoverTypeFolder {
+    param(
+        [string]$CoverType,
+        [switch]$UseBoxFull
+    )
+    switch -Regex ($CoverType) {
+        '^(back|backHQ|backM)$' { return "box2dback" }
+        '^(disc|discCustom|discHQ|discCustomHQ)$' { return "disc" }
+        '^(coverfullHQ)$' {
+            if ($UseBoxFull) { return "boxFull" }
+            return "box2dfull"
+        }
+        default { return "box2dfront" }
+    }
+}
+
+function Get-GameTDBCoverTypeAssetKey {
+    param(
+        [string]$CoverType,
+        [switch]$UseBoxFull
+    )
+    switch -Regex ($CoverType) {
+        '^(back|backHQ|backM)$' { return "assets.box_back" }
+        '^(disc|discCustom|discHQ|discCustomHQ)$' { return "assets.cartridge" }
+        '^(coverfullHQ)$' {
+            if ($UseBoxFull) { return "assets.boxFull" }
+            return "assets.box_full"
+        }
+        default { return "assets.box_front" }
+    }
+}
+
+function Get-GameTDBNoArtStorePath {
+    param($Collection)
+    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
+    $dir = Split-Path $Collection.metadataPath -Parent
+    if (-not $dir) { return $null }
+    return (Join-Path $dir "gametdb_no_art_marks.json")
+}
+
+function Get-GameTDBNoArtMap {
+    param($Collection)
+    $map = @{}
+    $path = Get-GameTDBNoArtStorePath -Collection $Collection
+    if (-not $path -or -not (Test-Path $path)) { return $map }
+    try {
+        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($data -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($assetProp in $data.PSObject.Properties) {
+                $inner = @{}
+                if ($assetProp.Value -is [System.Management.Automation.PSCustomObject]) {
+                    foreach ($idProp in $assetProp.Value.PSObject.Properties) {
+                        $inner[$idProp.Name] = [string]$idProp.Value
+                    }
+                }
+                $map[$assetProp.Name] = $inner
+            }
+        }
+    } catch {}
+    return $map
+}
+
+function Save-GameTDBNoArtMap {
+    param($Collection, [hashtable]$Map)
+    $path = Get-GameTDBNoArtStorePath -Collection $Collection
+    if (-not $path) { return }
+    try {
+        ($Map | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
+    } catch {
+        Log-Message "GameTDB: couldn't save no-art list: $_" "Yellow"
+    }
+}
+
+function Test-GameTDBNoArtFresh {
+    param([hashtable]$Map, [string]$AssetKey, [string]$IdUpper, [int]$StalenessDays = 30)
+    if (-not $Map.ContainsKey($AssetKey)) { return $false }
+    if (-not $Map[$AssetKey].ContainsKey($IdUpper)) { return $false }
+    $iso = $Map[$AssetKey][$IdUpper]
+    try {
+        $dt = [datetime]::Parse($iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+        return ((Get-Date) - $dt).TotalDays -lt $StalenessDays
+    } catch {
+        return $false
+    }
+}
+
+function Get-SafeGameFileName {
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
+    $n = $Title.Trim()
+    $n = $n -replace '[\/:*?"<>|]', ''
+    $n = $n -replace '\s+', ' '
+    $n = $n.Trim().TrimEnd('.')
+    if ($n.Length -gt 120) { $n = $n.Substring(0, 120).Trim().TrimEnd('.') }
+    if ([string]::IsNullOrWhiteSpace($n)) { return $null }
+    return $n
+}
+
+function Convert-ImageFileToPng {
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $Path }
+    if ($Path -match '\.png$') { return $Path }
+    $pngPath = [System.IO.Path]::ChangeExtension($Path, ".png")
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+        try {
+            $img = [System.Drawing.Image]::FromStream($fs)
+            try {
+                $bmp = New-Object System.Drawing.Bitmap $img
+                try {
+                    $bmp.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
+                } finally { $bmp.Dispose() }
+            } finally { $img.Dispose() }
+        } finally { $fs.Close(); $fs.Dispose() }
+        if ((Test-Path -LiteralPath $pngPath) -and ((Get-Item -LiteralPath $pngPath).Length -gt 0)) {
+            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+            return $pngPath
+        }
+    } catch {
+        Log-Message ("PNG convert failed for {0}: {1}" -f $Path, $_.Exception.Message) "Yellow"
+    }
+    return $Path
+}
+
+function Test-CollectionAssetPathExists {
+    param(
+        [string]$AssetPath,
+        $Collection
+    )
+    if ([string]::IsNullOrWhiteSpace($AssetPath) -or -not $Collection) { return $false }
+    $p = $AssetPath.Trim().Trim('"')
+    if ([string]::IsNullOrWhiteSpace($p)) { return $false }
+    try {
+        if ([System.IO.Path]::IsPathRooted($p)) {
+            return (Test-Path -LiteralPath $p)
+        }
+        $try1 = Join-Path (Split-Path $Collection.metadataPath -Parent) $p
+        if (Test-Path -LiteralPath $try1) { return $true }
+        if ($Collection.mediaPath) {
+            $try2 = Join-Path $Collection.mediaPath $p
+            if (Test-Path -LiteralPath $try2) { return $true }
+            $try3 = Join-Path (Split-Path $Collection.mediaPath -Parent) $p
+            if (Test-Path -LiteralPath $try3) { return $true }
+        }
+    } catch {}
+    return $false
+}
+
+function Get-CollectionGameIdMap {
+    $map = @{}
+    $c = Get-Col
+    if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
+    try {
+        $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($content)) { return $map }
+        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
+        foreach ($g in $games) {
+            $title = ""
+            if ($g -match '(?m)^game:\s*(.+)$') { $title = $matches[1].Trim() }
+            $gid = $null
+            if ($g -match '(?m)^game_id:\s*(\S+)') { $gid = $matches[1].Trim() }
+            if (-not $gid) { continue }
+            $short = Get-GameTDBShortId $gid
+            if (-not $short) { $short = $gid }
+            $short = $short.ToUpperInvariant()
+
+            $present = @{}
+            $frontPath = ""
+            $hasFront = $false
+            $hasBoxFull = $false
+            $hasBox_Full = $false
+            $hasBack = $false
+
+            foreach ($m in [regex]::Matches($g, '(?m)^(assets\.[^:]+):\s*(.+)$')) {
+                $akey = $m.Groups[1].Value.Trim()
+                $aval = $m.Groups[2].Value.Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($aval)) { continue }
+                if (Test-CollectionAssetPathExists -AssetPath $aval -Collection $c) {
+                    $present[$akey] = $true
+                    if ($akey -eq "assets.box_front") {
+                        $hasFront = $true
+                        $frontPath = $aval
+                    } elseif ($akey -eq "assets.boxFull") {
+                        $hasBoxFull = $true
+                    } elseif ($akey -eq "assets.box_full") {
+                        $hasBox_Full = $true
+                    } elseif ($akey -eq "assets.box_back") {
+                        $hasBack = $true
+                    }
+                }
+            }
+
+            if (-not $map.ContainsKey($short)) {
+                $map[$short] = @{
+                    Title         = $title
+                    GameId        = $gid
+                    HasBoxFront   = $hasFront
+                    HasBoxFull    = $hasBoxFull
+                    HasBox_Full   = $hasBox_Full
+                    HasBoxBack    = $hasBack
+                    BoxFrontPath  = $frontPath
+                    PresentAssets = $present
+                }
+            }
+        }
+    } catch {
+        Log-Message "Get-CollectionGameIdMap: $_" "Yellow"
+    }
+    return $map
+}
+
+function Get-NormalizedGameTitle {
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return "" }
+    $t = $Title
+    $t = [regex]::Replace($t, '\s*\([^)]*\)', '')
+    $t = [regex]::Replace($t, '\s*\[[^\]]*\]', '')
+    $t = $t.ToLowerInvariant()
+    $t = $t -replace '[^a-z0-9]+', ' '
+    $t = $t.Trim() -replace '\s+', ' '
+    return $t
+}
+
+function Get-CollectionGameTitleMap {
+    $map = @{}
+    $c = Get-Col
+    if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
+    try {
+        $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($content)) { return $map }
+        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
+        foreach ($g in $games) {
+            $title = ""
+            if ($g -match '(?m)^game:\s*(.+)$') { $title = $matches[1].Trim() }
+            if (-not $title) { continue }
+            $norm = Get-NormalizedGameTitle $title
+            if (-not $norm) { continue }
+
+            $present = @{}
+            $hasFront = $false
+            $hasBoxFull = $false
+            $hasBox_Full = $false
+            $hasBack = $false
+
+            foreach ($m in [regex]::Matches($g, '(?m)^(assets\.[^:]+):\s*(.+)$')) {
+                $akey = $m.Groups[1].Value.Trim()
+                $aval = $m.Groups[2].Value.Trim().Trim('"')
+                if ([string]::IsNullOrWhiteSpace($aval)) { continue }
+                if (Test-CollectionAssetPathExists -AssetPath $aval -Collection $c) {
+                    $present[$akey] = $true
+                    if ($akey -eq "assets.box_front") { $hasFront = $true }
+                    elseif ($akey -eq "assets.boxFull") { $hasBoxFull = $true }
+                    elseif ($akey -eq "assets.box_full") { $hasBox_Full = $true }
+                    elseif ($akey -eq "assets.box_back") { $hasBack = $true }
+                }
+            }
+
+            if (-not $map.ContainsKey($norm)) {
+                $map[$norm] = @{
+                    Title         = $title
+                    HasBoxFront   = $hasFront
+                    HasBoxFull    = $hasBoxFull
+                    HasBox_Full   = $hasBox_Full
+                    HasBoxBack    = $hasBack
+                    PresentAssets = $present
+                }
+            }
+        }
+    } catch {
+        Log-Message "Get-CollectionGameTitleMap: $_" "Yellow"
+    }
+    return $map
+}
+
+function Invoke-GitHubApiJson {
+    # GET a GitHub API URL and return parsed JSON. Retries transient errors
+    # (500/502/503/timeouts). Returns $null on failure (never caches failures).
+    param([string]$Url, [int]$Retries = 3)
+    try { [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12 } catch {}
+    $script:libretroLastError = $null
+    for ($a = 1; $a -le $Retries; $a++) {
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        $wc.Headers.Add("Accept", "application/vnd.github+json")
+        $stop = $false
+        try {
+            $json = $wc.DownloadString($Url)
+            return ($json | ConvertFrom-Json)
+        } catch {
+            $script:libretroLastError = $_.Exception.Message
+            $code = 0
+            try {
+                if ($_.Exception.InnerException -and $_.Exception.InnerException.Response) {
+                    $code = [int]$_.Exception.InnerException.Response.StatusCode
+                }
+            } catch {}
+            if ($code -eq 403 -or $code -eq 404) { $stop = $true }
+        } finally {
+            $wc.Dispose()
+        }
+        if ($stop) { break }
+        if ($a -lt $Retries) { Start-Sleep -Seconds (2 * $a) }
+    }
+    return $null
+}
+
+function Get-LibretroFolderFromServer {
+    # Fallback that does NOT use the GitHub API (no rate limit): reads the
+    # file index of the official libretro thumbnail server.
+    param([string]$RepoName, [string]$Folder)
+    $nodes = New-Object System.Collections.ArrayList
+    try {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $sys = ($RepoName -replace '_-_', ' - ') -replace '_', ' '
+        $url = "https://thumbnails.libretro.com/" + [Uri]::EscapeDataString($sys) + "/" + $Folder + "/"
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        $wc.Encoding = [System.Text.Encoding]::UTF8
+        try { $html = $wc.DownloadString($url) } finally { $wc.Dispose() }
+        foreach ($m in [regex]::Matches($html, 'href="([^"]+\.png)"', [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+            $name = [Uri]::UnescapeDataString([System.Net.WebUtility]::HtmlDecode($m.Groups[1].Value))
+            if ($name -match '[\\/]') { continue }
+            [void]$nodes.Add([PSCustomObject]@{ type = "blob"; path = "$Folder/$name" })
+        }
+    } catch {
+        $script:libretroLastError = "$($script:libretroLastError) | thumbnail server: $($_.Exception.Message)"
+    }
+    return @($nodes)
+}
+
+function Get-LibretroFolderTree {
+    # Lists the files of ONE folder (e.g. Named_Boxarts) of a libretro-thumbnails
+    # repo. Uses two small non-recursive API calls (root tree -> folder tree)
+    # instead of one giant recursive listing, which GitHub often answers with a
+    # 500 error on big repos. Falls back to the recursive listing.
+    param([string]$RepoName, [string]$Folder = "Named_Boxarts")
+    $key = "$RepoName|$Folder"
+    if ($script:libretroTreeCache.ContainsKey($key) -and @($script:libretroTreeCache[$key]).Count -gt 0) {
+        return @($script:libretroTreeCache[$key])
+    }
+    $base = "https://api.github.com/repos/libretro-thumbnails/$RepoName/git/trees"
+    $nodes = New-Object System.Collections.ArrayList
+
+    $root = Invoke-GitHubApiJson -Url "$base/master"
+    if ($root -and $root.tree) {
+        $sub = $root.tree | Where-Object { $_.type -eq "tree" -and $_.path -eq $Folder } | Select-Object -First 1
+        if ($sub) {
+            $subTree = Invoke-GitHubApiJson -Url "$base/$($sub.sha)"
+            if ($subTree -and $subTree.tree) {
+                foreach ($n in $subTree.tree) {
+                    if ($n.type -eq "blob") {
+                        [void]$nodes.Add([PSCustomObject]@{ type = "blob"; path = "$Folder/$($n.path)" })
+                    }
+                }
+                if ($subTree.truncated) { Log-Message "Libretro: folder listing was truncated by GitHub." "Yellow" }
+            }
+        }
+    }
+
+    if ($nodes.Count -eq 0) {
+        Log-Message "Libretro: trying full repo listing as a fallback..." "Yellow"
+        $full = Invoke-GitHubApiJson -Url "$base/master?recursive=1"
+        if ($full -and $full.tree) {
+            foreach ($n in $full.tree) {
+                if ($n.type -eq "blob" -and ([string]$n.path).StartsWith("$Folder/")) {
+                    [void]$nodes.Add([PSCustomObject]@{ type = "blob"; path = [string]$n.path })
+                }
+            }
+        }
+    }
+
+    if ($nodes.Count -eq 0) {
+        Log-Message "Libretro: GitHub listing unavailable - trying the libretro thumbnail server..." "Yellow"
+        foreach ($n in @(Get-LibretroFolderFromServer -RepoName $RepoName -Folder $Folder)) { [void]$nodes.Add($n) }
+    }
+
+    if ($nodes.Count -eq 0) {
+        Log-Message "Libretro repo listing failed for ${RepoName}: $($script:libretroLastError)" "Yellow"
+        Log-Message "GitHub is not answering right now (or the hourly API limit was hit). Wait a minute and click Count / Start again - failures are not remembered." "Yellow"
+        return @()
+    }
+    $script:libretroTreeCache[$key] = @($nodes)
+    return @($nodes)
+}
+
+function Get-LibretroAssetMapping {
+    param(
+        [string]$RepoName,
+        [string]$Folder = "Named_Boxarts"
+    )
+    $result = @{}
+    $tree = Get-LibretroFolderTree -RepoName $RepoName -Folder $Folder
+    if (-not $tree -or $tree.Count -eq 0) { return $result }
+
+    $prefix = "$Folder/"
+    $candidates = @{}
+    foreach ($node in $tree) {
+        if ($node.type -ne "blob") { continue }
+        $path = [string]$node.path
+        if (-not $path.StartsWith($prefix)) { continue }
+        $fileName = $path.Substring($prefix.Length)
+        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
+        $norm = Get-NormalizedGameTitle $baseName
+        if (-not $norm) { continue }
+        if (-not $candidates.ContainsKey($norm)) { $candidates[$norm] = New-Object System.Collections.ArrayList }
+        [void]$candidates[$norm].Add($path)
+    }
+
+    $regionPref = @("(USA)", "(World)", "(Europe)", "(Japan)")
+    foreach ($norm in @($candidates.Keys)) {
+        $paths = $candidates[$norm]
+        if ($paths.Count -eq 1) {
+            $result[$norm] = $paths[0]
+            continue
+        }
+        $chosen = $null
+        foreach ($r in $regionPref) {
+            $chosen = $paths | Where-Object { $_ -match [regex]::Escape($r) } | Select-Object -First 1
+            if ($chosen) { break }
+        }
+        if (-not $chosen) { $chosen = $paths[0] }
+        $result[$norm] = $chosen
+    }
+    return $result
+}
+
+function Apply-TitleKeyedAssetUpdates {
+    param([hashtable]$Updates)
+    $c = Get-Col
+    if (-not $c -or -not $Updates -or $Updates.Count -eq 0) { return }
+
+    $p = $c.metadataPath
+    if (-not (Test-Path $p)) { return }
+
+    CreateBackup
+    $content = Get-Content $p -Raw -ErrorAction Stop
+    $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
+    $sb = New-Object System.Text.StringBuilder
+    $count = 0
+
+    foreach ($part in $parts) {
+        if ([string]::IsNullOrWhiteSpace($part)) { continue }
+        if ($part -match '(?m)^game:\s*(.+)$') {
+            $title = $matches[1].Trim()
+            $key = Get-NormalizedGameTitle $title
+            if ($key -and $Updates.ContainsKey($key)) {
+                $paths = $Updates[$key]
+                foreach ($ak in @($paths.Keys)) {
+                    $val = $paths[$ak]
+                    if ([string]::IsNullOrWhiteSpace($val)) { continue }
+                    $escapedKey = [regex]::Escape($ak)
+                    if ($part -match "(?m)^${escapedKey}:\s*") {
+                        $part = [regex]::Replace($part, "(?m)^${escapedKey}:\s*.*$", "${ak}: $val", 1)
+                    } else {
+                        $part = [regex]::Replace($part, '((?m)^game:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
+                    }
+                    $count++
+                }
+            }
+        }
+        [void]$sb.Append($part.TrimEnd())
+        [void]$sb.Append("`n")
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($p, ($sb.ToString().TrimEnd() + "`n"), $utf8)
+    Log-Message "Wrote $count asset path field(s) for $($Updates.Count) game(s) (title-matched)" "Green"
+    UpdateEditor
+}
+
+function Get-SteamGridDBAssetTypeMap {
+    return [ordered]@{
+        "Grids"  = @{ Endpoint = "grids";  Keys = @("assets.steamgrid"); Folders = @("steamgrid"); Description = "Steam-style grid art (460x215 or 920x430 landscape, or 600x900 portrait) - assets.steamgrid" }
+        "Heroes" = @{ Endpoint = "heroes"; Keys = @("assets.background"); Folders = @("hero"); Description = "Wide background/hero art (1920x620) - assets.background (closest official match; not an exact Hero equivalent)" }
+        "Logos"  = @{ Endpoint = "logos";  Keys = @("assets.logo"); Folders = @("wheel"); Description = "Transparent title logo - assets.logo (wheel/)" }
+        "Icons"  = @{ Endpoint = "icons";  Keys = @("assets.tile"); Folders = @("tile"); Description = "Square icon art - assets.tile (Pegasus has no dedicated icon field; check your theme actually reads 'tile' before relying on this)" }
+    }
+}
+
+function Get-SteamGridDBNoArtStorePath {
+    param($Collection)
+    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
+    $dir = Split-Path $Collection.metadataPath -Parent
+    if (-not $dir) { return $null }
+    return (Join-Path $dir "steamgriddb_no_art_marks.json")
+}
+
+function Get-SteamGridDBNoArtMap {
+    param($Collection)
+    $map = @{}
+    $path = Get-SteamGridDBNoArtStorePath -Collection $Collection
+    if (-not $path -or -not (Test-Path $path)) { return $map }
+    try {
+        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($data -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($typeProp in $data.PSObject.Properties) {
+                $inner = @{}
+                if ($typeProp.Value -is [System.Management.Automation.PSCustomObject]) {
+                    foreach ($normProp in $typeProp.Value.PSObject.Properties) {
+                        $inner[$normProp.Name] = [string]$normProp.Value
+                    }
+                }
+                $map[$typeProp.Name] = $inner
+            }
+        }
+    } catch {}
+    return $map
+}
+
+function Save-SteamGridDBNoArtMap {
+    param($Collection, [hashtable]$Map)
+    $path = Get-SteamGridDBNoArtStorePath -Collection $Collection
+    if (-not $path) { return }
+    try {
+        ($Map | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
+    } catch {
+        Log-Message "SteamGridDB: couldn't save no-art list: $_" "Yellow"
+    }
+}
+
+function Test-SteamGridDBNoArtFresh {
+    param([hashtable]$Map, [string]$TypeLabel, [string]$Norm, [int]$StalenessDays = 30)
+    if (-not $Map.ContainsKey($TypeLabel)) { return $false }
+    if (-not $Map[$TypeLabel].ContainsKey($Norm)) { return $false }
+    $iso = $Map[$TypeLabel][$Norm]
+    try {
+        $dt = [datetime]::Parse($iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+        return ((Get-Date) - $dt).TotalDays -lt $StalenessDays
+    } catch {
+        return $false
+    }
+}
+
+function Search-SteamGridDBGameId {
+    param([string]$Title, [string]$ApiKey, [System.Net.WebClient]$WebClient)
+    $url = "https://www.steamgriddb.com/api/v2/search/autocomplete/" + [Uri]::EscapeDataString($Title)
+    $raw = $WebClient.DownloadString($url)
+    $resp = $raw | ConvertFrom-Json
+    if (-not $resp.success) { return $null }
+    if (-not $resp.data -or $resp.data.Count -eq 0) { return $null }
+    return [string]$resp.data[0].id
+}
+
+function Get-SteamGridDBImageUrl {
+    param([string]$GameId, [string]$Endpoint, [string]$ApiKey, [System.Net.WebClient]$WebClient)
+    $url = "https://www.steamgriddb.com/api/v2/$Endpoint/game/$GameId"
+    $raw = $WebClient.DownloadString($url)
+    $resp = $raw | ConvertFrom-Json
+    if (-not $resp.success) { return $null }
+    if (-not $resp.data -or $resp.data.Count -eq 0) { return $null }
+    return [string]$resp.data[0].url
+}
+
+function Get-RelativeAssetPath {
+    param([string]$Path, $Collection)
+    $rel = $Path
+    try {
+        $metaParent = Split-Path $Collection.metadataPath -Parent
+        if ($Path.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
+            $rel = $Path.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
+        }
+    } catch {}
+    return $rel
+}
+
+function Apply-GameTDBAssetUpdates {
+    param([hashtable]$Updates)
+    $c = Get-Col
+    if (-not $c -or -not $Updates -or $Updates.Count -eq 0) { return }
+
+    $p = $c.metadataPath
+    if (-not (Test-Path $p)) { return }
+
+    CreateBackup
+    $content = Get-Content $p -Raw -ErrorAction Stop
+    $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
+    $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
+    $sb = New-Object System.Text.StringBuilder
+    $count = 0
+
+    foreach ($part in $parts) {
+        if ([string]::IsNullOrWhiteSpace($part)) { continue }
+        if ($part -match '(?m)^game:\s*') {
+            $gid = $null
+            if ($part -match '(?m)^game_id:\s*(\S+)') { $gid = $matches[1].Trim() }
+            $short = $null
+            if ($gid) {
+                $short = Get-GameTDBShortId $gid
+                if ($short) { $short = $short.ToUpperInvariant() }
+            }
+            if ($short -and $Updates.ContainsKey($short)) {
+                $paths = $Updates[$short]
+                foreach ($ak in @($paths.Keys)) {
+                    $val = $paths[$ak]
+                    if ([string]::IsNullOrWhiteSpace($val)) { continue }
+                    $escapedKey = [regex]::Escape($ak)
+                    if ($part -match "(?m)^${escapedKey}:\s*") {
+                        $part = [regex]::Replace($part, "(?m)^${escapedKey}:\s*.*$", "${ak}: $val", 1)
+                    } else {
+                        if ($part -match '(?m)^game_id:\s*.+$') {
+                            $part = [regex]::Replace($part, '((?m)^game_id:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
+                        } else {
+                            $part = [regex]::Replace($part, '((?m)^game:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
+                        }
+                    }
+                    $count++
+                }
+            }
+        }
+        [void]$sb.Append($part.TrimEnd())
+        [void]$sb.Append("`n")
+    }
+
+    $utf8 = New-Object System.Text.UTF8Encoding $false
+    [System.IO.File]::WriteAllText($p, ($sb.ToString().TrimEnd() + "`n"), $utf8)
+    Log-Message "Wrote $count asset path field(s) for $($Updates.Count) game(s)" "Green"
+    UpdateEditor
+}
+
+# ============================================================================
+# SNS CODE EXTRACTION
+# ============================================================================
+function ExtractXML {
+    $c = Get-Col
+    if (-not $c) { return }
+    Log-Message "========================================" "Cyan"
+    Log-Message "EXTRACTING SNS CODES FROM XML" "Cyan"
+    Log-Message "========================================" "Cyan"
+    try {
+        $bp = [string]$c.mediaPath
+        $meta = [string]$c.metadataPath
+
+        $xml = $null
+        if (-not [string]::IsNullOrWhiteSpace($bp)) {
+            $tryXml = Join-Path $bp "coversdb-snes_files.xml"
+            if (Test-Path $tryXml) { $xml = $tryXml }
+        }
+        if (-not $xml) {
+            $of = New-Object System.Windows.Forms.OpenFileDialog
+            $of.Title = "Select coversdb SNES XML file"
+            $of.Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*"
+            if (-not [string]::IsNullOrWhiteSpace($bp) -and (Test-Path $bp)) {
+                $of.InitialDirectory = $bp
+            }
+            if ($of.ShowDialog() -ne "OK") {
+                Log-Message "Extract from XML cancelled." "Yellow"
+                return
+            }
+            $xml = $of.FileName
+        }
+
+        Log-Message "XML: $xml" "White"
+        $content = Get-Content $xml -Raw
+        $pattern = 'name="(SNS-[A-Z0-9]{4}-[A-Z]{3,4})\.jpg"'
+        $codes = @([regex]::Matches($content, $pattern) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
+
+        $outDir = $null
+        if (-not [string]::IsNullOrWhiteSpace($bp)) {
+            $outDir = Get-ToolsFolder $bp
+        }
+        if (-not $outDir) { $outDir = Split-Path $xml -Parent }
+        $file = Join-Path $outDir "sns_codes_from_xml.txt"
+        $codes | Out-File -FilePath $file -Encoding UTF8
+
+        Update-SnsCodeList $codes $file
+
+        Log-Message "Extracted: $($codes.Count) SNS codes" "Green"
+        Log-Message "Saved: $file" "Cyan"
+        Log-Message "SNS list updated ($($codes.Count) codes shown in SNS Code Tools)" "Cyan"
+        if ($codes.Count -eq 0) {
+            Log-Message "No SNS codes found in XML" "Yellow"
+        }
+    } catch { Log-Message "ERROR: $_" "Red" }
+}
+
+function ExtractImages {
+    $c = Get-Col
+    if (-not $c) { return }
+
     $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fd.Description = "Select the folder that contains the game ID image files (PNG/JPG)"
+    $fd.Description = "Select the folder that contains the SNS image files (PNG/JPG)"
     $fd.ShowNewFolderButton = $false
-    
+
     $startPath = $null
     $bp = [string]$c.mediaPath
     $meta = [string]$c.metadataPath
@@ -6214,39 +4307,39 @@ function ExtractGameIDsFromImages {
         $startPath = Split-Path $meta -Parent
     }
     if ($startPath) { $fd.SelectedPath = $startPath }
-    
+
     if ($fd.ShowDialog() -ne "OK") {
-        Log-Message "Extract Game IDs cancelled." "Yellow"
+        Log-Message "Extract from Images cancelled." "Yellow"
         return
     }
-    
+
     $fp = $fd.SelectedPath
     Log-Message "========================================" "Cyan"
-    Log-Message "EXTRACTING GAME IDs FROM IMAGES" "Cyan"
+    Log-Message "EXTRACTING SNS CODES FROM IMAGES" "Cyan"
     Log-Message "========================================" "Cyan"
     Log-Message "Looking in: $fp" "White"
-    
+
     try {
         if (-not (Test-Path $fp)) {
             Log-Message "Folder not found: $fp" "Red"
             return
         }
-        
+
         $images = @(Get-ChildItem $fp -Filter "*.png" -ErrorAction SilentlyContinue)
         $images += @(Get-ChildItem $fp -Filter "*.jpg" -ErrorAction SilentlyContinue)
         $images += @(Get-ChildItem $fp -Filter "*.jpeg" -ErrorAction SilentlyContinue)
-        
+
         if ($images.Count -eq 0) {
             Log-Message "No images found in: $fp" "Yellow"
-            Log-Message "Looking for Game ID patterns like: SNS-ABCD-USA.png" "Yellow"
+            Log-Message "Looking for SNS patterns like: SNS-XXXX-USA.png" "Yellow"
             return
         }
-        
+
         Log-Message "Found $($images.Count) image file(s)" "Cyan"
-        
+
         $codes = @()
-        $pattern = '^([A-Z]{3,4})-([A-Z0-9]{4})-(USA|EUR|JPN|AUS|FRA|GER|ITA|SPA|UK|ASIA|KOR|CAN|MEX|BRA|CHN|TWN|RUS|SAF|IND|NZL|DEN|SWE|NOR|FIN|POL|CZE|HUN|AUT|CHE|NLD|BEL|POR|GRE|TUR|ISR|UAE|SAU|ZAF|ARG|CHL|COL|PER|VEN|MYS|SGP|PHL|IDN|THA|VNM|PAK|NGA|KEN|MAR|EGY|TUN|LBN|JOR|KWT|QAT|BHR|OMN)\.(png|jpg|jpeg)$'
-        
+        $pattern = '^(SNS)-([A-Z0-9]{4})-(USA|EUR|JPN|AUS|FRA|GER|ITA|SPA|UK|ASIA|KOR|CAN|MEX|BRA|CHN|TWN|RUS|SAF|IND|NZL|DEN|SWE|NOR|FIN|POL|CZE|HUN|AUT|CHE|NLD|BEL|POR|GRE|TUR|ISR|UAE|SAU|ZAF|ARG|CHL|COL|PER|VEN|MYS|SGP|PHL|IDN|THA|VNM|PAK|NGA|KEN|MAR|EGY|TUN|LBN|JOR|KWT|QAT|BHR|OMN)\.(png|jpg|jpeg)$'
+
         foreach ($img in $images) {
             if ($img.Name -match $pattern) {
                 $fullID = $matches[1] + "-" + $matches[2] + "-" + $matches[3]
@@ -6254,9 +4347,9 @@ function ExtractGameIDsFromImages {
                 Log-Message "  Found: $fullID" "Green"
             }
         }
-        
+
         $codes = @($codes | Sort-Object -Unique)
-        
+
         $outDir = $fp
         if (-not [string]::IsNullOrWhiteSpace($bp)) {
             $outDir = Get-ToolsFolder $bp
@@ -6264,17 +4357,19 @@ function ExtractGameIDsFromImages {
             $parent = Split-Path $meta -Parent
             if (-not [string]::IsNullOrWhiteSpace($parent)) { $outDir = $parent }
         }
-        $file = Join-Path $outDir "game_ids_from_images.txt"
+        $file = Join-Path $outDir "sns_codes_from_images.txt"
         $codes | Out-File -FilePath $file -Encoding UTF8
-        
+
+        Update-SnsCodeList $codes $file
+
         if ($codes.Count -eq 0) {
-            Log-Message "No Game IDs found in image filenames" "Yellow"
-            Log-Message "Expected pattern: SNS-ABCD-USA.png (or any console prefix)" "Yellow"
-            Log-Message "Example: SNS-ABCD-USA.png, NUS-ABCD-USA.png, RVL-ABCD-USA.png" "Yellow"
+            Log-Message "No SNS codes found in image filenames" "Yellow"
+            Log-Message "Expected pattern: SNS-XXXX-USA.png" "Yellow"
+            Log-Message "Example: SNS-ABCD-USA.png" "Yellow"
         } else {
-            Log-Message "Extracted: $($codes.Count) Game IDs" "Green"
+            Log-Message "Extracted: $($codes.Count) SNS codes" "Green"
             Log-Message "Saved: $file" "Cyan"
-            $codes | Select-Object -First 20 | ForEach-Object { Log-Message "  $_" "White" }
+            Log-Message "SNS list updated ($($codes.Count) codes shown in SNS Code Tools)" "Cyan"
         }
     } catch {
         Log-Message "ERROR: $_" "Red"
@@ -6292,14 +4387,14 @@ function CreateIDMapping {
     )
     $c = Get-Col
     if (-not $c) { return }
-    
+
     $isSns = ($OutputFileName -match 'sns')
     $label = if ($isSns) { "SNS MAPPING ($MatchMode)" } else { "GAME ID MAPPING" }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "CREATING $label" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $p = [string]$c.metadataPath
         if ([string]::IsNullOrWhiteSpace($p) -or -not (Test-Path $p)) {
@@ -6308,10 +4403,10 @@ function CreateIDMapping {
         }
         $bp = [string]$c.mediaPath
         $metaDir = Split-Path $p -Parent
-        
+
         $content = Get-Content $p -Raw
         $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        
+
         $imageIDs = @()
         if ($isSns) {
             if ($script:lastSnsCodes -and @($script:lastSnsCodes).Count -gt 0) {
@@ -6339,7 +4434,7 @@ function CreateIDMapping {
                 }
             }
         }
-        
+
         if ($imageIDs.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($bp)) {
             $fp = Join-Path $bp "box2dfront"
             if (Test-Path $fp) {
@@ -6359,7 +4454,7 @@ function CreateIDMapping {
                 Log-Message "Scanned images: $($imageIDs.Count) codes" "Cyan"
             }
         }
-        
+
         if ($imageIDs.Count -eq 0) {
             if ($isSns) {
                 Log-Message "ERROR: No SNS codes available." "Red"
@@ -6370,7 +4465,7 @@ function CreateIDMapping {
             }
             return
         }
-        
+
         function Normalize-MatchTitle([string]$s) {
             if ([string]::IsNullOrWhiteSpace($s)) { return "" }
             $s = $s.ToLowerInvariant()
@@ -6379,7 +4474,7 @@ function CreateIDMapping {
             $s = $s -replace '[^a-z0-9]', ''
             return $s
         }
-        
+
         $idToTitle = @{}
         if ($isSns -and $MatchMode -ne "ProductCode") {
             $titleFiles = @(
@@ -6405,23 +4500,23 @@ function CreateIDMapping {
                 }
             }
         }
-        
+
         Log-Message "Matching $($imageIDs.Count) codes to games (mode: $MatchMode)..." "Cyan"
-        
+
         $mappings = @()
         $matched = 0
         $usedIds = @{}
-        
+
         foreach ($g in $games) {
             if ($g -match 'game: (.+?)(?:\r?\n|$)') {
                 $name = $matches[1].Trim()
             } else { continue }
-            
+
             if ($g -match 'assets\.box_front:') { continue }
-            
+
             $found = $null
             $normGame = Normalize-MatchTitle $name
-            
+
             if ($MatchMode -eq "Titles" -or $MatchMode -eq "Auto") {
                 if (-not $found -and $idToTitle.Count -gt 0 -and $normGame.Length -ge 3) {
                     $bestId = $null
@@ -6444,7 +4539,7 @@ function CreateIDMapping {
                     }
                     if ($bestId -and $bestScore -ge 6) { $found = $bestId }
                 }
-                
+
                 if (-not $found -and -not [string]::IsNullOrWhiteSpace($bp)) {
                     $fpTry = Join-Path $bp "box2dfront"
                     if (Test-Path $fpTry) {
@@ -6458,7 +4553,7 @@ function CreateIDMapping {
                     }
                 }
             }
-            
+
             if (-not $found -and ($MatchMode -eq "ProductCode" -or $MatchMode -eq "Auto")) {
                 $cleanName = ($name -replace '[^A-Za-z0-9]', '').ToUpperInvariant()
                 foreach ($id in $imageIDs) {
@@ -6472,7 +4567,7 @@ function CreateIDMapping {
                     }
                 }
             }
-            
+
             if ($found) {
                 $mappings += "$name=$found"
                 $matched++
@@ -6480,7 +4575,7 @@ function CreateIDMapping {
                 Log-Message "  MATCH: $name -> $found" "Green"
             }
         }
-        
+
         $file = Resolve-ToolsFile $bp $OutputFileName $metaDir
         $existing = @{}
         if (Test-Path $file) {
@@ -6497,7 +4592,7 @@ function CreateIDMapping {
         }
         $merged = @($existing.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" } | Sort-Object)
         $merged | Out-File -FilePath $file -Encoding UTF8
-        
+
         Log-Message "Created/updated: $($merged.Count) total mappings ($matched new this run)" "Green"
         Log-Message "Saved to: $file" "Cyan"
         if ($matched -eq 0 -and $isSns) {
@@ -6509,7 +4604,6 @@ function CreateIDMapping {
                 Log-Message "No matches in Auto mode. Try Map by Product Code or Map by Titles separately." "Yellow"
             }
         }
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -6518,26 +4612,26 @@ function CreateIDMapping {
 function ApplyGameIDsToMetadata {
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "APPLYING GAME IDs TO METADATA" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $p = $c.metadataPath
         $content = Get-Content $p -Raw
         $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        
+
         $count = 0
         $updated = $content
-        
+
         $bp = $c.mediaPath
         $mapFile = Resolve-ToolsFile $bp "game_id_mappings.txt" (Split-Path $p -Parent)
         if (-not ($mapFile -and (Test-Path $mapFile))) {
             Log-Message "ERROR: No mapping file found. Run 'Create Mapping' first." "Red"
             return
         }
-        
+
         $mappings = Get-Content $mapFile
         $mapHash = @{}
         foreach ($line in $mappings) {
@@ -6545,14 +4639,14 @@ function ApplyGameIDsToMetadata {
                 $mapHash[$matches[1]] = $matches[2]
             }
         }
-        
+
         foreach ($g in $games) {
             if ($g -match 'game: (.+?)(?:\r?\n|$)') {
                 $name = $matches[1].Trim()
             } else { continue }
-            
+
             if ($g -match 'game_id:') { continue }
-            
+
             if ($mapHash.ContainsKey($name)) {
                 $gameID = $mapHash[$name]
                 $new = "`ngame_id: $gameID"
@@ -6561,22 +4655,176 @@ function ApplyGameIDsToMetadata {
                 Log-Message "  Added game_id: $gameID -> $name" "Green"
             }
         }
-        
+
         CreateBackup
         $updated | Out-File -FilePath $p -Encoding UTF8
         Log-Message "Applied game_ids to: $count games" "Green"
         UpdateEditor
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
 }
 
 # ============================================================================
+# EXTRACT GAME IDs FROM IMAGES
+# ============================================================================
+function ExtractGameIDsFromImages {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select the folder that contains the game ID image files (PNG/JPG)"
+    $fd.ShowNewFolderButton = $false
+
+    $startPath = $null
+    $bp = [string]$c.mediaPath
+    $meta = [string]$c.metadataPath
+    if (-not [string]::IsNullOrWhiteSpace($bp)) {
+        $tryFront = Join-Path $bp "box2dfront"
+        if (Test-Path $tryFront) { $startPath = $tryFront }
+        elseif (Test-Path $bp) { $startPath = $bp }
+    }
+    if (-not $startPath -and -not [string]::IsNullOrWhiteSpace($meta) -and (Test-Path $meta)) {
+        $startPath = Split-Path $meta -Parent
+    }
+    if ($startPath) { $fd.SelectedPath = $startPath }
+
+    if ($fd.ShowDialog() -ne "OK") {
+        Log-Message "Extract Game IDs cancelled." "Yellow"
+        return
+    }
+
+    $fp = $fd.SelectedPath
+    Log-Message "========================================" "Cyan"
+    Log-Message "EXTRACTING GAME IDs FROM IMAGES" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Looking in: $fp" "White"
+
+    try {
+        if (-not (Test-Path $fp)) {
+            Log-Message "Folder not found: $fp" "Red"
+            return
+        }
+
+        $images = @(Get-ChildItem $fp -Filter "*.png" -ErrorAction SilentlyContinue)
+        $images += @(Get-ChildItem $fp -Filter "*.jpg" -ErrorAction SilentlyContinue)
+        $images += @(Get-ChildItem $fp -Filter "*.jpeg" -ErrorAction SilentlyContinue)
+
+        if ($images.Count -eq 0) {
+            Log-Message "No images found in: $fp" "Yellow"
+            Log-Message "Looking for Game ID patterns like: SNS-ABCD-USA.png" "Yellow"
+            return
+        }
+
+        Log-Message "Found $($images.Count) image file(s)" "Cyan"
+
+        $codes = @()
+        $pattern = '^([A-Z]{3,4})-([A-Z0-9]{4})-(USA|EUR|JPN|AUS|FRA|GER|ITA|SPA|UK|ASIA|KOR|CAN|MEX|BRA|CHN|TWN|RUS|SAF|IND|NZL|DEN|SWE|NOR|FIN|POL|CZE|HUN|AUT|CHE|NLD|BEL|POR|GRE|TUR|ISR|UAE|SAU|ZAF|ARG|CHL|COL|PER|VEN|MYS|SGP|PHL|IDN|THA|VNM|PAK|NGA|KEN|MAR|EGY|TUN|LBN|JOR|KWT|QAT|BHR|OMN)\.(png|jpg|jpeg)$'
+
+        foreach ($img in $images) {
+            if ($img.Name -match $pattern) {
+                $fullID = $matches[1] + "-" + $matches[2] + "-" + $matches[3]
+                $codes += $fullID
+                Log-Message "  Found: $fullID" "Green"
+            }
+        }
+
+        $codes = @($codes | Sort-Object -Unique)
+
+        $outDir = $fp
+        if (-not [string]::IsNullOrWhiteSpace($bp)) {
+            $outDir = Get-ToolsFolder $bp
+        } elseif (-not [string]::IsNullOrWhiteSpace($meta) -and (Test-Path $meta)) {
+            $parent = Split-Path $meta -Parent
+            if (-not [string]::IsNullOrWhiteSpace($parent)) { $outDir = $parent }
+        }
+        $file = Join-Path $outDir "game_ids_from_images.txt"
+        $codes | Out-File -FilePath $file -Encoding UTF8
+
+        if ($codes.Count -eq 0) {
+            Log-Message "No Game IDs found in image filenames" "Yellow"
+            Log-Message "Expected pattern: SNS-ABCD-USA.png (or any console prefix)" "Yellow"
+            Log-Message "Example: SNS-ABCD-USA.png, NUS-ABCD-USA.png, RVL-ABCD-USA.png" "Yellow"
+        } else {
+            Log-Message "Extracted: $($codes.Count) Game IDs" "Green"
+            Log-Message "Saved: $file" "Cyan"
+            $codes | Select-Object -First 20 | ForEach-Object { Log-Message "  $_" "White" }
+        }
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+# ============================================================================
+# CONSOLE ID LIST
+# ============================================================================
+function ShowConsoleIDList {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Console ID Reference"
+    $dlg.Size = New-Object System.Drawing.Size(500, 600)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.BackColor = $script:theme.background
+    $dlg.ForeColor = $script:theme.text
+
+    $mainPanel = New-Object System.Windows.Forms.Panel
+    $mainPanel.Dock = "Fill"
+    $mainPanel.BackColor = $script:theme.background
+    $mainPanel.Padding = New-Object System.Windows.Forms.Padding(15)
+    $dlg.Controls.Add($mainPanel)
+
+    $textBox = New-Object System.Windows.Forms.RichTextBox
+    $textBox.Dock = "Fill"
+    $textBox.ReadOnly = $true
+    $textBox.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $textBox.BackColor = $script:theme.editor
+    $textBox.ForeColor = $script:theme.text
+    $textBox.BorderStyle = "FixedSingle"
+    $textBox.ScrollBars = "Vertical"
+
+    $textBox.SelectionColor = $script:theme.accent
+    $textBox.AppendText("CONSOLE ID REFERENCE" + "`n`n")
+    $textBox.SelectionColor = $script:theme.textDim
+    $textBox.AppendText("GameTDB Console ID Prefixes:" + "`n`n")
+
+    $textBox.SelectionColor = $script:theme.text
+    foreach ($key in $script:consoleIDs.Keys | Sort-Object) {
+        $textBox.AppendText("  " + $key + "  ->  " + $script:consoleIDs[$key] + "`n")
+    }
+
+    $textBox.AppendText("`n")
+    $textBox.SelectionColor = $script:theme.accentDark
+    $textBox.AppendText("Example Game IDs:" + "`n")
+    $textBox.SelectionColor = $script:theme.text
+    $textBox.AppendText("  SNS-ABCD-USA  ->  SNES game, USA region" + "`n")
+    $textBox.AppendText("  NUS-ABCD-USA  ->  N64 game, USA region" + "`n")
+    $textBox.AppendText("  RVL-ABCD-USA  ->  Wii game, USA region" + "`n")
+    $textBox.AppendText("  HAC-ABCD-USA  ->  Switch game, USA region" + "`n")
+
+    $mainPanel.Controls.Add($textBox)
+
+    $btnPanel = New-Object System.Windows.Forms.Panel
+    $btnPanel.Dock = "Bottom"
+    $btnPanel.Height = 50
+    $btnPanel.BackColor = $script:theme.background
+    $btnPanel.Padding = New-Object System.Windows.Forms.Padding(10)
+    $mainPanel.Controls.Add($btnPanel)
+
+    $btnOK = Create-Button "Close" 200 8 100 35
+    $btnOK.BackColor = $script:theme.accentDark
+    $btnOK.ForeColor = [System.Drawing.Color]::White
+    $btnOK.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $btnOK.Add_Click({ $dlg.Close() })
+    $btnPanel.Controls.Add($btnOK)
+
+    $dlg.ShowDialog()
+}
+
+# ============================================================================
 # IMAGE CONVERSION FUNCTIONS
 # ============================================================================
 function Get-ImgIncludeSubfolders {
-    # True when the Image Tools "Include subfolders" checkbox is ticked.
     try { return [bool]($script:chkImgSubfolders -and $script:chkImgSubfolders.Checked) } catch { return $false }
 }
 
@@ -6584,45 +4832,45 @@ function ConvertImagesPNGtoJPG {
     param($allImages)
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "CONVERTING PNG TO JPG" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $bp = $c.mediaPath
-        
+
         if ([string]::IsNullOrWhiteSpace($bp)) {
             Log-Message "ERROR: Media folder path is empty!" "Red"
             Log-Message "Please re-add your collection and make sure to select a Media Folder." "Yellow"
             Log-Message "The Media Folder should contain: box2dfront\ and box2dThumb\" "Yellow"
             return
         }
-        
+
         $fp = Join-Path $bp "box2dfront"
         $tp = Join-Path $bp "box2dThumb"
-        
+
         if (-not (Test-Path $fp)) {
             Log-Message "ERROR: box2dfront folder not found: $fp" "Red"
             Log-Message "Please make sure your Media Folder contains a 'box2dfront' folder with images." "Yellow"
             return
         }
-        
+
         $folders = @($fp, $tp)
         $converted = 0
-        
+
         foreach ($folder in $folders) {
             if (-not (Test-Path $folder)) { continue }
-            
+
             $pngFiles = Get-ChildItem $folder -Filter "*.png" -File -Recurse:(Get-ImgIncludeSubfolders) -ErrorAction SilentlyContinue
-            
+
             if (-not $allImages) {
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
                 $ofd.Title = "Select PNG files to convert"
                 $ofd.Filter = "PNG Files (*.png)|*.png"
                 $ofd.Multiselect = $true
                 $ofd.InitialDirectory = $folder
-                
+
                 if ($ofd.ShowDialog() -eq "OK") {
                     $selectedFiles = $ofd.FileNames
                     foreach ($file in $selectedFiles) {
@@ -6637,9 +4885,8 @@ function ConvertImagesPNGtoJPG {
                 }
             }
         }
-        
+
         Log-Message "Converted: $converted images to JPG" "Green"
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -6649,17 +4896,16 @@ function ConvertSinglePNGtoJPG {
     param($pngPath)
     try {
         $jpgPath = $pngPath -replace '\.png$', '.jpg'
-        
+
         $img = [System.Drawing.Image]::FromFile($pngPath)
         $jpg = New-Object System.Drawing.Bitmap($img)
         $jpg.Save($jpgPath, [System.Drawing.Imaging.ImageFormat]::Jpeg)
         $jpg.Dispose()
         $img.Dispose()
-        
+
         Remove-Item $pngPath -Force
-        
+
         Log-Message "  Converted: $(Split-Path $pngPath -Leaf) -> $(Split-Path $jpgPath -Leaf)" "Green"
-        
     } catch {
         Log-Message "  ERROR converting: $(Split-Path $pngPath -Leaf)" "Red"
     }
@@ -6669,43 +4915,43 @@ function ConvertImagesJPGtoPNG {
     param($allImages)
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "CONVERTING JPG TO PNG" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $bp = $c.mediaPath
-        
+
         if ([string]::IsNullOrWhiteSpace($bp)) {
             Log-Message "ERROR: Media folder path is empty!" "Red"
             Log-Message "Please re-add your collection and make sure to select a Media Folder." "Yellow"
             return
         }
-        
+
         $fp = Join-Path $bp "box2dfront"
         $tp = Join-Path $bp "box2dThumb"
-        
+
         if (-not (Test-Path $fp)) {
             Log-Message "ERROR: box2dfront folder not found: $fp" "Red"
             return
         }
-        
+
         $folders = @($fp, $tp)
         $converted = 0
-        
+
         foreach ($folder in $folders) {
             if (-not (Test-Path $folder)) { continue }
-            
+
             $jpgFiles = Get-ChildItem $folder -Filter "*.jpg" -File -Recurse:(Get-ImgIncludeSubfolders) -ErrorAction SilentlyContinue
-            
+
             if (-not $allImages) {
                 $ofd = New-Object System.Windows.Forms.OpenFileDialog
                 $ofd.Title = "Select JPG files to convert"
                 $ofd.Filter = "JPG Files (*.jpg)|*.jpg"
                 $ofd.Multiselect = $true
                 $ofd.InitialDirectory = $folder
-                
+
                 if ($ofd.ShowDialog() -eq "OK") {
                     $selectedFiles = $ofd.FileNames
                     foreach ($file in $selectedFiles) {
@@ -6720,9 +4966,8 @@ function ConvertImagesJPGtoPNG {
                 }
             }
         }
-        
+
         Log-Message "Converted: $converted images to PNG" "Green"
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -6732,17 +4977,16 @@ function ConvertSingleJPGtoPNG {
     param($jpgPath)
     try {
         $pngPath = $jpgPath -replace '\.jpg$', '.png'
-        
+
         $img = [System.Drawing.Image]::FromFile($jpgPath)
         $png = New-Object System.Drawing.Bitmap($img)
         $png.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
         $png.Dispose()
         $img.Dispose()
-        
+
         Remove-Item $jpgPath -Force
-        
+
         Log-Message "  Converted: $(Split-Path $jpgPath -Leaf) -> $(Split-Path $pngPath -Leaf)" "Green"
-        
     } catch {
         Log-Message "  ERROR converting: $(Split-Path $jpgPath -Leaf)" "Red"
     }
@@ -6753,8 +4997,6 @@ function ConvertJpgToPng {
     # "Include subfolders" box ticked it also searches every subfolder
     # (e.g. Movies\Movie 1\box.jpg, Movies\Movie 2\folder.jpg). Then rewrites the
     # matching .jpg references in the collection's metadata file to .png.
-    # Unlike the box2dfront/box2dThumb converters above, this does not depend on
-    # the collection's Media Folder layout at all.
     $c = Get-Col
     if (-not $c) { return }
 
@@ -6809,13 +5051,12 @@ function ConvertJpgToPng {
             return
         }
 
-        # Safety net: back up the metadata file before touching anything.
         if ($metaPath -and (Test-Path -LiteralPath $metaPath)) { CreateBackup }
 
         $converted = 0
         $skipped = 0
         $failed = 0
-        $map = @{}   # lower-cased full path of the OLD jpg -> new png path
+        $map = @{}
         $n = 0
         foreach ($f in $targets) {
             $n++
@@ -6825,7 +5066,6 @@ function ConvertJpgToPng {
             }
             $pngTarget = [System.IO.Path]::ChangeExtension($f.FullName, ".png")
             if (Test-Path -LiteralPath $pngTarget) {
-                # Never overwrite an existing PNG that sits next to the JPG.
                 $skipped++
                 Log-Message "  Skipped (a PNG with that name already exists): $rel" "Yellow"
                 continue
@@ -6842,11 +5082,6 @@ function ConvertJpgToPng {
             if (($n % 10) -eq 0) { try { [System.Windows.Forms.Application]::DoEvents() } catch {} }
         }
 
-        # ---- Update the metadata file so its references match the new PNGs ----
-        # Only a reference that points at a file we actually converted (or at a
-        # .jpg that no longer exists while a .png does) is changed, so nothing
-        # else in the file is touched. Relative paths resolve against the
-        # metadata file's own folder, the same way Pegasus resolves them.
         $refsUpdated = 0
         if ($metaPath -and $metaDir -and (Test-Path -LiteralPath $metaPath)) {
             $bytes = [System.IO.File]::ReadAllBytes($metaPath)
@@ -6858,9 +5093,6 @@ function ConvertJpgToPng {
                 $text = $strict.GetString($bytes, $offset, $bytes.Length - $offset)
                 $writeEnc = New-Object System.Text.UTF8Encoding($hadBom)
             } catch {
-                # Not valid UTF-8 (old single-byte/ANSI file). Latin-1 maps every byte to
-                # exactly one char and back, so accented titles round-trip untouched on
-                # both Windows PowerShell 5.1 and PowerShell 7.
                 $latin1 = [System.Text.Encoding]::GetEncoding(28591)
                 $text = $latin1.GetString($bytes)
                 $writeEnc = $latin1
@@ -6918,8 +5150,220 @@ function ConvertJpgToPng {
     }
 }
 
+function Get-WebPTools {
+    # Google's official cwebp.exe / dwebp.exe, downloaded once into
+    # %LOCALAPPDATA%\webp-converter (same source as Convert-WebP-to-PNG.ps1).
+    $toolDir = Join-Path $env:LOCALAPPDATA 'webp-converter'
+    $dwebp = Join-Path $toolDir 'dwebp.exe'
+    $cwebp = Join-Path $toolDir 'cwebp.exe'
+    $url = 'https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.4.0-windows-x64.zip'
+    if (-not ((Test-Path $dwebp) -and (Test-Path $cwebp))) {
+        Log-Message "Downloading Google's WebP tools (one time only)..." "Yellow"
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+            New-Item -ItemType Directory -Force -Path $toolDir | Out-Null
+            $zip = Join-Path $env:TEMP 'libwebp.zip'
+            $tmp = Join-Path $env:TEMP 'libwebp_extract'
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+            try { $wc.DownloadFile($url, $zip) } finally { $wc.Dispose() }
+            if (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
+            Expand-Archive -Path $zip -DestinationPath $tmp -Force
+            foreach ($n in @('dwebp.exe', 'cwebp.exe')) {
+                $exe = Get-ChildItem $tmp -Recurse -Filter $n -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($exe) { Copy-Item $exe.FullName (Join-Path $toolDir $n) -Force }
+            }
+            Remove-Item $zip, $tmp -Recurse -Force -ErrorAction SilentlyContinue
+            Log-Message "WebP tools ready." "Green"
+        } catch {
+            Log-Message "Could not download WebP tools: $($_.Exception.Message)" "Red"
+        }
+    }
+    return @{
+        Dwebp = $(if (Test-Path $dwebp) { $dwebp } else { $null })
+        Cwebp = $(if (Test-Path $cwebp) { $cwebp } else { $null })
+    }
+}
+
+function Convert-WebPWithWIC {
+    # Fallback WebP -> PNG using Windows' built-in codec (needs "WebP Image Extensions").
+    param([string]$Src, [string]$Dst)
+    Add-Type -AssemblyName PresentationCore
+    $in = [System.IO.File]::OpenRead($Src)
+    try {
+        $dec = [System.Windows.Media.Imaging.BitmapDecoder]::Create($in, 'PreservePixelFormat', 'OnLoad')
+        $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+        $enc.Frames.Add($dec.Frames[0])
+        $out = [System.IO.File]::Create($Dst)
+        try { $enc.Save($out) } finally { $out.Close() }
+    } finally { $in.Close() }
+}
+
+function Update-MetadataAssetRefsAfterConvert {
+    # Rewrites assets.* lines that pointed at converted files (old ext -> new ext).
+    param([hashtable]$Map, [string]$OldExt, [string]$NewExt)
+    $c = Get-Col
+    if (-not $c -or [string]::IsNullOrWhiteSpace($c.metadataPath) -or -not (Test-Path -LiteralPath $c.metadataPath)) { return 0 }
+    $metaPath = $c.metadataPath
+    $metaDir = Split-Path $metaPath -Parent
+    $bytes = [System.IO.File]::ReadAllBytes($metaPath)
+    $hadBom = ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF)
+    $offset = 0
+    if ($hadBom) { $offset = 3 }
+    try {
+        $strict = New-Object System.Text.UTF8Encoding($false, $true)
+        $text = $strict.GetString($bytes, $offset, $bytes.Length - $offset)
+        $writeEnc = New-Object System.Text.UTF8Encoding($hadBom)
+    } catch {
+        $latin1 = [System.Text.Encoding]::GetEncoding(28591)
+        $text = $latin1.GetString($bytes)
+        $writeEnc = $latin1
+    }
+    $oldEsc = [regex]::Escape($OldExt)
+    $rx = New-Object System.Text.RegularExpressions.Regex(
+        ('^(?<pre>assets\.[^:]+:[ \t]*)(?<val>.+?\.' + $oldEsc + ')(?<post>[ \t]*)$'),
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    $lines = $text -split "`n"
+    $changed = 0
+    for ($i = 0; $i -lt $lines.Length; $i++) {
+        $line = $lines[$i]
+        if ($line.IndexOf(".$OldExt", [StringComparison]::OrdinalIgnoreCase) -lt 0) { continue }
+        $cr = ''
+        if ($line.EndsWith("`r")) { $cr = "`r"; $line = $line.Substring(0, $line.Length - 1) }
+        $m = $rx.Match($line)
+        if (-not $m.Success) { continue }
+        $val = $m.Groups['val'].Value
+        $pp = $val.Trim().Replace('/', '\')
+        if ($pp.StartsWith('.\')) { $pp = $pp.Substring(2) }
+        try {
+            if (-not [System.IO.Path]::IsPathRooted($pp)) { $pp = Join-Path $metaDir $pp }
+            $full = [System.IO.Path]::GetFullPath($pp)
+        } catch { continue }
+        $hit = $Map.ContainsKey($full.ToLowerInvariant())
+        if (-not $hit) {
+            $newFull = [System.IO.Path]::ChangeExtension($full, ".$NewExt")
+            if ((-not (Test-Path -LiteralPath $full)) -and (Test-Path -LiteralPath $newFull)) { $hit = $true }
+        }
+        if (-not $hit) { continue }
+        $newVal = [regex]::Replace($val, ('\.' + $oldEsc + '$'), ".$NewExt", [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        $lines[$i] = $m.Groups['pre'].Value + $newVal + $m.Groups['post'].Value + $cr
+        $changed++
+    }
+    if ($changed -gt 0) {
+        [System.IO.File]::WriteAllText($metaPath, ($lines -join "`n"), $writeEnc)
+    }
+    return $changed
+}
+
+function Convert-WebPImages {
+    # Direction "ToPng": .webp -> .png    Direction "ToWebP": .png -> .webp
+    param([ValidateSet("ToPng", "ToWebP")][string]$Direction)
+    $c = Get-Col
+    if (-not $c) { return }
+    $srcExt = if ($Direction -eq "ToPng") { ".webp" } else { ".png" }
+    $dstExt = if ($Direction -eq "ToPng") { ".png" } else { ".webp" }
+    $label = if ($Direction -eq "ToPng") { "WEBP TO PNG" } else { "PNG TO WEBP" }
+
+    $start = $null
+    if ($c.mediaPath -and (Test-Path -LiteralPath $c.mediaPath)) { $start = $c.mediaPath }
+    elseif ($c.metadataPath) { $start = Split-Path $c.metadataPath -Parent }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = $(if (Get-ImgIncludeSubfolders) { "Select the TOP folder to scan. Every subfolder inside it will be searched for $srcExt files." } else { "Select the folder that contains the $srcExt files (subfolders are NOT searched)." })
+    $fd.ShowNewFolderButton = $false
+    if ($start -and (Test-Path -LiteralPath $start)) { $fd.SelectedPath = $start }
+    if ($fd.ShowDialog() -ne "OK") { return }
+    $root = $fd.SelectedPath.TrimEnd('\', '/')
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "CONVERTING $label" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Scanning: $root" "White"
+
+    try {
+        $files = @(Get-ChildItem -LiteralPath $root -Recurse:(Get-ImgIncludeSubfolders) -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Extension -ieq $srcExt })
+        if ($files.Count -eq 0) {
+            Log-Message "No $srcExt files found in that location." "Yellow"
+            return
+        }
+        $msg = "Found $($files.Count) $srcExt file(s) under:`n$root`n`n" +
+               "YES = convert and KEEP the originals (metadata is not changed)`n" +
+               "NO = convert, DELETE each original once its $dstExt is made, and update metadata paths to $dstExt`n" +
+               "CANCEL = do nothing"
+        $choice = [System.Windows.Forms.MessageBox]::Show($msg, "Convert $srcExt to $dstExt",
+            [System.Windows.Forms.MessageBoxButtons]::YesNoCancel, [System.Windows.Forms.MessageBoxIcon]::Question)
+        if ($choice -eq [System.Windows.Forms.DialogResult]::Cancel) { Log-Message "Cancelled." "Yellow"; return }
+        $deleteOriginals = ($choice -eq [System.Windows.Forms.DialogResult]::No)
+
+        $tools = Get-WebPTools
+        if ($Direction -eq "ToWebP" -and -not $tools.Cwebp) {
+            Log-Message "cwebp.exe is not available (download failed). Check your internet connection and try again." "Red"
+            return
+        }
+        if ($Direction -eq "ToPng" -and -not $tools.Dwebp) {
+            Log-Message "dwebp.exe not available - using Windows' built-in WebP support instead." "Yellow"
+        }
+
+        if ($deleteOriginals -and $c.metadataPath -and (Test-Path -LiteralPath $c.metadataPath)) { CreateBackup }
+
+        $ok = 0; $skipped = 0; $failed = 0; $n = 0
+        $map = @{}
+        foreach ($f in $files) {
+            $n++
+            $rel = $f.FullName
+            if ($rel.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { $rel = $rel.Substring($root.Length).TrimStart('\', '/') }
+            $out = [System.IO.Path]::ChangeExtension($f.FullName, $dstExt)
+            if (Test-Path -LiteralPath $out) {
+                $skipped++
+                Log-Message "  Skipped ($dstExt already exists): $rel" "Yellow"
+                continue
+            }
+            $done = $false
+            try {
+                if ($Direction -eq "ToPng") {
+                    if ($tools.Dwebp) {
+                        & $tools.Dwebp $f.FullName -o $out 2>&1 | Out-Null
+                        $done = ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $out))
+                    }
+                    if (-not $done) {
+                        Convert-WebPWithWIC -Src $f.FullName -Dst $out
+                        $done = (Test-Path -LiteralPath $out)
+                    }
+                } else {
+                    & $tools.Cwebp -q 100 -alpha_q 100 -quiet $f.FullName -o $out 2>&1 | Out-Null
+                    $done = ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $out))
+                }
+            } catch { $done = $false }
+
+            if ($done -and (Test-Path -LiteralPath $out) -and ((Get-Item -LiteralPath $out).Length -gt 0)) {
+                $ok++
+                $map[$f.FullName.ToLowerInvariant()] = $out
+                Log-Message "  Converted: $rel" "Green"
+                if ($deleteOriginals) { try { Remove-Item -LiteralPath $f.FullName -Force -ErrorAction Stop } catch { Log-Message "  (could not delete original: $rel)" "Yellow" } }
+            } else {
+                $failed++
+                if (Test-Path -LiteralPath $out) { Remove-Item -LiteralPath $out -Force -ErrorAction SilentlyContinue }
+                Log-Message "  FAILED: $rel" "Red"
+            }
+            if (($n % 10) -eq 0) { try { [System.Windows.Forms.Application]::DoEvents() } catch {} }
+        }
+
+        if ($deleteOriginals -and $ok -gt 0) {
+            $refs = Update-MetadataAssetRefsAfterConvert -Map $map -OldExt $srcExt.TrimStart('.') -NewExt $dstExt.TrimStart('.')
+            if ($refs -gt 0) {
+                Log-Message "Metadata updated: $refs reference(s) changed from $srcExt to $dstExt" "Green"
+                UpdateEditor
+            }
+        }
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Converted: $ok   Skipped: $skipped   Failed: $failed" "Green"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
 function Find-GhostscriptExe {
-    # Returns the path to a Ghostscript console executable, or $null.
     foreach ($n in @('gswin64c', 'gswin32c', 'gs')) {
         $cmd = Get-Command $n -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($cmd -and $cmd.Source) { return $cmd.Source }
@@ -6938,13 +5382,12 @@ function Find-GhostscriptExe {
 function ConvertAiToPng {
     # Converts the Adobe Illustrator (.ai) files in a folder you pick to PNG.
     # With the Image Tools "Include subfolders" box ticked it also searches
-    # every subfolder. The PNG is written next to each
-    # .ai file with the same name. The .ai originals are NEVER deleted or modified, and an existing
+    # every subfolder. The PNG is written next to each .ai file with the same
+    # name. The .ai originals are NEVER deleted or modified, and an existing
     # PNG is never overwritten.
     #
     # Engine 1 (preferred): Illustrator itself, driven through its COM
-    #   scripting interface (Illustrator.Application). Illustrator has no real
-    #   "/export" command-line switch, so COM is the supported way to do this.
+    #   scripting interface (Illustrator.Application).
     # Engine 2 (fallback): Ghostscript, which can render the PDF-compatible
     #   data most .ai files contain. No Illustrator needed. First page only.
     $startDir = $null
@@ -7048,9 +5491,6 @@ function ConvertAiToPng {
                     $abCount = 1
                     try { $abCount = [int]$doc.Artboards.Count } catch {}
                     if ($abCount -lt 1) { $abCount = 1 }
-                    # Illustrator adds the .png extension itself, so pass the
-                    # path WITHOUT an extension. Artboard 1 -> Name.png,
-                    # artboard 2 -> Name_artboard2.png, and so on.
                     $noExt = [System.IO.Path]::ChangeExtension($f.FullName, $null)
                     for ($a = 0; $a -lt $abCount; $a++) {
                         if ($abCount -gt 1) { try { $doc.Artboards.SetActiveArtboardIndex($a) } catch {} }
@@ -7083,7 +5523,6 @@ function ConvertAiToPng {
                 else { Log-Message "  Converted: $rel" "Green" }
             } else {
                 $failed++
-                # Remove a zero-byte/partial PNG so a retry is not skipped.
                 if ((Test-Path -LiteralPath $pngTarget) -and ((Get-Item -LiteralPath $pngTarget).Length -eq 0)) {
                     Remove-Item -LiteralPath $pngTarget -Force -ErrorAction SilentlyContinue
                 }
@@ -7109,27 +5548,26 @@ function UpdateMetadataExtensions {
     param($ext)
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "UPDATING METADATA EXTENSIONS TO .$ext" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $p = $c.metadataPath
         $content = Get-Content $p -Raw
         $oldExt = if ($ext -eq "png") { "jpg" } else { "png" }
-        
+
         $newContent = $content -replace "\.$oldExt(?=`"|'|\s|$)", ".$ext"
         # (v2.5.43) Removed a second -replace here: "$oldExt_thumb" was parsed by PowerShell as a
         # variable named oldExt_thumb (empty), so the pattern became "\." and EVERY period in the
         # file turned into ".png_thumb". The line above already converts *_thumb.jpg too.
-        
+
         CreateBackup
         $newContent | Out-File -FilePath $p -Encoding UTF8
-        
+
         Log-Message "Updated metadata: .$oldExt -> .$ext" "Green"
         UpdateEditor
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -7141,27 +5579,26 @@ function UpdateMetadataExtensions {
 function CreateBackup {
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "CREATING BACKUP - $($c.name)" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $originalPath = $c.metadataPath
-        
+
         if (-not (Test-Path $originalPath)) {
             Log-Message "ERROR: Metadata file not found" "Red"
             return
         }
-        
+
         $backupPath = $originalPath -replace '\.txt$', '.bkup.txt'
-        
+
         Copy-Item -Path $originalPath -Destination $backupPath -Force
-        
+
         Log-Message "Backup created: $backupPath" "Green"
         Log-Message "Original: $originalPath" "White"
         Log-Message "Done!" "Green"
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -7170,41 +5607,40 @@ function CreateBackup {
 function RestoreBackup {
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "RESTORING BACKUP - $($c.name)" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     try {
         $originalPath = $c.metadataPath
-        
+
         if (-not (Test-Path $originalPath)) {
             Log-Message "ERROR: Metadata file not found" "Red"
             return
         }
-        
+
         $backupPath = $originalPath -replace '\.txt$', '.bkup.txt'
-        
+
         if (-not (Test-Path $backupPath)) {
             Log-Message "ERROR: Backup file not found: $backupPath" "Red"
             Log-Message "Please use 'Backup' first to create a backup" "Yellow"
             return
         }
-        
+
         $backupInfo = Get-Item $backupPath
         $originalInfo = Get-Item $originalPath
-        
+
         Log-Message "Backup file: $backupPath" "Cyan"
         Log-Message "Backup date: $($backupInfo.LastWriteTime)" "White"
         Log-Message "Original date: $($originalInfo.LastWriteTime)" "White"
-        
+
         Copy-Item -Path $backupPath -Destination $originalPath -Force
-        
+
         Log-Message "Backup restored: $backupPath -> $originalPath" "Green"
         Log-Message "Done!" "Green"
-        
+
         UpdateEditor
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -7224,18 +5660,18 @@ function UpdateMetadataNames {
         $content = Get-Content $p -Raw
         $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
         $count = 0
-        
+
         foreach ($g in $games) {
             if ($g -match 'game: (.+?)(?:\r?\n|$)') {
                 $name = $matches[1].Trim()
             } else { continue }
-            
+
             if ($g -match 'assets\.box_front:.*?([^\\]+\.(png|jpg))') {
                 $oldName = $matches[1]
                 $oldExt = $matches[2]
                 $safe = $name -replace '[^\w\s-]', '' -replace '\s+', ' ' -replace ' ', '_'
                 $newName = "$safe.$oldExt"
-                
+
                 if ($oldName -ne $newName) {
                     $content = $content -replace $oldName, $newName
                     $oldThumb = $oldName -replace "\.$oldExt$", "_thumb.$oldExt"
@@ -7248,7 +5684,7 @@ function UpdateMetadataNames {
                 }
             }
         }
-        
+
         $content | Out-File -FilePath $p -Encoding UTF8
         Log-Message "Updated: $count metadata entries" "Green"
         UpdateEditor
@@ -7256,7 +5692,7 @@ function UpdateMetadataNames {
 }
 
 # ============================================================================
-# CORE FUNCTIONS
+# CORE TOOLS
 # ============================================================================
 function CheckHealth {
     $c = Get-Col
@@ -7273,7 +5709,7 @@ function CheckHealth {
         $art = 0
         $missing = 0
         $gameIDs = 0
-        
+
         foreach ($g in $games) {
             if ($g -match 'assets\.box_front:') {
                 $art++
@@ -7333,21 +5769,21 @@ function FindMissing {
     try {
         $p = $c.metadataPath
         $bp = $c.mediaPath
-        
+
         if ([string]::IsNullOrWhiteSpace($bp)) {
             Log-Message "ERROR: Media folder path is empty!" "Red"
             Log-Message "Please re-add your collection and make sure to select a Media Folder." "Yellow"
             return
         }
-        
+
         $fp = Join-Path $bp "box2dfront"
-        
+
         if (-not (Test-Path $fp)) {
             Log-Message "ERROR: box2dfront folder not found: $fp" "Red"
             Log-Message "Please make sure your Media Folder contains a 'box2dfront' folder with images." "Yellow"
             return
         }
-        
+
         $content = Get-Content $p -Raw
         $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
         $imagesPNG = Get-ChildItem $fp -Filter "*.png" -ErrorAction SilentlyContinue | ForEach-Object { [System.IO.Path]::GetFileNameWithoutExtension($_.Name) }
@@ -7378,27 +5814,27 @@ function AddBoxArt {
     )
     $c = Get-Col
     if (-not $c) { return }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "ADDING BOX ART - $($c.name) [mode=$Mode]" "Cyan"
     Log-Message "========================================" "Cyan"
     try {
         $p = $c.metadataPath
         $bp = $c.mediaPath
-        
+
         if ([string]::IsNullOrWhiteSpace($bp)) {
             Log-Message "ERROR: Media folder path is empty!" "Red"
             Log-Message "Please re-add your collection and make sure to select a Media Folder." "Yellow"
             Log-Message "The Media Folder should contain: box2dfront\ and box2dThumb\" "Yellow"
             return
         }
-        
+
         Log-Message "Metadata file: $p" "White"
         Log-Message "Media folder: $bp" "White"
-        
+
         $tp = Join-Path $bp "box2dThumb"
         $fp = Join-Path $bp "box2dfront"
-        
+
         if (-not (Test-Path $fp)) {
             Log-Message "ERROR: box2dfront folder not found: $fp" "Red"
             Log-Message "Please make sure your Media Folder contains a 'box2dfront' folder with images." "Yellow"
@@ -7408,12 +5844,10 @@ function AddBoxArt {
             Log-Message "Creating folder: $tp" "Yellow"
             New-Item -ItemType Directory -Path $tp -Force | Out-Null
         }
-        
+
         $content = Get-Content $p -Raw
         $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        
-        # Index by exact basename AND by region-stripped key so
-        # "Super Mario World" matches "Super Mario World (USA).jpg"
+
         $imageFiles = @{}
         $imageByKey = @{}
         foreach ($img in @(Get-ChildItem $fp -File -ErrorAction SilentlyContinue)) {
@@ -7427,7 +5861,7 @@ function AddBoxArt {
             }
         }
         Log-Message "Images found in box2dfront: $($imageFiles.Count)" "Cyan"
-        
+
         $mapHash = @{}
         $metaDir = Split-Path $p -Parent
         foreach ($mf in @("sns_mappings.txt", "game_id_mappings.txt")) {
@@ -7444,7 +5878,7 @@ function AddBoxArt {
                 break
             }
         }
-        
+
         function Find-ImageForToken([string]$token, $imageFiles, $fp) {
             if ([string]::IsNullOrWhiteSpace($token)) { return $null }
             if ($imageFiles.ContainsKey($token)) { return $imageFiles[$token] }
@@ -7457,45 +5891,41 @@ function AddBoxArt {
                     return $imageFiles[$k]
                 }
             }
-            # Region-tag aware: "Super Mario World" <-> "Super Mario World (USA)"
             $tokKey = Get-MatchTitleKey $token
             if ($tokKey -and $imageByKey.ContainsKey($tokKey)) {
                 return $imageByKey[$tokKey]
             }
             return $null
         }
-        
+
         $updated = $content
         $count = 0
         $missSamples = New-Object System.Collections.ArrayList
-        
+
         foreach ($g in $games) {
             if ($g -match 'game: (.+?)(?:\r?\n|$)') {
                 $name = $matches[1].Trim()
             } else { continue }
-            
-            # Skip only when box_front already has a non-empty path
+
             if ($g -match '(?m)^assets\.box_front:\s*(.+)$') {
                 $existingFront = $matches[1].Trim()
                 if (-not [string]::IsNullOrWhiteSpace($existingFront)) { continue }
             }
-            
-            # ROM basename often matches cover filenames better than clean game titles
+
             $romBase = $null
             if ($g -match '(?m)^file:\s*(.+)$') {
                 try {
                     $romBase = [System.IO.Path]::GetFileNameWithoutExtension($matches[1].Trim().Trim('"'))
                 } catch { $romBase = $null }
             }
-            
+
             $frontPath = $null
-            
+
             if ($Mode -ne "GameName" -and $mapHash.ContainsKey($name)) {
                 $token = $mapHash[$name]
                 $frontPath = Find-ImageForToken $token $imageFiles $fp
             }
-            
-            # Match order: ROM basename -> game title -> cleaned variants -> fuzzy keys
+
             if (-not $frontPath -and $Mode -ne "MappingOnly") {
                 if ($romBase) {
                     $frontPath = Find-ImageForToken $romBase $imageFiles $fp
@@ -7511,7 +5941,6 @@ function AddBoxArt {
                     $safe = ($name -replace '[^\w\s\-]', '' -replace '\s+', ' ' -replace ' ', '_').Trim()
                     $frontPath = Find-ImageForToken $safe $imageFiles $fp
                 }
-                # Fuzzy: normalized keys, subtitle-short form, starts-with, word overlap
                 if (-not $frontPath) {
                     $tryKeys = New-Object System.Collections.ArrayList
                     foreach ($src in @($name, $romBase)) {
@@ -7523,20 +5952,19 @@ function AddBoxArt {
                     $frontPath = Find-ImageByMatchKeys -TitleKeys @($tryKeys) -ImageByKey $imageByKey
                 }
             }
-            
+
             if (-not $frontPath) {
                 if ($missSamples.Count -lt 8) {
                     [void]$missSamples.Add([PSCustomObject]@{ Title = $name; Rom = $romBase })
                 }
                 continue
             }
-            
+
             $ext = [System.IO.Path]::GetExtension($frontPath).TrimStart('.')
             if ([string]::IsNullOrWhiteSpace($ext)) { $ext = "png" }
             $base = [System.IO.Path]::GetFileNameWithoutExtension($frontPath)
             $thumb = Join-Path $tp ($base + "_thumb." + $ext)
-            
-            # Prefer replacing empty box_front line; else insert after game: line
+
             $escaped = [regex]::Escape($name)
             $blockPat = "(?ms)(^game:\s*$escaped\r?\n)(.*?)(?=^game:\s*|\z)"
             $m = [regex]::Match($updated, $blockPat)
@@ -7549,7 +5977,6 @@ function AddBoxArt {
                         $body = [regex]::Replace($body, '(?m)^assets\.box_front_thumb:\s*.*$', "assets.box_front_thumb: $thumb", 1)
                     } else {
                         $body = "assets.box_front: $frontPath`nassets.box_front_thumb: $thumb`n" + ($body -replace '(?m)^assets\.box_front:\s*.*\r?\n?', '')
-                        # already replaced front; ensure thumb present
                         if ($body -notmatch '(?m)^assets\.box_front_thumb:') {
                             $body = $body -replace '(?m)^(assets\.box_front:.*)$', ('$1' + "`nassets.box_front_thumb: $thumb")
                         }
@@ -7570,7 +5997,7 @@ function AddBoxArt {
             $count++
             Log-Message "  Added: $name -> $(Split-Path $frontPath -Leaf)" "Green"
         }
-        
+
         Log-Message "Added box art to: $count games" "Green"
         if ($missSamples.Count -gt 0) {
             Log-Message "Sample games with no matching image:" "Yellow"
@@ -7588,14 +6015,12 @@ function AddBoxArt {
                 }
             }
         }
-        
+
         CreateBackup
         $utf8NoBom = New-Object System.Text.UTF8Encoding $false
         [System.IO.File]::WriteAllText($p, $updated, $utf8NoBom)
         UpdateEditor
-        # Selection is preserved by FilterGameList; refresh form fields for current game
         try { LoadSelectedGameFields } catch {}
-        
     } catch {
         Log-Message "ERROR: $_" "Red"
     }
@@ -7630,7 +6055,6 @@ function Rename-ImagesFromSnsCodes {
         $metaDir = Split-Path $c.metadataPath -Parent
         $idToName = @{}
 
-        # sns_mappings.txt / game_id_mappings.txt are "Name=ID" - invert to ID->Name
         foreach ($mf in @("sns_mappings.txt", "game_id_mappings.txt")) {
             $mp = Resolve-ToolsFile $bp $mf $metaDir
             if (-not ($mp -and (Test-Path $mp))) { continue }
@@ -7644,7 +6068,6 @@ function Rename-ImagesFromSnsCodes {
                 }
             }
         }
-        # sns_titles.txt / gametdb_*_titles.txt are "ID=Title" already
         $titleFileNames = @("sns_titles.txt", "sns_checksum_titles.txt", "snes_titles.txt", "gametdb_titles.txt", "titles.txt")
         foreach ($tf in $titleFileNames) {
             $tp = Resolve-ToolsFile $bp $tf $metaDir
@@ -7659,7 +6082,6 @@ function Rename-ImagesFromSnsCodes {
                 }
             }
         }
-        # Also cache any gametdb_<plat>_titles.txt regardless of platform prefix
         foreach ($f in @(Get-ChildItem (Get-ToolsFolder $bp) -Filter "gametdb_*_titles.txt" -File -ErrorAction SilentlyContinue)) {
             foreach ($line in Get-Content $f.FullName) {
                 if ($line -match '^\s*([A-Za-z0-9-]+)\s*=\s*(.+)$') {
@@ -7698,8 +6120,6 @@ function Rename-ImagesFromSnsCodes {
             $base = [System.IO.Path]::GetFileNameWithoutExtension($img.Name)
             $ext = $img.Extension
 
-            # Try exact filename as an ID, then strip a trailing region tag
-            # like "-USA" / "-EUR" / "-JPN" / "-World" and try again.
             $candidates = @($base)
             if ($base -match '^(.+?)-(USA|EUR|EU|JPN|JAP|JP|World|Unk|Unknown)$') {
                 $candidates += $matches[1]
@@ -7778,7 +6198,7 @@ function RenameImages {
     # e.g. "Super Mario World (USA).jpg" -> "Super Mario World.jpg"
     $c = Get-Col
     if (-not $c) { return }
-    
+
     $msg = "Rename images in box2dfront to match game titles?`n`n"
     $msg += "1. Strips region tags: (USA), (Europe), (Japan), etc.`n"
     $msg += "2. Matches them to game titles in metadata`n"
@@ -7786,7 +6206,7 @@ function RenameImages {
     $msg += "   Super Mario World (USA).jpg  ->  Super Mario World.jpg`n`n"
     $msg += "Also updates assets.box_front paths when needed.`n"
     $msg += "A metadata backup is created first. Continue?"
-    
+
     $choice = [System.Windows.Forms.MessageBox]::Show(
         $msg,
         "Rename Images to Game Titles",
@@ -7797,26 +6217,26 @@ function RenameImages {
         Log-Message "Rename cancelled." "Yellow"
         return
     }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "RENAME IMAGES TO GAME TITLES - $($c.name)" "Cyan"
     Log-Message "========================================" "Cyan"
     try {
         $p = $c.metadataPath
         $bp = $c.mediaPath
-        
+
         if ([string]::IsNullOrWhiteSpace($bp)) {
             Log-Message "ERROR: Media folder path is empty!" "Red"
             Log-Message "Re-add the collection and select a Media Folder." "Yellow"
             return
         }
-        
+
         $fp = Join-Path $bp "box2dfront"
         if (-not (Test-Path $fp)) {
             Log-Message "ERROR: box2dfront folder not found: $fp" "Red"
             return
         }
-        
+
         $content = Get-Content $p -Raw -ErrorAction Stop
         $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
         $gameByKey = @{}
@@ -7833,7 +6253,7 @@ function RenameImages {
             }
         }
         Log-Message "Games in metadata: $gameCount" "Cyan"
-        
+
         $allFiles = @(Get-ChildItem -LiteralPath $fp -File -ErrorAction SilentlyContinue)
         $images = @()
         foreach ($f in $allFiles) {
@@ -7843,42 +6263,42 @@ function RenameImages {
             }
         }
         Log-Message "Images in box2dfront: $($images.Count)" "Cyan"
-        
+
         if ($images.Count -eq 0) {
             Log-Message "No images found to rename." "Yellow"
             return
         }
-        
+
         $renamed = 0
         $skipped = 0
         $conflicts = 0
         $pathMap = @{}
-        
+
         foreach ($img in $images) {
             $oldBase = [System.IO.Path]::GetFileNameWithoutExtension($img.Name)
             $ext = $img.Extension
             $key = Get-MatchTitleKey $oldBase
-            
+
             if (-not $key -or -not $gameByKey.ContainsKey($key)) {
                 $skipped++
                 continue
             }
-            
+
             $targetTitle = $gameByKey[$key]
             $safeTitle = ($targetTitle -replace '[<>:"/\\|?*]', '').Trim()
             if (-not $safeTitle) { $skipped++; continue }
-            
+
             $newName = $safeTitle + $ext
             $newPath = Join-Path $fp $newName
-            
+
             if ($img.Name -eq $newName) { continue }
-            
+
             if (Test-Path -LiteralPath $newPath) {
                 Log-Message "  Conflict (exists): $($img.Name) -> $newName" "Yellow"
                 $conflicts++
                 continue
             }
-            
+
             try {
                 Rename-Item -LiteralPath $img.FullName -NewName $newName -ErrorAction Stop
                 $pathMap[$img.FullName] = $newPath
@@ -7888,7 +6308,7 @@ function RenameImages {
                 Log-Message "  Failed: $($img.Name) - $_" "Red"
             }
         }
-        
+
         $metaUpdated = 0
         if ($pathMap.Count -gt 0) {
             $updated = $content
@@ -7914,7 +6334,7 @@ function RenameImages {
                 UpdateEditor
             }
         }
-        
+
         Log-Message "----------------------------------------" "Cyan"
         Log-Message "Renamed: $renamed | No match / skipped: $skipped | Conflicts: $conflicts" "Green"
         if ($renamed -gt 0) {
@@ -7933,11 +6353,7 @@ function Is-BogusGameTitle {
     $letters = ([regex]::Matches($t, '[A-Za-z0-9]')).Count
     $ratio = $letters / [double]$t.Length
 
-    # Real titles are mostly alphanumeric. Junk lines from corrupted
-    # filenames / stray text files are heavy on symbols and spaces.
     if ($ratio -lt 0.5) { return $true }
-
-    # Needs at least one run of 2+ letters somewhere (a real "word")
     if ($t -notmatch '[A-Za-z]{2,}') { return $true }
 
     return $false
@@ -8053,5087 +6469,8 @@ function FixDup {
 }
 
 # ============================================================================
-# SNS EXTRACTION FUNCTIONS
+# SNS TITLES DATABASE / CHECKSUM MATCHING
 # ============================================================================
-function ExtractXML {
-    $c = Get-Col
-    if (-not $c) { return }
-    Log-Message "========================================" "Cyan"
-    Log-Message "EXTRACTING SNS CODES FROM XML" "Cyan"
-    Log-Message "========================================" "Cyan"
-    try {
-        $bp = [string]$c.mediaPath
-        $meta = [string]$c.metadataPath
-        
-        $xml = $null
-        if (-not [string]::IsNullOrWhiteSpace($bp)) {
-            $tryXml = Join-Path $bp "coversdb-snes_files.xml"
-            if (Test-Path $tryXml) { $xml = $tryXml }
-        }
-        if (-not $xml) {
-            $of = New-Object System.Windows.Forms.OpenFileDialog
-            $of.Title = "Select coversdb SNES XML file"
-            $of.Filter = "XML Files (*.xml)|*.xml|All Files (*.*)|*.*"
-            if (-not [string]::IsNullOrWhiteSpace($bp) -and (Test-Path $bp)) {
-                $of.InitialDirectory = $bp
-            }
-            if ($of.ShowDialog() -ne "OK") {
-                Log-Message "Extract from XML cancelled." "Yellow"
-                return
-            }
-            $xml = $of.FileName
-        }
-        
-        Log-Message "XML: $xml" "White"
-        $content = Get-Content $xml -Raw
-        $pattern = 'name="(SNS-[A-Z0-9]{4}-[A-Z]{3,4})\.jpg"'
-        $codes = @([regex]::Matches($content, $pattern) | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique)
-        
-        $outDir = $null
-        if (-not [string]::IsNullOrWhiteSpace($bp)) {
-            $outDir = Get-ToolsFolder $bp
-        }
-        if (-not $outDir) { $outDir = Split-Path $xml -Parent }
-        $file = Join-Path $outDir "sns_codes_from_xml.txt"
-        $codes | Out-File -FilePath $file -Encoding UTF8
-        
-        Update-SnsCodeList $codes $file
-        
-        Log-Message "Extracted: $($codes.Count) SNS codes" "Green"
-        Log-Message "Saved: $file" "Cyan"
-        Log-Message "SNS list updated ($($codes.Count) codes shown in SNS Code Tools)" "Cyan"
-        if ($codes.Count -eq 0) {
-            Log-Message "No SNS codes found in XML" "Yellow"
-        }
-    } catch { Log-Message "ERROR: $_" "Red" }
-}
-
-function ExtractImages {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fd.Description = "Select the folder that contains the SNS image files (PNG/JPG)"
-    $fd.ShowNewFolderButton = $false
-    
-    $startPath = $null
-    $bp = [string]$c.mediaPath
-    $meta = [string]$c.metadataPath
-    if (-not [string]::IsNullOrWhiteSpace($bp)) {
-        $tryFront = Join-Path $bp "box2dfront"
-        if (Test-Path $tryFront) { $startPath = $tryFront }
-        elseif (Test-Path $bp) { $startPath = $bp }
-    }
-    if (-not $startPath -and -not [string]::IsNullOrWhiteSpace($meta) -and (Test-Path $meta)) {
-        $startPath = Split-Path $meta -Parent
-    }
-    if ($startPath) { $fd.SelectedPath = $startPath }
-    
-    if ($fd.ShowDialog() -ne "OK") {
-        Log-Message "Extract from Images cancelled." "Yellow"
-        return
-    }
-    
-    $fp = $fd.SelectedPath
-    Log-Message "========================================" "Cyan"
-    Log-Message "EXTRACTING SNS CODES FROM IMAGES" "Cyan"
-    Log-Message "========================================" "Cyan"
-    Log-Message "Looking in: $fp" "White"
-    
-    try {
-        if (-not (Test-Path $fp)) {
-            Log-Message "Folder not found: $fp" "Red"
-            return
-        }
-        
-        $images = @(Get-ChildItem $fp -Filter "*.png" -ErrorAction SilentlyContinue)
-        $images += @(Get-ChildItem $fp -Filter "*.jpg" -ErrorAction SilentlyContinue)
-        $images += @(Get-ChildItem $fp -Filter "*.jpeg" -ErrorAction SilentlyContinue)
-        
-        if ($images.Count -eq 0) {
-            Log-Message "No images found in: $fp" "Yellow"
-            Log-Message "Looking for SNS patterns like: SNS-XXXX-USA.png" "Yellow"
-            return
-        }
-        
-        Log-Message "Found $($images.Count) image file(s)" "Cyan"
-        
-        $codes = @()
-        $pattern = '^(SNS)-([A-Z0-9]{4})-(USA|EUR|JPN|AUS|FRA|GER|ITA|SPA|UK|ASIA|KOR|CAN|MEX|BRA|CHN|TWN|RUS|SAF|IND|NZL|DEN|SWE|NOR|FIN|POL|CZE|HUN|AUT|CHE|NLD|BEL|POR|GRE|TUR|ISR|UAE|SAU|ZAF|ARG|CHL|COL|PER|VEN|MYS|SGP|PHL|IDN|THA|VNM|PAK|NGA|KEN|MAR|EGY|TUN|LBN|JOR|KWT|QAT|BHR|OMN)\.(png|jpg|jpeg)$'
-        
-        foreach ($img in $images) {
-            if ($img.Name -match $pattern) {
-                $fullID = $matches[1] + "-" + $matches[2] + "-" + $matches[3]
-                $codes += $fullID
-                Log-Message "  Found: $fullID" "Green"
-            }
-        }
-        
-        $codes = @($codes | Sort-Object -Unique)
-        
-        $outDir = $fp
-        if (-not [string]::IsNullOrWhiteSpace($bp)) {
-            $outDir = Get-ToolsFolder $bp
-        } elseif (-not [string]::IsNullOrWhiteSpace($meta) -and (Test-Path $meta)) {
-            $parent = Split-Path $meta -Parent
-            if (-not [string]::IsNullOrWhiteSpace($parent)) { $outDir = $parent }
-        }
-        $file = Join-Path $outDir "sns_codes_from_images.txt"
-        $codes | Out-File -FilePath $file -Encoding UTF8
-        
-        Update-SnsCodeList $codes $file
-        
-        if ($codes.Count -eq 0) {
-            Log-Message "No SNS codes found in image filenames" "Yellow"
-            Log-Message "Expected pattern: SNS-XXXX-USA.png" "Yellow"
-            Log-Message "Example: SNS-ABCD-USA.png" "Yellow"
-        } else {
-            Log-Message "Extracted: $($codes.Count) SNS codes" "Green"
-            Log-Message "Saved: $file" "Cyan"
-            Log-Message "SNS list updated ($($codes.Count) codes shown in SNS Code Tools)" "Cyan"
-        }
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-# ============================================================================
-# GAMETDB HELPERS
-# ============================================================================
-function Get-GameTDBRegionCode {
-    param([string]$GameId)
-    if ([string]::IsNullOrWhiteSpace($GameId)) { return "US" }
-    $id = $GameId.Trim().ToUpper()
-    if ($id -match '^[A-Z0-9]{6}$') {
-        $r = $id[3]
-        switch ($r) {
-            'E' { return "US" }
-            'J' { return "JA" }
-            'K' { return "KO" }
-            'W' { return "TW" }
-            'R' { return "RU" }
-            'A' { return "US" }
-            default { return "EN" }
-        }
-    }
-    if ($id -match '-(USA|EUR|JPN|AUS|FRA|GER|ITA|SPA|UK|KOR|CAN)$') {
-        switch ($matches[1]) {
-            'USA' { return "US" }
-            'JPN' { return "JA" }
-            'KOR' { return "KO" }
-            'EUR' { return "EN" }
-            'UK'  { return "EN" }
-            'FRA' { return "FR" }
-            'GER' { return "DE" }
-            'ITA' { return "IT" }
-            'SPA' { return "ES" }
-            'AUS' { return "AU" }
-            'CAN' { return "US" }
-            default { return "EN" }
-        }
-    }
-    return "US"
-}
-
-function Get-GameTDBPlatformKey {
-    param([string]$GameId)
-    if ([string]::IsNullOrWhiteSpace($GameId)) { return $script:lastGameTdbPlatform }
-    $id = $GameId.Trim().ToUpper()
-    if ($id -match '^(BLES|BLUS|BLAS|BLJM|NPUB|NPEB|NPHB)') { return "ps3" }
-    if ($id -match '^(HAC|XCI)') { return "switch" }
-    if ($id -match '^[A-Z0-9]{16}$') { return "switch" }
-    if ($id -match '^[A-Z0-9]{4}$' -and $id -notmatch '^[A-Z]{3}[EJP]') {
-        return "ds"
-    }
-    if ($id -match '^[A-Z0-9]{6}$') {
-        $first = $id[0]
-        if ($first -eq 'G') { return "wii" }
-        if ($first -eq 'R' -or $first -eq 'S' -or $first -eq 'H') { return "wii" }
-        return "wii"
-    }
-    if ($id -match '^SNS-') { return $null }
-    return $script:lastGameTdbPlatform
-}
-
-function Get-GameTDBShortId {
-    param([string]$GameId)
-    if ([string]::IsNullOrWhiteSpace($GameId)) { return $null }
-    $id = $GameId.Trim().ToUpper()
-    if ($id -match '^[A-Z]{3,4}-([A-Z0-9]{4})-') { return $matches[1] }
-    if ($id -match '^[A-Z0-9]{4,16}$') { return $id }
-    return $id
-}
-
-function Select-GameTDBPlatform {
-    $keys = @($script:gameTdbPlatforms.Keys | Sort-Object)
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Select GameTDB Platform"
-    $dlg.Size = New-Object System.Drawing.Size(360, 220)
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.BackColor = $script:theme.background
-    $dlg.ForeColor = $script:theme.text
-    
-    $lb = New-Object System.Windows.Forms.ListBox
-    $lb.Location = New-Object System.Drawing.Point(20, 20)
-    $lb.Size = New-Object System.Drawing.Size(300, 110)
-    $lb.BackColor = $script:theme.editor
-    $lb.ForeColor = $script:theme.text
-    foreach ($k in $keys) {
-        [void]$lb.Items.Add("$k  -  $($script:gameTdbPlatforms[$k].Label)")
-    }
-    $idx = [array]::IndexOf($keys, $script:lastGameTdbPlatform)
-    if ($idx -ge 0) { $lb.SelectedIndex = $idx } else { $lb.SelectedIndex = 0 }
-    $dlg.Controls.Add($lb)
-    
-    $chosen = $null
-    $ok = Create-Button "OK" 80 140 90 30
-    $ok.Add_Click({
-        if ($lb.SelectedIndex -ge 0) {
-            $script:__gtdbPick = $keys[$lb.SelectedIndex]
-            $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-            $dlg.Close()
-        }
-    })
-    $dlg.Controls.Add($ok)
-    $cn = Create-Button "Cancel" 190 140 90 30
-    $cn.Add_Click({ $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel; $dlg.Close() })
-    $dlg.Controls.Add($cn)
-    
-    $script:__gtdbPick = $null
-    if ($dlg.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK -and $script:__gtdbPick) {
-        $script:lastGameTdbPlatform = $script:__gtdbPick
-        return $script:__gtdbPick
-    }
-    return $null
-}
-
-function Download-GameTDBTitles {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $plat = Select-GameTDBPlatform
-    if (-not $plat) {
-        Log-Message "GameTDB titles download cancelled." "Yellow"
-        return
-    }
-    
-    $info = $script:gameTdbPlatforms[$plat]
-    Log-Message "========================================" "Cyan"
-    Log-Message "DOWNLOADING GAMETDB TITLES - $($info.Label)" "Cyan"
-    Log-Message "========================================" "Cyan"
-    
-    try {
-        $outDir = Get-ToolsFolder $c.mediaPath
-        if (-not $outDir) { $outDir = Split-Path $c.metadataPath -Parent }
-        $outFile = Join-Path $outDir "gametdb_${plat}_titles.txt"
-        
-        Log-Message "Fetching: $($info.TitlesUrl)" "White"
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-        $data = $wc.DownloadString($info.TitlesUrl)
-        $wc.Dispose()
-        
-        $data | Out-File -FilePath $outFile -Encoding UTF8
-        $lines = @($data -split "`r?`n" | Where-Object { $_ -match '^\s*[A-Z0-9]' })
-        $map = @{}
-        foreach ($line in $lines) {
-            if ($line -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
-                $map[$matches[1].Trim()] = $matches[2].Trim()
-            }
-        }
-        $script:gameTdbTitlesCache[$plat] = $map
-        $script:lastGameTdbPlatform = $plat
-        
-        Log-Message "Saved: $outFile" "Green"
-        Log-Message "Parsed: $($map.Count) titles" "Green"
-        Log-Message "Platform set to: $plat" "Cyan"
-    } catch {
-        Log-Message "ERROR downloading titles: $_" "Red"
-        Log-Message "Check internet access and that GameTDB is reachable." "Yellow"
-    }
-}
-
-function Load-GameTDBTitlesCache {
-    param([string]$Platform)
-    if ($script:gameTdbTitlesCache.ContainsKey($Platform) -and $script:gameTdbTitlesCache[$Platform].Count -gt 0) {
-        return $script:gameTdbTitlesCache[$Platform]
-    }
-    $c = Get-Col
-    if ($c) {
-        $metaDir = Split-Path $c.metadataPath -Parent
-        $outFile = Resolve-ToolsFile $c.mediaPath "gametdb_${Platform}_titles.txt" $metaDir
-        if ($outFile -and (Test-Path $outFile)) {
-            $map = @{}
-            Get-Content $outFile | ForEach-Object {
-                if ($_ -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
-                    $map[$matches[1].Trim()] = $matches[2].Trim()
-                }
-            }
-            $script:gameTdbTitlesCache[$Platform] = $map
-            return $map
-        }
-    }
-    return @{}
-}
-
-function Lookup-GameTDBTitle {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $gameId = ""
-    if ($script:fieldControls -and $script:fieldControls.ContainsKey("game_id")) {
-        $gameId = $script:fieldControls["game_id"].Text.Trim()
-    }
-    if ([string]::IsNullOrWhiteSpace($gameId) -and $script:gameListBox -and $script:gameListBox.SelectedItem) {
-        $title = $script:gameListBox.SelectedItem.ToString()
-        $g = $script:parsedGames | Where-Object { $_.Title -eq $title } | Select-Object -First 1
-        if ($g -and $g.Fields.ContainsKey("game_id")) { $gameId = [string]$g.Fields["game_id"] }
-    }
-    
-    if ([string]::IsNullOrWhiteSpace($gameId)) {
-        $input = Show-InputBox "Enter GameTDB / product Game ID (e.g. RMGE01):" "Lookup Title" ""
-        if ([string]::IsNullOrWhiteSpace($input)) { return }
-        $gameId = $input.Trim()
-    }
-    
-    $shortId = Get-GameTDBShortId $gameId
-    $plat = Get-GameTDBPlatformKey $gameId
-    if (-not $plat) {
-        Log-Message "No GameTDB platform mapping for: $gameId (SNES codes use SNS tools)" "Yellow"
-        return
-    }
-    
-    $map = Load-GameTDBTitlesCache $plat
-    if ($map.Count -eq 0) {
-        Log-Message "No titles cache for $plat. Run 'Download Titles DB' first." "Yellow"
-        return
-    }
-    
-    $found = $null
-    if ($map.ContainsKey($shortId)) { $found = $map[$shortId] }
-    elseif ($map.ContainsKey($gameId)) { $found = $map[$gameId] }
-    
-    if ($found) {
-        Log-Message "GameTDB: $shortId -> $found  [$plat]" "Green"
-        [System.Windows.Forms.MessageBox]::Show("ID: $shortId`nPlatform: $plat`nTitle: $found", "GameTDB Lookup", "OK", "Information")
-    } else {
-        Log-Message "No title found for $shortId on $plat" "Yellow"
-    }
-}
-
-function Get-GameTDBCoverExt {
-    param([string]$Platform, [string]$ArtType = "cover")
-    if ($ArtType -match '^(disc|discHQ|discCustom|discCustomHQ|cover3D)$') { return "png" }
-    $info = $script:gameTdbPlatforms[$Platform]
-    if ($info -and $info.Ext) { return $info.Ext }
-    return "jpg"
-}
-
-function Build-GameTDBCoverUrl {
-    param(
-        [string]$GameId,
-        [string]$ArtType = "cover",
-        [string]$Platform = $null,
-        [string]$Region = $null
-    )
-    $plat = if ($Platform) { $Platform } else { Get-GameTDBPlatformKey $GameId }
-    if (-not $plat) { return $null }
-    if ($plat -eq "gamecube") { $plat = "wii" }  # art host is shared
-    $info = $script:gameTdbPlatforms[$plat]
-    if (-not $info) { $info = $script:gameTdbPlatforms["wii"] }
-    $shortId = Get-GameTDBShortId $GameId
-    if (-not $Region) { $Region = Get-GameTDBRegionCode $GameId }
-    $ext = Get-GameTDBCoverExt $plat $ArtType
-    return "https://art.gametdb.com/$($info.ArtPath)/$ArtType/$Region/$shortId.$ext"
-}
-
-
-function Get-GameTDBCoverTypeDescription {
-    param([string]$CoverType)
-    # Resolutions are GameTDB's typical served sizes (exact pixels vary by platform/scan).
-    # Prefer HQ / fullHQ when you already have high-quality local art - avoid overwriting with "cover"/"coverM".
-    $map = @{
-        "cover"        = "Standard res (~512x340). Good for boxFront / box2dfront."
-        "coverHQ"      = "High res (~768x680+). Good for boxFront / box2dfront."
-        "coverfullHQ"  = "High-res full wrap (1500px+). Good for boxFull / box2dfull."
-        "coverM"       = "Medium res (~350-450px). Good for thumbnails only."
-        "cover3D"      = "3D box render (~512-768px). Decorative, not a flat scan."
-        "back"         = "Standard res (~512x340). Good for boxBack / box2dback."
-        "backHQ"       = "High res (~768x680+). Good for boxBack / box2dback."
-        "backM"        = "Medium res, smaller file. Good for boxBack (lighter)."
-        "disc"         = "Disc/label art (~512-1000px). Good for disc art."
-        "discCustom"   = "Custom disc art. Use if the official disc art is missing."
-    }
-    if ($map.ContainsKey($CoverType)) { return $map[$CoverType] }
-    return "GameTDB art type from art.gametdb.com."
-}
-
-function Get-GameTDBCoverTypeFolder {
-    param(
-        [string]$CoverType,
-        [switch]$UseBoxFull
-    )
-    switch -Regex ($CoverType) {
-        '^(back|backHQ|backM)$' { return "box2dback" }
-        '^(disc|discCustom|discHQ|discCustomHQ)$' { return "disc" }
-        '^(coverfullHQ)$' {
-            if ($UseBoxFull) { return "boxFull" }
-            return "box2dfull"
-        }
-        default { return "box2dfront" }
-    }
-}
-
-function Get-GameTDBCoverTypeAssetKey {
-    param(
-        [string]$CoverType,
-        [switch]$UseBoxFull
-    )
-    switch -Regex ($CoverType) {
-        '^(back|backHQ|backM)$' { return "assets.box_back" }
-        '^(disc|discCustom|discHQ|discCustomHQ)$' { return "assets.cartridge" }
-        '^(coverfullHQ)$' {
-            if ($UseBoxFull) { return "assets.boxFull" }
-            return "assets.box_full"
-        }
-        default { return "assets.box_front" }
-    }
-}
-
-function Get-GameTDBNoArtStorePath {
-    param($Collection)
-    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
-    $dir = Split-Path $Collection.metadataPath -Parent
-    if (-not $dir) { return $null }
-    return (Join-Path $dir "gametdb_no_art_marks.json")
-}
-
-function Get-GameTDBNoArtMap {
-    # Same idea as TheCoverProject's no-cover tracking: a clean, confirmed
-    # 404 from GameTDB means "no art for this game/type", which is a real
-    # answer worth remembering instead of asking again on every single scan.
-    # Keyed by asset key first (box_front/box_full/box_back are tracked
-    # separately - a game can be missing one and have another), then by
-    # game_id -> ISO timestamp of when it was last confirmed missing.
-    param($Collection)
-    $map = @{}
-    $path = Get-GameTDBNoArtStorePath -Collection $Collection
-    if (-not $path -or -not (Test-Path $path)) { return $map }
-    try {
-        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        if ($data -is [System.Management.Automation.PSCustomObject]) {
-            foreach ($assetProp in $data.PSObject.Properties) {
-                $inner = @{}
-                if ($assetProp.Value -is [System.Management.Automation.PSCustomObject]) {
-                    foreach ($idProp in $assetProp.Value.PSObject.Properties) {
-                        $inner[$idProp.Name] = [string]$idProp.Value
-                    }
-                }
-                $map[$assetProp.Name] = $inner
-            }
-        }
-    } catch {}
-    return $map
-}
-
-function Save-GameTDBNoArtMap {
-    param($Collection, [hashtable]$Map)
-    $path = Get-GameTDBNoArtStorePath -Collection $Collection
-    if (-not $path) { return }
-    try {
-        ($Map | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
-    } catch {
-        Log-Message "GameTDB: couldn't save no-art list: $_" "Yellow"
-    }
-}
-
-function Test-GameTDBNoArtFresh {
-    # A mark older than this gets retried automatically on the next scan
-    # instead of being skipped forever - GameTDB's library does grow over
-    # time, so "missing last month" shouldn't mean "missing forever" without
-    # ever checking again.
-    param([hashtable]$Map, [string]$AssetKey, [string]$IdUpper, [int]$StalenessDays = 30)
-    if (-not $Map.ContainsKey($AssetKey)) { return $false }
-    if (-not $Map[$AssetKey].ContainsKey($IdUpper)) { return $false }
-    $iso = $Map[$AssetKey][$IdUpper]
-    try {
-        $dt = [datetime]::Parse($iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
-        return ((Get-Date) - $dt).TotalDays -lt $StalenessDays
-    } catch {
-        return $false
-    }
-}
-
-function Get-SafeGameFileName {
-    param([string]$Title)
-    if ([string]::IsNullOrWhiteSpace($Title)) { return $null }
-    $n = $Title.Trim()
-    $n = $n -replace '[\/:*?"<>|]', ''
-    $n = $n -replace '\s+', ' '
-    $n = $n.Trim().TrimEnd('.')
-    if ($n.Length -gt 120) { $n = $n.Substring(0, 120).Trim().TrimEnd('.') }
-    if ([string]::IsNullOrWhiteSpace($n)) { return $null }
-    return $n
-}
-
-function Convert-ImageFileToPng {
-    param([string]$Path)
-    if ([string]::IsNullOrWhiteSpace($Path) -or -not (Test-Path -LiteralPath $Path)) { return $Path }
-    if ($Path -match '\.png$') { return $Path }
-    $pngPath = [System.IO.Path]::ChangeExtension($Path, ".png")
-    try {
-        Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
-        $fs = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-        try {
-            $img = [System.Drawing.Image]::FromStream($fs)
-            try {
-                $bmp = New-Object System.Drawing.Bitmap $img
-                try {
-                    $bmp.Save($pngPath, [System.Drawing.Imaging.ImageFormat]::Png)
-                } finally { $bmp.Dispose() }
-            } finally { $img.Dispose() }
-        } finally { $fs.Close(); $fs.Dispose() }
-        if ((Test-Path -LiteralPath $pngPath) -and ((Get-Item -LiteralPath $pngPath).Length -gt 0)) {
-            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
-            return $pngPath
-        }
-    } catch {
-        Log-Message ("PNG convert failed for {0}: {1}" -f $Path, $_.Exception.Message) "Yellow"
-    }
-    return $Path
-}
-
-function Test-CollectionAssetPathExists {
-    # Resolve a metadata asset path (absolute or relative) against the collection.
-    param(
-        [string]$AssetPath,
-        $Collection
-    )
-    if ([string]::IsNullOrWhiteSpace($AssetPath) -or -not $Collection) { return $false }
-    $p = $AssetPath.Trim().Trim('"')
-    if ([string]::IsNullOrWhiteSpace($p)) { return $false }
-    try {
-        if ([System.IO.Path]::IsPathRooted($p)) {
-            return (Test-Path -LiteralPath $p)
-        }
-        $try1 = Join-Path (Split-Path $Collection.metadataPath -Parent) $p
-        if (Test-Path -LiteralPath $try1) { return $true }
-        if ($Collection.mediaPath) {
-            $try2 = Join-Path $Collection.mediaPath $p
-            if (Test-Path -LiteralPath $try2) { return $true }
-            $try3 = Join-Path (Split-Path $Collection.mediaPath -Parent) $p
-            if (Test-Path -LiteralPath $try3) { return $true }
-        }
-    } catch {}
-    return $false
-}
-
-function Get-CollectionGameIdMap {
-    # Returns hashtable: shortId (upper) -> @{
-    #   Title; GameId; HasBoxFront; HasBoxFull; HasBox_Full; HasBoxBack;
-    #   BoxFrontPath; PresentAssets (hashtable of assetKey -> $true when file exists)
-    # }
-    $map = @{}
-    $c = Get-Col
-    if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
-    try {
-        $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
-        if ([string]::IsNullOrWhiteSpace($content)) { return $map }
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        foreach ($g in $games) {
-            $title = ""
-            if ($g -match '(?m)^game:\s*(.+)$') { $title = $matches[1].Trim() }
-            $gid = $null
-            if ($g -match '(?m)^game_id:\s*(\S+)') { $gid = $matches[1].Trim() }
-            if (-not $gid) { continue }
-            $short = Get-GameTDBShortId $gid
-            if (-not $short) { $short = $gid }
-            $short = $short.ToUpperInvariant()
-
-            $present = @{}
-            $frontPath = ""
-            $hasFront = $false
-            $hasBoxFull = $false
-            $hasBox_Full = $false
-            $hasBack = $false
-
-            foreach ($m in [regex]::Matches($g, '(?m)^(assets\.[^:]+):\s*(.+)$')) {
-                $akey = $m.Groups[1].Value.Trim()
-                $aval = $m.Groups[2].Value.Trim().Trim('"')
-                if ([string]::IsNullOrWhiteSpace($aval)) { continue }
-                if (Test-CollectionAssetPathExists -AssetPath $aval -Collection $c) {
-                    $present[$akey] = $true
-                    if ($akey -eq "assets.box_front") {
-                        $hasFront = $true
-                        $frontPath = $aval
-                    } elseif ($akey -eq "assets.boxFull") {
-                        $hasBoxFull = $true
-                    } elseif ($akey -eq "assets.box_full") {
-                        $hasBox_Full = $true
-                    } elseif ($akey -eq "assets.box_back") {
-                        $hasBack = $true
-                    }
-                }
-            }
-
-            if (-not $map.ContainsKey($short)) {
-                $map[$short] = @{
-                    Title         = $title
-                    GameId        = $gid
-                    HasBoxFront   = $hasFront
-                    HasBoxFull    = $hasBoxFull
-                    HasBox_Full   = $hasBox_Full
-                    HasBoxBack    = $hasBack
-                    BoxFrontPath  = $frontPath
-                    PresentAssets = $present
-                }
-            }
-        }
-    } catch {
-        Log-Message "Get-CollectionGameIdMap: $_" "Yellow"
-    }
-    return $map
-}
-
-function Get-NormalizedGameTitle {
-    # Fuzzy match key: strip parenthetical/bracketed tags (region, lang, disc, WiiWare...),
-    # lowercase, drop punctuation, collapse whitespace. Used to match Libretro filenames
-    # (which carry No-Intro region tags) against plain collection game titles.
-    param([string]$Title)
-    if ([string]::IsNullOrWhiteSpace($Title)) { return "" }
-    $t = $Title
-    $t = [regex]::Replace($t, '\s*\([^)]*\)', '')
-    $t = [regex]::Replace($t, '\s*\[[^\]]*\]', '')
-    $t = $t.ToLowerInvariant()
-    $t = $t -replace '[^a-z0-9]+', ' '
-    $t = $t.Trim() -replace '\s+', ' '
-    return $t
-}
-
-function Get-CollectionGameTitleMap {
-    # Returns hashtable: normalized title -> @{
-    #   Title; HasBoxFront; HasBoxFull; HasBox_Full; HasBoxBack; PresentAssets
-    # }
-    # Same asset-presence logic as Get-CollectionGameIdMap, but keyed by title
-    # instead of game_id, for sources (like Libretro-Thumbnails) that have no ID.
-    $map = @{}
-    $c = Get-Col
-    if (-not $c -or -not $c.metadataPath -or -not (Test-Path $c.metadataPath)) { return $map }
-    try {
-        $content = Get-Content $c.metadataPath -Raw -ErrorAction Stop
-        if ([string]::IsNullOrWhiteSpace($content)) { return $map }
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        foreach ($g in $games) {
-            $title = ""
-            if ($g -match '(?m)^game:\s*(.+)$') { $title = $matches[1].Trim() }
-            if (-not $title) { continue }
-            $norm = Get-NormalizedGameTitle $title
-            if (-not $norm) { continue }
-
-            $present = @{}
-            $hasFront = $false
-            $hasBoxFull = $false
-            $hasBox_Full = $false
-            $hasBack = $false
-
-            foreach ($m in [regex]::Matches($g, '(?m)^(assets\.[^:]+):\s*(.+)$')) {
-                $akey = $m.Groups[1].Value.Trim()
-                $aval = $m.Groups[2].Value.Trim().Trim('"')
-                if ([string]::IsNullOrWhiteSpace($aval)) { continue }
-                if (Test-CollectionAssetPathExists -AssetPath $aval -Collection $c) {
-                    $present[$akey] = $true
-                    if ($akey -eq "assets.box_front") { $hasFront = $true }
-                    elseif ($akey -eq "assets.boxFull") { $hasBoxFull = $true }
-                    elseif ($akey -eq "assets.box_full") { $hasBox_Full = $true }
-                    elseif ($akey -eq "assets.box_back") { $hasBack = $true }
-                }
-            }
-
-            if (-not $map.ContainsKey($norm)) {
-                $map[$norm] = @{
-                    Title         = $title
-                    HasBoxFront   = $hasFront
-                    HasBoxFull    = $hasBoxFull
-                    HasBox_Full   = $hasBox_Full
-                    HasBoxBack    = $hasBack
-                    PresentAssets = $present
-                }
-            }
-        }
-    } catch {
-        Log-Message "Get-CollectionGameTitleMap: $_" "Yellow"
-    }
-    return $map
-}
-
-function Get-LibretroRepoTree {
-    # One GitHub API call per repo (git trees, recursive) - cached for the session.
-    # Unauthenticated GitHub API calls are rate-limited (~60/hour per IP), so this
-    # is only fetched once per repo per run, not once per game.
-    param([string]$RepoName)
-    if ($script:libretroTreeCache.ContainsKey($RepoName)) {
-        return $script:libretroTreeCache[$RepoName]
-    }
-    $url = "https://api.github.com/repos/libretro-thumbnails/$RepoName/git/trees/master?recursive=1"
-    $wc = New-Object System.Net.WebClient
-    $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-    $wc.Headers.Add("Accept", "application/vnd.github+json")
-    try {
-        $json = $wc.DownloadString($url)
-        $obj = $json | ConvertFrom-Json
-        $tree = @()
-        if ($obj -and $obj.tree) { $tree = @($obj.tree) }
-        $script:libretroTreeCache[$RepoName] = $tree
-        return $tree
-    } catch {
-        Log-Message "Libretro repo listing failed for ${RepoName}: $($_.Exception.Message)" "Yellow"
-        $script:libretroTreeCache[$RepoName] = @()
-        return @()
-    } finally {
-        $wc.Dispose()
-    }
-}
-
-function Get-LibretroAssetMapping {
-    # Returns hashtable: normalized title -> relative path within the repo
-    # (e.g. "Named_Boxarts/Metroid Prime (USA).png"), for the given folder
-    # (currently only "Named_Boxarts" is used - box art / cover front).
-    # When multiple region variants exist for the same title, prefers
-    # USA > World > Europe > Japan > first match, matching the region
-    # preference order used elsewhere in this tool.
-    param(
-        [string]$RepoName,
-        [string]$Folder = "Named_Boxarts"
-    )
-    $result = @{}
-    $tree = Get-LibretroRepoTree -RepoName $RepoName
-    if (-not $tree -or $tree.Count -eq 0) { return $result }
-
-    $prefix = "$Folder/"
-    $candidates = @{}
-    foreach ($node in $tree) {
-        if ($node.type -ne "blob") { continue }
-        $path = [string]$node.path
-        if (-not $path.StartsWith($prefix)) { continue }
-        $fileName = $path.Substring($prefix.Length)
-        $baseName = [System.IO.Path]::GetFileNameWithoutExtension($fileName)
-        $norm = Get-NormalizedGameTitle $baseName
-        if (-not $norm) { continue }
-        if (-not $candidates.ContainsKey($norm)) { $candidates[$norm] = New-Object System.Collections.ArrayList }
-        [void]$candidates[$norm].Add($path)
-    }
-
-    $regionPref = @("(USA)", "(World)", "(Europe)", "(Japan)")
-    foreach ($norm in @($candidates.Keys)) {
-        $paths = $candidates[$norm]
-        if ($paths.Count -eq 1) {
-            $result[$norm] = $paths[0]
-            continue
-        }
-        $chosen = $null
-        foreach ($r in $regionPref) {
-            $chosen = $paths | Where-Object { $_ -match [regex]::Escape($r) } | Select-Object -First 1
-            if ($chosen) { break }
-        }
-        if (-not $chosen) { $chosen = $paths[0] }
-        $result[$norm] = $chosen
-    }
-    return $result
-}
-
-function Apply-TitleKeyedAssetUpdates {
-    # Same as Apply-GameTDBAssetUpdates, but matches games by normalized title
-    # instead of game_id. Used for sources (Libretro-Thumbnails) with no ID scheme.
-    param([hashtable]$Updates)
-    $c = Get-Col
-    if (-not $c -or -not $Updates -or $Updates.Count -eq 0) { return }
-
-    $p = $c.metadataPath
-    if (-not (Test-Path $p)) { return }
-
-    CreateBackup
-    $content = Get-Content $p -Raw -ErrorAction Stop
-    $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
-    $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
-    $sb = New-Object System.Text.StringBuilder
-    $count = 0
-
-    foreach ($part in $parts) {
-        if ([string]::IsNullOrWhiteSpace($part)) { continue }
-        if ($part -match '(?m)^game:\s*(.+)$') {
-            $title = $matches[1].Trim()
-            $key = Get-NormalizedGameTitle $title
-            if ($key -and $Updates.ContainsKey($key)) {
-                $paths = $Updates[$key]
-                foreach ($ak in @($paths.Keys)) {
-                    $val = $paths[$ak]
-                    if ([string]::IsNullOrWhiteSpace($val)) { continue }
-                    $escapedKey = [regex]::Escape($ak)
-                    if ($part -match "(?m)^${escapedKey}:\s*") {
-                        $part = [regex]::Replace($part, "(?m)^${escapedKey}:\s*.*$", "${ak}: $val", 1)
-                    } else {
-                        $part = [regex]::Replace($part, '((?m)^game:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
-                    }
-                    $count++
-                }
-            }
-        }
-        [void]$sb.Append($part.TrimEnd())
-        [void]$sb.Append("`n")
-    }
-
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($p, ($sb.ToString().TrimEnd() + "`n"), $utf8)
-    Log-Message "Wrote $count asset path field(s) for $($Updates.Count) game(s) (title-matched)" "Green"
-    UpdateEditor
-}
-
-function Get-SteamGridDBAssetTypeMap {
-    # SteamGridDB's own categories, mapped to the closest official Pegasus
-    # asset key per https://pegasus-frontend.org/docs/user-guide/meta-assets/.
-    # Grids and Logos map cleanly (steamgrid/grid and logo/wheel are exact
-    # matches). Heroes (wide background art) map to "background", Pegasus's
-    # own background-image field - a reasonable fit, not a perfect one.
-    # Icons have NO official Pegasus equivalent - "tile" is the closest
-    # square-image field that exists, but Pegasus's own docs describe tile
-    # as "not the desktop icon", so this is a loose fit at best. Included
-    # because some themes do read it for that purpose, but don't expect
-    # every theme to pick it up.
-    return [ordered]@{
-        "Grids"  = @{ Endpoint = "grids";  Keys = @("assets.steamgrid"); Folders = @("steamgrid"); Description = "Steam-style grid art (460x215 or 920x430 landscape, or 600x900 portrait) - assets.steamgrid" }
-        "Heroes" = @{ Endpoint = "heroes"; Keys = @("assets.background"); Folders = @("hero"); Description = "Wide background/hero art (1920x620) - assets.background (closest official match; not an exact Hero equivalent)" }
-        "Logos"  = @{ Endpoint = "logos";  Keys = @("assets.logo"); Folders = @("wheel"); Description = "Transparent title logo - assets.logo (wheel/)" }
-        "Icons"  = @{ Endpoint = "icons";  Keys = @("assets.tile"); Folders = @("tile"); Description = "Square icon art - assets.tile (Pegasus has no dedicated icon field; check your theme actually reads 'tile' before relying on this)" }
-    }
-}
-
-function Get-SteamGridDBNoArtStorePath {
-    param($Collection)
-    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
-    $dir = Split-Path $Collection.metadataPath -Parent
-    if (-not $dir) { return $null }
-    return (Join-Path $dir "steamgriddb_no_art_marks.json")
-}
-
-function Get-SteamGridDBNoArtMap {
-    # Same "confirmed missing, don't keep re-asking" tracking used for
-    # GameTDB and TheCoverProject, applied to SteamGridDB. Keyed by asset
-    # type label first (Grids/Heroes/Logos/Icons - a game can lack one and
-    # have another), then by normalized title -> ISO timestamp.
-    param($Collection)
-    $map = @{}
-    $path = Get-SteamGridDBNoArtStorePath -Collection $Collection
-    if (-not $path -or -not (Test-Path $path)) { return $map }
-    try {
-        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        if ($data -is [System.Management.Automation.PSCustomObject]) {
-            foreach ($typeProp in $data.PSObject.Properties) {
-                $inner = @{}
-                if ($typeProp.Value -is [System.Management.Automation.PSCustomObject]) {
-                    foreach ($normProp in $typeProp.Value.PSObject.Properties) {
-                        $inner[$normProp.Name] = [string]$normProp.Value
-                    }
-                }
-                $map[$typeProp.Name] = $inner
-            }
-        }
-    } catch {}
-    return $map
-}
-
-function Save-SteamGridDBNoArtMap {
-    param($Collection, [hashtable]$Map)
-    $path = Get-SteamGridDBNoArtStorePath -Collection $Collection
-    if (-not $path) { return }
-    try {
-        ($Map | ConvertTo-Json -Depth 4) | Set-Content -Path $path -Encoding UTF8
-    } catch {
-        Log-Message "SteamGridDB: couldn't save no-art list: $_" "Yellow"
-    }
-}
-
-function Test-SteamGridDBNoArtFresh {
-    param([hashtable]$Map, [string]$TypeLabel, [string]$Norm, [int]$StalenessDays = 30)
-    if (-not $Map.ContainsKey($TypeLabel)) { return $false }
-    if (-not $Map[$TypeLabel].ContainsKey($Norm)) { return $false }
-    $iso = $Map[$TypeLabel][$Norm]
-    try {
-        $dt = [datetime]::Parse($iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
-        return ((Get-Date) - $dt).TotalDays -lt $StalenessDays
-    } catch {
-        return $false
-    }
-}
-
-function Search-SteamGridDBGameId {
-    # Returns the first matching SteamGridDB game ID for a title, or $null
-    # if the search genuinely came back empty (not an error - SteamGridDB
-    # just doesn't have that game). Throws on a real network/HTTP error so
-    # the caller's circuit breaker can tell the two apart.
-    param([string]$Title, [string]$ApiKey, [System.Net.WebClient]$WebClient)
-    $url = "https://www.steamgriddb.com/api/v2/search/autocomplete/" + [Uri]::EscapeDataString($Title)
-    $raw = $WebClient.DownloadString($url)
-    $resp = $raw | ConvertFrom-Json
-    if (-not $resp.success) { return $null }
-    if (-not $resp.data -or $resp.data.Count -eq 0) { return $null }
-    return [string]$resp.data[0].id
-}
-
-function Get-SteamGridDBImageUrl {
-    # Returns the URL of the first available image of the given type for a
-    # game, or $null if SteamGridDB confirmed there simply aren't any (not
-    # an error). Throws on a real network/HTTP error.
-    param([string]$GameId, [string]$Endpoint, [string]$ApiKey, [System.Net.WebClient]$WebClient)
-    $url = "https://www.steamgriddb.com/api/v2/$Endpoint/game/$GameId"
-    $raw = $WebClient.DownloadString($url)
-    $resp = $raw | ConvertFrom-Json
-    if (-not $resp.success) { return $null }
-    if (-not $resp.data -or $resp.data.Count -eq 0) { return $null }
-    return [string]$resp.data[0].url
-}
-
-function Show-GameTDBCoverPackDialog {
-    # Matches Settings-style dialogs: GroupBoxes, tight layout, PS 5.1 safe
-    param(
-        # "gametdb" or "libretro" - which source the "Download from" dropdown
-        # opens on. Lets the GameTDB Tools / Libretro Tools buttons both open
-        # this same shared dialog, preset to the right source.
-        [string]$PreselectSource = "gametdb"
-    )
-    try {
-        $dlg = New-Object System.Windows.Forms.Form
-        $dlg.Text = "GameTDB Cover Pack"
-        $dlg.Size = New-Object System.Drawing.Size(500, 680)
-        $dlg.StartPosition = "CenterParent"
-        $dlg.FormBorderStyle = "FixedDialog"
-        $dlg.MaximizeBox = $false
-        $dlg.MinimizeBox = $false
-        $dlg.ShowInTaskbar = $false
-        $dlg.BackColor = $script:theme.background
-        $dlg.ForeColor = $script:theme.text
-        $dlg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-
-        $secX = 14
-        $secW = 456
-        $btnW = 100
-        $btnH = 26
-        $gap = 6
-
-        # ========== Source ==========
-        $grpSrc = New-Object System.Windows.Forms.GroupBox
-        $grpSrc.Text = " Source "
-        $grpSrc.Location = New-Object System.Drawing.Point($secX, 10)
-        $grpSrc.Size = New-Object System.Drawing.Size($secW, 236)
-        $grpSrc.ForeColor = $script:theme.text
-        $grpSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $grpSrc.BackColor = $script:theme.background
-        $dlg.Controls.Add($grpSrc)
-
-        # Row 1: Site, System, and Region - all three label+dropdown pairs on
-        # one row, left to right, so nothing takes up extra vertical space.
-        $lblFrom = New-Object System.Windows.Forms.Label
-        $lblFrom.Text = "Site"
-        $lblFrom.Location = New-Object System.Drawing.Point(12, 24)
-        $lblFrom.Size = New-Object System.Drawing.Size(28, 16)
-        $lblFrom.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblFrom.ForeColor = $script:theme.text
-        $grpSrc.Controls.Add($lblFrom)
-
-        $cmbSrc = New-Object System.Windows.Forms.ComboBox
-        $cmbSrc.Location = New-Object System.Drawing.Point(42, 20)
-        $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
-        $cmbSrc.DropDownStyle = "DropDownList"
-        # The closed box stays narrow to leave room for System/Region on the
-        # same row, but the dropdown LIST doesn't have to match that width -
-        # without this, "TheCoverProject" gets clipped in the open list.
-        $cmbSrc.DropDownWidth = 140
-        $cmbSrc.BackColor = $script:theme.editor
-        $cmbSrc.ForeColor = $script:theme.text
-        $cmbSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        [void]$cmbSrc.Items.Add("GameTDB")
-        [void]$cmbSrc.Items.Add("Libretro")
-        [void]$cmbSrc.Items.Add("TheCoverProject")
-        [void]$cmbSrc.Items.Add("SteamGridDB")
-        $grpSrc.Controls.Add($cmbSrc)
-
-        $lblSys = New-Object System.Windows.Forms.Label
-        $lblSys.Text = "System"
-        $lblSys.Location = New-Object System.Drawing.Point(126, 24)
-        $lblSys.Size = New-Object System.Drawing.Size(44, 16)
-        $lblSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblSys.ForeColor = $script:theme.text
-        $grpSrc.Controls.Add($lblSys)
-
-        $cmbSys = New-Object System.Windows.Forms.ComboBox
-        $cmbSys.Location = New-Object System.Drawing.Point(172, 20)
-        $cmbSys.Size = New-Object System.Drawing.Size(158, 24)
-        $cmbSys.DropDownStyle = "DropDownList"
-        # The closed box is narrow to leave room for Site/Region on the same
-        # row, but the dropdown LIST doesn't have to match that width - this
-        # is the actual fix for long system names getting cut off when open.
-        $cmbSys.DropDownWidth = 260
-        $cmbSys.BackColor = $script:theme.editor
-        $cmbSys.ForeColor = $script:theme.text
-        $cmbSys.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $grpSrc.Controls.Add($cmbSys)
-
-        $lblReg = New-Object System.Windows.Forms.Label
-        $lblReg.Text = "Region"
-        $lblReg.Location = New-Object System.Drawing.Point(336, 24)
-        $lblReg.Size = New-Object System.Drawing.Size(42, 16)
-        $lblReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblReg.ForeColor = $script:theme.text
-        $grpSrc.Controls.Add($lblReg)
-
-        $cmbReg = New-Object System.Windows.Forms.ComboBox
-        $cmbReg.Location = New-Object System.Drawing.Point(380, 20)
-        $cmbReg.Size = New-Object System.Drawing.Size(52, 24)
-        $cmbReg.DropDownStyle = "DropDownList"
-        $cmbReg.BackColor = $script:theme.editor
-        $cmbReg.ForeColor = $script:theme.text
-        $cmbReg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $grpSrc.Controls.Add($cmbReg)
-
-        # Row 2: Cover types, full width now that Region moved up onto row 1.
-        $lblTypes = New-Object System.Windows.Forms.Label
-        $lblTypes.Text = "Cover types (check one or more)"
-        $lblTypes.Location = New-Object System.Drawing.Point(12, 50)
-        $lblTypes.Size = New-Object System.Drawing.Size(300, 16)
-        $lblTypes.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblTypes.ForeColor = $script:theme.text
-        $grpSrc.Controls.Add($lblTypes)
-
-        $clbCover = New-Object System.Windows.Forms.CheckedListBox
-        $clbCover.Location = New-Object System.Drawing.Point(12, 68)
-        $clbCover.Size = New-Object System.Drawing.Size(432, 72)
-        $clbCover.BackColor = $script:theme.editor
-        $clbCover.ForeColor = $script:theme.text
-        $clbCover.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $clbCover.CheckOnClick = $true
-        $clbCover.BorderStyle = "FixedSingle"
-        $clbCover.IntegralHeight = $true
-        $clbCover.MultiColumn = $false
-        $grpSrc.Controls.Add($clbCover)
-
-        # Description box - blue helper text below the list. Updates for every
-        # checked cover type (one line per checked item, prefixed with its name)
-        # so with multiple types checked you can still read all of them; it
-        # scrolls internally instead of growing or overlapping other controls.
-        $lblDesc = New-Object System.Windows.Forms.TextBox
-        $lblDesc.Location = New-Object System.Drawing.Point(12, 144)
-        $lblDesc.Size = New-Object System.Drawing.Size(432, 80)
-        $lblDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-        $lblDesc.ForeColor = $script:theme.accent
-        $lblDesc.BackColor = $script:theme.editor
-        $lblDesc.BorderStyle = "FixedSingle"
-        $lblDesc.Multiline = $true
-        $lblDesc.WordWrap = $true
-        $lblDesc.ReadOnly = $true
-        $lblDesc.ScrollBars = "None"
-        $lblDesc.TabStop = $false
-        $lblDesc.Text = "Check one or more cover types above to see what they're for."
-        $grpSrc.Controls.Add($lblDesc)
-
-        $gtdbPlatKeys = @($script:gameTdbPlatforms.Keys | Sort-Object)
-        $libretroPlatKeys = @($script:libretroPlatforms.Keys | Sort-Object { $script:libretroPlatforms[$_].Label })
-        $platKeys = $gtdbPlatKeys
-        foreach ($k in $platKeys) {
-            [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label)
-        }
-        foreach ($r in $script:gameTdbRegions) {
-            [void]$cmbReg.Items.Add($r)
-        }
-        $cmbReg.SelectedItem = "US"
-        $cmbSrc.SelectedIndex = $(if ($PreselectSource -eq "libretro") { 1 } else { 0 })
-
-        $script:__gtdbPackPlatKeys = $platKeys
-        $script:__gtdbPackClb = $clbCover
-        $script:__gtdbPackDesc = $lblDesc
-
-        $fillTypes = {
-            $clb = $script:__gtdbPackClb
-            if ($script:__gtdbPackIsSGDB) {
-                $clb.Items.Clear()
-                $sgdbMap = Get-SteamGridDBAssetTypeMap
-                $i = 0
-                foreach ($label in $sgdbMap.Keys) {
-                    [void]$clb.Items.Add($label)
-                    # Grids and Logos map cleanly onto real Pegasus asset
-                    # keys, so check those by default. Heroes/Icons are
-                    # looser fits (see Get-SteamGridDBAssetTypeMap) - left
-                    # unchecked so picking them is a deliberate choice.
-                    if ($label -eq "Grids" -or $label -eq "Logos") { $clb.SetItemChecked($i, $true) }
-                    $i++
-                }
-                if ($clb.Items.Count -gt 0) { $clb.SelectedIndex = 0 }
-                $rowH = 18
-                try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
-                $clb.Height = [Math]::Max($rowH + 4, [Math]::Min((4 * $rowH) + 4, 90))
-                return
-            }
-            $keys = $script:__gtdbPackPlatKeys
-            if (-not $clb -or -not $keys) { return }
-            $clb.Items.Clear()
-            $idx = $script:__gtdbPackCmb.SelectedIndex
-            if ($idx -lt 0 -or $idx -ge $keys.Count) { return }
-            if ($script:__gtdbPackIsLibretro) {
-                # Libretro-Thumbnails only offers boxart via this dialog.
-                [void]$clb.Items.Add("Boxart")
-                $clb.SetItemChecked(0, $true)
-                $clb.SelectedIndex = 0
-            } else {
-                $types = $script:gameTdbPlatforms[$keys[$idx]].CoverTypes
-                if (-not $types) { $types = @("cover") }
-                foreach ($t in $types) { [void]$clb.Items.Add([string]$t) }
-                # Prefer a front cover type
-                for ($i = 0; $i -lt $clb.Items.Count; $i++) {
-                    $t = [string]$clb.Items[$i]
-                    if ($t -eq "cover" -or $t -eq "coverHQ" -or $t -eq "coverfullHQ") {
-                        $clb.SetItemChecked($i, $true)
-                        $clb.SelectedIndex = $i
-                        break
-                    }
-                }
-                if ($clb.CheckedItems.Count -eq 0 -and $clb.Items.Count -gt 0) {
-                    $clb.SetItemChecked(0, $true)
-                    $clb.SelectedIndex = 0
-                }
-            }
-            # Size list to content, but never let it grow tall enough to
-            # overlap the description label below it — longer lists (e.g.
-            # Wii U's 9 types) simply scroll within the available space.
-            $rowH = 18
-            try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
-            $rows = [Math]::Min(4, [Math]::Max(3, $clb.Items.Count))
-            $desiredHeight = ($rows * $rowH) + 4
-            $maxHeight = $desiredHeight
-            $descLbl = $script:__gtdbPackDesc
-            if ($descLbl) {
-                $maxHeight = $descLbl.Location.Y - $clb.Location.Y - 6
-            }
-            $clb.Height = [Math]::Max($rowH + 4, [Math]::Min($desiredHeight, $maxHeight))
-        }
-
-        $relayout = {
-            # Grows/shrinks the description box to fit exactly however many
-            # lines are needed - no scrollbar, ever - then shifts every
-            # control below it (and the dialog itself) down or up to match.
-            try {
-                $lbl = $script:__gtdbPackDesc
-                if (-not $lbl -or -not $grpSrc) { return }
-                $width = $lbl.ClientSize.Width
-                if ($width -le 0) { $width = $lbl.Width - 6 }
-                $flags = [System.Windows.Forms.TextFormatFlags]::WordBreak -bor `
-                         [System.Windows.Forms.TextFormatFlags]::TextBoxControl
-                $sz = [System.Windows.Forms.TextRenderer]::MeasureText(
-                    $lbl.Text, $lbl.Font, (New-Object System.Drawing.Size($width, 0)), $flags)
-                $needed = [Math]::Max(20, $sz.Height + 12)
-                $delta = $needed - $lbl.Height
-                if ($delta -eq 0) { return }
-                $lbl.Height = $needed
-                $grpSrc.Height = ($lbl.Location.Y + $needed + 12) - $grpSrc.Location.Y
-
-                if ($grpOpt) {
-                    $grpOpt.Location = New-Object System.Drawing.Point($grpOpt.Location.X, ($grpSrc.Location.Y + $grpSrc.Height + 8))
-                }
-                if ($grpOpt -and $grpOne) {
-                    $grpOne.Location = New-Object System.Drawing.Point($grpOne.Location.X, ($grpOpt.Location.Y + $grpOpt.Height + 8))
-                }
-                if ($grpOne -and $grpOut) {
-                    $grpOut.Location = New-Object System.Drawing.Point($grpOut.Location.X, ($grpOne.Location.Y + $grpOne.Height + 8))
-                }
-                if ($grpOut -and $btnStart) {
-                    $btnStart.Location = New-Object System.Drawing.Point($btnStart.Location.X, ($grpOut.Location.Y + $grpOut.Height + 10))
-                }
-                if ($btnStart -and $btnCancel) {
-                    $btnCancel.Location = New-Object System.Drawing.Point($btnCancel.Location.X, $btnStart.Location.Y)
-                }
-                if ($btnStart -and $dlg) {
-                    $dlg.ClientSize = New-Object System.Drawing.Size($dlg.ClientSize.Width, ($btnStart.Location.Y + $btnStart.Height + 14))
-                }
-            } catch { }
-        }
-
-        $updateDesc = {
-            $clb = $script:__gtdbPackClb
-            $lbl = $script:__gtdbPackDesc
-            if (-not $clb -or -not $lbl) { return }
-            if ($script:__gtdbPackIsSGDB) {
-                if ($clb.CheckedItems.Count -eq 0) {
-                    $lbl.Text = "Check one or more SteamGridDB asset types above to see what they're for."
-                    & $relayout
-                    return
-                }
-                $sgdbMap = Get-SteamGridDBAssetTypeMap
-                $lines = New-Object System.Collections.ArrayList
-                foreach ($item in $clb.CheckedItems) {
-                    $tn = [string]$item
-                    $d = if ($sgdbMap.Contains($tn)) { $sgdbMap[$tn].Description } else { "" }
-                    [void]$lines.Add("$tn`: $d")
-                }
-                $lbl.Text = ($lines -join "`r`n")
-                & $relayout
-                return
-            }
-            if ($script:__gtdbPackIsLibretro) {
-                $lbl.Text = "Boxart: thumbnail-res cover art (PNG, max ~512px wide). Saved to box2dThumb. Check 'Upscale thumbs -> boxFront' below to auto-upscale these to box2dfront (4x, Digital Art) via Upscayl. Matched by game title, region tags ignored automatically."
-                & $relayout
-                return
-            }
-            if ($clb.CheckedItems.Count -eq 0) {
-                $lbl.Text = "Check one or more cover types above to see what they're for."
-                & $relayout
-                return
-            }
-            $lines = New-Object System.Collections.ArrayList
-            foreach ($item in $clb.CheckedItems) {
-                $tn = [string]$item
-                [void]$lines.Add("$tn`: $(Get-GameTDBCoverTypeDescription $tn)")
-            }
-            $lbl.Text = ($lines -join "`r`n")
-            & $relayout
-        }
-
-        $switchSource = {
-            $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
-            $isTCP = ($cmbSrc.SelectedIndex -eq 2)
-            $isSGDB = ($cmbSrc.SelectedIndex -eq 3)
-            $script:__gtdbPackIsLibretro = $isLibretro
-            $script:__gtdbPackIsTCP = $isTCP
-            $script:__gtdbPackIsSGDB = $isSGDB
-            $cmbSys.Items.Clear()
-            $cmbReg.Items.Clear()
-            if ($isTCP) {
-                # TheCoverProject has no scriptable API (Cloudflare-blocked)
-                # and, it turns out, no region filter either - just a plain
-                # title search box. Each result row shows a flag for THAT
-                # cover's own region, but there's no way to filter the
-                # search itself by region. Since System/Region are entirely
-                # unused here, hide them outright and let Site take the
-                # freed width - otherwise "TheCoverProject" clips even in
-                # the closed box, not just the open dropdown list.
-                $lblSys.Visible = $false
-                $cmbSys.Visible = $false
-                $lblReg.Visible = $false
-                $cmbReg.Visible = $false
-                $cmbSrc.Size = New-Object System.Drawing.Size(390, 24)
-                [void]$cmbSys.Items.Add("(not used for TheCoverProject)")
-                $cmbSys.SelectedIndex = 0
-                $cmbSys.Enabled = $false
-                [void]$cmbReg.Items.Add("(not filterable - see results)")
-                $cmbReg.SelectedIndex = 0
-                $cmbReg.Enabled = $false
-                $clbCover.Enabled = $false
-                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
-                if ($chkUpscale) { $chkUpscale.Visible = $false }
-                if ($script:__gtdbPackDesc) {
-                    $script:__gtdbPackDesc.Text = "TheCoverProject has no API, blocks scripted access, and has no region/platform filter - just a plain title search. Click Start to scan your collection for games missing box_front art, then get a ready list of direct search links to click through by hand. Each result on the site shows a flag for that cover's own region, so you pick the one you want from the list there. Once you've saved covers into a folder, the same window matches and imports them - no manual renaming needed."
-                    & $relayout
-                }
-            } elseif ($isLibretro) {
-                $lblSys.Visible = $true
-                $cmbSys.Visible = $true
-                $lblReg.Visible = $true
-                $cmbReg.Visible = $true
-                $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
-                $cmbSys.Enabled = $true
-                $script:__gtdbPackPlatKeys = $libretroPlatKeys
-                foreach ($k in $libretroPlatKeys) { [void]$cmbSys.Items.Add($script:libretroPlatforms[$k].Label) }
-                foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
-                $cmbReg.SelectedItem = "US"
-                $cmbReg.Enabled = $false
-                $lblReg.ForeColor = $script:theme.textDim
-                $clbCover.Enabled = $false
-                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
-                if ($chkUpscale) { $chkUpscale.Visible = $true }
-                if ($chkFallback) { $chkFallback.Visible = $true }
-            } elseif ($isSGDB) {
-                # SteamGridDB searches by title (its own catalog, unrelated
-                # to GameTDB's console IDs), and has no region concept at
-                # all - so System and Region are both irrelevant here, same
-                # treatment as TheCoverProject. Unlike TheCoverProject
-                # though, clbCover stays enabled: it's repurposed to show
-                # SteamGridDB's own Grids/Heroes/Logos/Icons categories
-                # instead of per-platform cover types.
-                $lblSys.Visible = $false
-                $cmbSys.Visible = $false
-                $lblReg.Visible = $false
-                $cmbReg.Visible = $false
-                $cmbSrc.Size = New-Object System.Drawing.Size(390, 24)
-                [void]$cmbSys.Items.Add("(not used for SteamGridDB)")
-                $cmbSys.SelectedIndex = 0
-                $cmbSys.Enabled = $false
-                [void]$cmbReg.Items.Add("(not used for SteamGridDB)")
-                $cmbReg.SelectedIndex = 0
-                $cmbReg.Enabled = $false
-                $clbCover.Enabled = $true
-                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
-                if ($chkUpscale) { $chkUpscale.Visible = $false }
-                if ($chkFallback) { $chkFallback.Visible = $false }
-                & $fillTypes
-                & $updateDesc
-            } else {
-                $lblSys.Visible = $true
-                $cmbSys.Visible = $true
-                $lblReg.Visible = $true
-                $cmbReg.Visible = $true
-                $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
-                $cmbSys.Enabled = $true
-                $script:__gtdbPackPlatKeys = $gtdbPlatKeys
-                foreach ($k in $gtdbPlatKeys) { [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label) }
-                foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
-                $cmbReg.SelectedItem = "US"
-                $cmbReg.Enabled = $true
-                $lblReg.ForeColor = $script:theme.text
-                $clbCover.Enabled = $true
-                if ($chkBoxFull) { $chkBoxFull.Visible = $true }
-                if ($chkUpscale) { $chkUpscale.Visible = $false }
-                if ($chkFallback) { $chkFallback.Visible = $true }
-            }
-            if ($cmbSys.Items.Count -gt 0) { $cmbSys.SelectedIndex = 0 }
-        }
-
-        $script:__gtdbPackCmb = $cmbSys
-        $script:__gtdbPackIsLibretro = $false
-        $script:__gtdbPackIsSGDB = $false
-        $cmbSrc.Add_SelectedIndexChanged({
-            try { & $switchSource } catch {}
-        })
-        $cmbSys.Add_SelectedIndexChanged({
-            try {
-                & $script:__gtdbPackFill
-                & $script:__gtdbPackUpdateDesc
-            } catch {}
-        })
-        $clbCover.Add_SelectedIndexChanged({
-            try { & $script:__gtdbPackUpdateDesc } catch {}
-        })
-        $clbCover.Add_ItemCheck({
-            param($sender, $e)
-            # ItemCheck fires before the check state is applied, so defer the
-            # description refresh until after this click finishes processing.
-            try {
-                $sender.BeginInvoke([System.Action]{ try { & $script:__gtdbPackUpdateDesc } catch {} }) | Out-Null
-            } catch {}
-        })
-        $script:__gtdbPackFill = $fillTypes
-        $script:__gtdbPackUpdateDesc = $updateDesc
-
-        if ($PreselectSource -eq "libretro") {
-            # cmbSrc.SelectedIndex was set to 1 above, before this event handler
-            # existed, so it didn't fire - run it once by hand to sync cmbSys/etc.
-            & $switchSource
-        } else {
-            $selIdx = 0
-            for ($i = 0; $i -lt $platKeys.Count; $i++) {
-                if ($platKeys[$i] -eq $script:lastGameTdbPlatform) { $selIdx = $i; break }
-            }
-            if ($cmbSys.Items.Count -gt 0) {
-                $cmbSys.SelectedIndex = $selIdx
-                if ($clbCover.Items.Count -eq 0) {
-                    & $fillTypes
-                    & $updateDesc
-                }
-            }
-        }
-
-        # ========== Options ==========
-        $grpOpt = New-Object System.Windows.Forms.GroupBox
-        $grpOpt.Text = " Options "
-        $grpOpt.Location = New-Object System.Drawing.Point($secX, 254)
-        $grpOpt.Size = New-Object System.Drawing.Size($secW, 158)
-        $grpOpt.ForeColor = $script:theme.text
-        $grpOpt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $grpOpt.BackColor = $script:theme.background
-        $dlg.Controls.Add($grpOpt)
-
-        $colName = "(none selected)"
-        try {
-            $selCol = Get-Col
-            if ($selCol -and $selCol.name) { $colName = [string]$selCol.name }
-            elseif ($script:collectionList -and $script:collectionList.SelectedItem) {
-                $colName = [string]$script:collectionList.SelectedItem
-            }
-        } catch {}
-
-        $lblCol = New-Object System.Windows.Forms.Label
-        $lblCol.Text = "Selected collection: $colName"
-        $lblCol.Location = New-Object System.Drawing.Point(12, 18)
-        $lblCol.Size = New-Object System.Drawing.Size(430, 16)
-        $lblCol.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblCol.ForeColor = $script:theme.accent
-        $grpOpt.Controls.Add($lblCol)
-
-        $chkCollection = New-Object System.Windows.Forms.CheckBox
-        $chkCollection.Text = "Current collection only (requires game_id on this platform)"
-        $chkCollection.Location = New-Object System.Drawing.Point(12, 36)
-        $chkCollection.Size = New-Object System.Drawing.Size(430, 18)
-        $chkCollection.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkCollection.ForeColor = $script:theme.text
-        $chkCollection.BackColor = $script:theme.background
-        $chkCollection.Checked = $true
-        $grpOpt.Controls.Add($chkCollection)
-
-        $chkMissing = New-Object System.Windows.Forms.CheckBox
-        $chkMissing.Text = "Only missing art (front / boxFull / back)"
-        $chkMissing.Location = New-Object System.Drawing.Point(12, 56)
-        $chkMissing.Size = New-Object System.Drawing.Size(200, 18)
-        $chkMissing.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkMissing.ForeColor = $script:theme.text
-        $chkMissing.BackColor = $script:theme.background
-        $chkMissing.Checked = $true
-        $grpOpt.Controls.Add($chkMissing)
-
-        $chkFallback = New-Object System.Windows.Forms.CheckBox
-        $chkFallback.Text = "Region fallback"
-        $chkFallback.Location = New-Object System.Drawing.Point(220, 56)
-        $chkFallback.Size = New-Object System.Drawing.Size(200, 18)
-        $chkFallback.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkFallback.ForeColor = $script:theme.text
-        $chkFallback.BackColor = $script:theme.background
-        $chkFallback.Checked = $true
-        $grpOpt.Controls.Add($chkFallback)
-
-        $chkMedia = New-Object System.Windows.Forms.CheckBox
-        $chkMedia.Text = "Save into media folders"
-        $chkMedia.Location = New-Object System.Drawing.Point(12, 76)
-        $chkMedia.Size = New-Object System.Drawing.Size(200, 18)
-        $chkMedia.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkMedia.ForeColor = $script:theme.text
-        $chkMedia.BackColor = $script:theme.background
-        $chkMedia.Checked = $true
-        $grpOpt.Controls.Add($chkMedia)
-
-        $chkWrite = New-Object System.Windows.Forms.CheckBox
-        $chkWrite.Text = "Write asset paths into metadata"
-        $chkWrite.Location = New-Object System.Drawing.Point(220, 76)
-        $chkWrite.Size = New-Object System.Drawing.Size(220, 18)
-        $chkWrite.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkWrite.ForeColor = $script:theme.text
-        $chkWrite.BackColor = $script:theme.background
-        $chkWrite.Checked = $true
-        $grpOpt.Controls.Add($chkWrite)
-
-        $chkBoxFull = New-Object System.Windows.Forms.CheckBox
-        $chkBoxFull.Text = "Full covers -> boxFull (Unicovers / theme)"
-        $chkBoxFull.Location = New-Object System.Drawing.Point(12, 96)
-        $chkBoxFull.Size = New-Object System.Drawing.Size(430, 18)
-        $chkBoxFull.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkBoxFull.ForeColor = $script:theme.text
-        $chkBoxFull.BackColor = $script:theme.background
-        $chkBoxFull.Checked = $true
-        if ($script:__gtdbPackIsLibretro) {
-            $chkBoxFull.Visible = $false
-        }
-        $grpOpt.Controls.Add($chkBoxFull)
-
-        # Same row as chkBoxFull, but for Libretro: thumbnails land in
-        # box2dThumb, and this triggers a batch Upscayl pass (4x, Digital
-        # Art) into box2dfront right after download. Only one of these two
-        # checkboxes is ever visible, so the row never grows.
-        $chkUpscale = New-Object System.Windows.Forms.CheckBox
-        $chkUpscale.Text = "Upscale thumbs -> boxFront (Upscayl, 4x Digital Art)"
-        $chkUpscale.Location = New-Object System.Drawing.Point(12, 96)
-        $chkUpscale.Size = New-Object System.Drawing.Size(430, 18)
-        $chkUpscale.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkUpscale.ForeColor = $script:theme.text
-        $chkUpscale.BackColor = $script:theme.background
-        $chkUpscale.Checked = $true
-        $chkUpscale.Visible = [bool]$script:__gtdbPackIsLibretro
-        $grpOpt.Controls.Add($chkUpscale)
-
-        $chkRename = New-Object System.Windows.Forms.CheckBox
-        $chkRename.Text = "Rename to game titles"
-        $chkRename.Location = New-Object System.Drawing.Point(12, 116)
-        $chkRename.Size = New-Object System.Drawing.Size(200, 18)
-        $chkRename.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkRename.ForeColor = $script:theme.text
-        $chkRename.BackColor = $script:theme.background
-        $chkRename.Checked = $true
-        $grpOpt.Controls.Add($chkRename)
-
-        $chkPng = New-Object System.Windows.Forms.CheckBox
-        $chkPng.Text = "Convert to PNG"
-        $chkPng.Location = New-Object System.Drawing.Point(220, 116)
-        $chkPng.Size = New-Object System.Drawing.Size(160, 18)
-        $chkPng.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkPng.ForeColor = $script:theme.text
-        $chkPng.BackColor = $script:theme.background
-        $chkPng.Checked = $true
-        $grpOpt.Controls.Add($chkPng)
-
-        $lblOptHint = New-Object System.Windows.Forms.Label
-        $lblOptHint.Text = "boxFull for coverfullHQ. Rename/PNG run after each successful download."
-        $lblOptHint.Location = New-Object System.Drawing.Point(12, 134)
-        $lblOptHint.Size = New-Object System.Drawing.Size(430, 16)
-        $lblOptHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-        $lblOptHint.ForeColor = $script:theme.textDim
-        $grpOpt.Controls.Add($lblOptHint)
-
-        $chkCollection.Add_CheckedChanged({
-            param($sender, $e)
-            if (-not $sender.Checked) {
-                $chkMedia.Checked = $false
-                $chkWrite.Checked = $false
-            }
-        })
-
-        # ========== Single game ==========
-        $grpOne = New-Object System.Windows.Forms.GroupBox
-        $grpOne.Text = " Single game "
-        $grpOne.Location = New-Object System.Drawing.Point($secX, 420)
-        $grpOne.Size = New-Object System.Drawing.Size($secW, 96)
-        $grpOne.ForeColor = $script:theme.text
-        $grpOne.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $grpOne.BackColor = $script:theme.background
-        $dlg.Controls.Add($grpOne)
-
-        $chkOneGame = New-Object System.Windows.Forms.CheckBox
-        $chkOneGame.Text = "One game only (from selected collection)"
-        $chkOneGame.Location = New-Object System.Drawing.Point(12, 20)
-        $chkOneGame.Size = New-Object System.Drawing.Size(420, 18)
-        $chkOneGame.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $chkOneGame.ForeColor = $script:theme.text
-        $chkOneGame.BackColor = $script:theme.background
-        $chkOneGame.Checked = $false
-        $grpOne.Controls.Add($chkOneGame)
-
-        $lblGameSearch = New-Object System.Windows.Forms.Label
-        $lblGameSearch.Text = "Search"
-        $lblGameSearch.Location = New-Object System.Drawing.Point(12, 44)
-        $lblGameSearch.Size = New-Object System.Drawing.Size(48, 18)
-        $lblGameSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $lblGameSearch.ForeColor = $script:theme.textDim
-        $grpOne.Controls.Add($lblGameSearch)
-
-        $txtGameSearch = New-Object System.Windows.Forms.TextBox
-        $txtGameSearch.Location = New-Object System.Drawing.Point(62, 42)
-        $txtGameSearch.Size = New-Object System.Drawing.Size(380, 22)
-        $txtGameSearch.BackColor = $script:theme.editor
-        $txtGameSearch.ForeColor = $script:theme.text
-        $txtGameSearch.BorderStyle = "FixedSingle"
-        $txtGameSearch.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $txtGameSearch.Enabled = $false
-        $grpOne.Controls.Add($txtGameSearch)
-
-        $cmbOneGame = New-Object System.Windows.Forms.ComboBox
-        $cmbOneGame.Location = New-Object System.Drawing.Point(12, 68)
-        $cmbOneGame.Size = New-Object System.Drawing.Size(430, 24)
-        $cmbOneGame.DropDownStyle = "DropDownList"
-        $cmbOneGame.BackColor = $script:theme.editor
-        $cmbOneGame.ForeColor = $script:theme.text
-        $cmbOneGame.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $cmbOneGame.Enabled = $false
-        $grpOne.Controls.Add($cmbOneGame)
-
-        # Build list of games from selected collection: display "Title  [game_id]" when ID exists
-        $script:__coverPackGameList = New-Object System.Collections.ArrayList
-        $script:__coverPackGameItems = @()  # parallel objects: Title, GameId
-        try {
-            $colForGames = Get-Col
-            if ($colForGames -and $colForGames.metadataPath -and (Test-Path $colForGames.metadataPath)) {
-                $rawG = Get-Content $colForGames.metadataPath -Raw -ErrorAction SilentlyContinue
-                if ($rawG) {
-                    foreach ($gb in ($rawG -split '(?=game: )' | Where-Object { $_ -match '^game: ' })) {
-                        $gt = $null; $gid = $null
-                        if ($gb -match '(?m)^game:\s*(.+)$') { $gt = $matches[1].Trim() }
-                        if ($gb -match '(?m)^game_id:\s*(.+)$') { $gid = $matches[1].Trim() }
-                        if (-not $gt) { continue }
-                        $disp = if ($gid) { "{0}  [{1}]" -f $gt, $gid } else { $gt }
-                        [void]$script:__coverPackGameList.Add($disp)
-                        $script:__coverPackGameItems += [PSCustomObject]@{ Display = $disp; Title = $gt; GameId = $gid }
-                    }
-                }
-            }
-        } catch {}
-        foreach ($d in $script:__coverPackGameList) { [void]$cmbOneGame.Items.Add([string]$d) }
-        if ($cmbOneGame.Items.Count -gt 0) { $cmbOneGame.SelectedIndex = 0 }
-
-        $filterOneGameList = {
-            $filter = ""
-            try { $filter = $txtGameSearch.Text.Trim().ToLowerInvariant() } catch {}
-            $cmbOneGame.BeginUpdate()
-            $cmbOneGame.Items.Clear()
-            $selKeep = $null
-            foreach ($item in $script:__coverPackGameItems) {
-                if ([string]::IsNullOrWhiteSpace($filter) -or $item.Display.ToLowerInvariant().Contains($filter)) {
-                    [void]$cmbOneGame.Items.Add([string]$item.Display)
-                }
-            }
-            if ($cmbOneGame.Items.Count -gt 0) { $cmbOneGame.SelectedIndex = 0 }
-            $cmbOneGame.EndUpdate()
-        }
-        $txtGameSearch.Add_TextChanged({ & $filterOneGameList })
-
-        $chkOneGame.Add_CheckedChanged({
-            $on = $chkOneGame.Checked
-            $txtGameSearch.Enabled = $on
-            $cmbOneGame.Enabled = $on
-            if ($on) {
-                # Single-game implies collection scope for matching / writing paths
-                $chkCollection.Checked = $true
-            }
-        })
-
-        # ========== Output ==========
-        $grpOut = New-Object System.Windows.Forms.GroupBox
-        $grpOut.Text = " Output folder "
-        $grpOut.Location = New-Object System.Drawing.Point($secX, 524)
-        $grpOut.Size = New-Object System.Drawing.Size($secW, 68)
-        $grpOut.ForeColor = $script:theme.text
-        $grpOut.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
-        $grpOut.BackColor = $script:theme.background
-        $dlg.Controls.Add($grpOut)
-
-        $lblOutHint = New-Object System.Windows.Forms.Label
-        $lblOutHint.Text = "Used only when not saving into media folders"
-        $lblOutHint.Location = New-Object System.Drawing.Point(12, 20)
-        $lblOutHint.Size = New-Object System.Drawing.Size(420, 14)
-        $lblOutHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
-        $lblOutHint.ForeColor = $script:theme.textDim
-        $grpOut.Controls.Add($lblOutHint)
-
-        $txtOut = New-Object System.Windows.Forms.TextBox
-        $txtOut.Location = New-Object System.Drawing.Point(12, 38)
-        $txtOut.Size = New-Object System.Drawing.Size(390, 22)
-        $txtOut.BackColor = $script:theme.editor
-        $txtOut.ForeColor = $script:theme.text
-        $txtOut.BorderStyle = "FixedSingle"
-        $txtOut.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-        $c = Get-Col
-        if ($c -and $c.mediaPath) {
-            $txtOut.Text = [string](Join-Path $c.mediaPath "Covers")
-        } else {
-            $txtOut.Text = [string](Join-Path $env:USERPROFILE "Downloads\GameTDB_Covers")
-        }
-        $grpOut.Controls.Add($txtOut)
-
-        $btnBrowse = Create-Button "..." 408 36 36 $btnH
-        $btnBrowse.Add_Click({
-            $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-            $fd.Description = "Select folder for GameTDB covers"
-            if ($fd.ShowDialog() -eq "OK") { $txtOut.Text = $fd.SelectedPath }
-        })
-        $grpOut.Controls.Add($btnBrowse)
-
-        # ========== Buttons ==========
-        $btnStart = Create-Button "Start" 155 602 100 $btnH
-        $btnStart.Add_Click({
-            try {
-                if ($cmbSrc.SelectedIndex -eq 2) {
-                    $dlg.Tag = @{ Source = "tcp" }
-                    $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-                    $dlg.Close()
-                    return
-                }
-                if ($cmbSrc.SelectedIndex -eq 3) {
-                    $types = @()
-                    foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
-                    if ($types.Count -eq 0) {
-                        [System.Windows.Forms.MessageBox]::Show("Select at least one asset type.", "SteamGridDB", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    $outBase = $txtOut.Text.Trim()
-                    $useMedia = [bool]$chkMedia.Checked
-                    $oneGameOnly = [bool]$chkOneGame.Checked
-                    $oneGameTitle = $null
-                    if ($oneGameOnly) {
-                        if ($cmbOneGame.SelectedIndex -lt 0 -or $cmbOneGame.Items.Count -eq 0) {
-                            [System.Windows.Forms.MessageBox]::Show(
-                                "Select a game from the dropdown (or clear Search).`nA collection with games must be selected.",
-                                "SteamGridDB", "OK", "Warning") | Out-Null
-                            return
-                        }
-                        $dispSel = [string]$cmbOneGame.SelectedItem
-                        $found = $script:__coverPackGameItems | Where-Object { $_.Display -eq $dispSel } | Select-Object -First 1
-                        $oneGameTitle = if ($found) { [string]$found.Title } else { $dispSel }
-                    }
-                    $col = Get-Col
-                    if (-not $col) {
-                        [System.Windows.Forms.MessageBox]::Show("Select a collection first - SteamGridDB matches by game title.", "SteamGridDB", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    if ($useMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
-                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "SteamGridDB", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    if (-not $useMedia -and [string]::IsNullOrWhiteSpace($outBase)) {
-                        [System.Windows.Forms.MessageBox]::Show("Choose an output folder.", "SteamGridDB", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    $dlg.Tag = @{
-                        Source        = "steamgriddb"
-                        AssetTypes    = $types
-                        OutBase       = $outBase
-                        OnlyMissing   = [bool]$chkMissing.Checked
-                        SaveIntoMedia = $useMedia
-                        WriteAssets   = [bool]$chkWrite.Checked
-                        RenameToTitle = [bool]$chkRename.Checked
-                        ConvertToPng  = [bool]$chkPng.Checked
-                        OneGameOnly   = $oneGameOnly
-                        OneGameTitle  = $oneGameTitle
-                    }
-                    $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-                    $dlg.Close()
-                    return
-                }
-                $idx = $cmbSys.SelectedIndex
-                $activeKeys = $script:__gtdbPackPlatKeys
-                if (-not $activeKeys -or $idx -lt 0 -or $idx -ge $activeKeys.Count) { return }
-                $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
-
-                $outBase = $txtOut.Text.Trim()
-                $useMedia = [bool]$chkMedia.Checked
-                $collectionOnly = [bool]$chkCollection.Checked
-                $writeAssets = [bool]$chkWrite.Checked
-                $oneGameOnly = [bool]$chkOneGame.Checked
-                $oneGameTitle = $null
-                $oneGameId = $null
-                if ($oneGameOnly) {
-                    if ($cmbOneGame.SelectedIndex -lt 0 -or $cmbOneGame.Items.Count -eq 0) {
-                        [System.Windows.Forms.MessageBox]::Show(
-                            "Select a game from the dropdown (or clear Search).`nA collection with games must be selected.",
-                            "Cover Pack", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    $dispSel = [string]$cmbOneGame.SelectedItem
-                    $found = $script:__coverPackGameItems | Where-Object { $_.Display -eq $dispSel } | Select-Object -First 1
-                    if ($found) {
-                        $oneGameTitle = [string]$found.Title
-                        if ($found.GameId) { $oneGameId = [string]$found.GameId }
-                    } else {
-                        $oneGameTitle = $dispSel
-                    }
-                    # Force collection scope so media/asset paths resolve
-                    $collectionOnly = $true
-                }
-                if ($writeAssets -or $useMedia -or $collectionOnly -or $oneGameOnly) {
-                    $col = Get-Col
-                    if (-not $col) {
-                        [System.Windows.Forms.MessageBox]::Show(
-                            "Select a collection first.", "Cover Pack", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    if ($useMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
-                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "Cover Pack", "OK", "Warning") | Out-Null
-                        return
-                    }
-                }
-                if (-not $useMedia -and [string]::IsNullOrWhiteSpace($outBase)) {
-                    [System.Windows.Forms.MessageBox]::Show("Choose an output folder.", "Cover Pack", "OK", "Warning") | Out-Null
-                    return
-                }
-
-                if ($isLibretro) {
-                    $dlg.Tag = @{
-                        Source         = "libretro"
-                        Platform       = $activeKeys[$idx]
-                        OutBase        = $outBase
-                        CollectionOnly = $collectionOnly
-                        OnlyMissing    = [bool]$chkMissing.Checked
-                        SaveIntoMedia  = $useMedia
-                        WriteAssets    = $writeAssets
-                        UseBoxFull     = [bool]$chkBoxFull.Checked
-                        RenameToTitle  = [bool]$chkRename.Checked
-                        ConvertToPng   = [bool]$chkPng.Checked
-                        OneGameOnly    = $oneGameOnly
-                        OneGameTitle   = $oneGameTitle
-                        OneGameId      = $oneGameId
-                        UpscaleAfter   = [bool]$chkUpscale.Checked
-                    }
-                } else {
-                    $types = @()
-                    foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
-                    if ($types.Count -eq 0) {
-                        [System.Windows.Forms.MessageBox]::Show("Select at least one cover type.", "GameTDB", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    $region = [string]$cmbReg.SelectedItem
-                    if ([string]::IsNullOrWhiteSpace($region)) {
-                        [System.Windows.Forms.MessageBox]::Show("Choose a region.", "GameTDB", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    if ($oneGameOnly -and [string]::IsNullOrWhiteSpace($oneGameId)) {
-                        [System.Windows.Forms.MessageBox]::Show(
-                            "This game has no game_id in metadata.`n`nGameTDB downloads require a game_id (e.g. RMGE01).`nAdd game_id first, or use Libretro-Thumbnails (title match).",
-                            "Cover Pack", "OK", "Warning") | Out-Null
-                        return
-                    }
-                    $dlg.Tag = @{
-                        Source         = "gametdb"
-                        Platform       = $activeKeys[$idx]
-                        CoverTypes     = $types
-                        Region         = $region
-                        OutBase        = $outBase
-                        CollectionOnly = $collectionOnly
-                        OnlyMissing    = [bool]$chkMissing.Checked
-                        RegionFallback = [bool]$chkFallback.Checked
-                        SaveIntoMedia  = $useMedia
-                        WriteAssets    = $writeAssets
-                        UseBoxFull     = [bool]$chkBoxFull.Checked
-                        RenameToTitle  = [bool]$chkRename.Checked
-                        ConvertToPng   = [bool]$chkPng.Checked
-                        OneGameOnly    = $oneGameOnly
-                        OneGameTitle   = $oneGameTitle
-                        OneGameId      = $oneGameId
-                    }
-                }
-                $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-                $dlg.Close()
-            } catch {
-                [System.Windows.Forms.MessageBox]::Show("Error: $($_.Exception.Message)", "Cover Pack", "OK", "Error") | Out-Null
-            }
-        })
-        $dlg.Controls.Add($btnStart)
-
-        $btnCancel = Create-Button "Cancel" 267 602 $btnW $btnH
-        $btnCancel.Add_Click({ $dlg.Close() })
-        $dlg.Controls.Add($btnCancel)
-
-        # Fit dialog to bottom of buttons (with room to spare so Start/Cancel
-        # are never clipped, even with Windows display scaling).
-        $dlg.ClientSize = New-Object System.Drawing.Size(484, 646)
-
-        $result = $dlg.ShowDialog($script:mainForm)
-        if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
-        $opts = $dlg.Tag
-        if (-not $opts) { return }
-
-        if ($opts.Source -eq "tcp") {
-            Show-TCPAssistDialog
-        } elseif ($opts.Source -eq "steamgriddb") {
-            Start-SteamGridDBCoverPackDownload `
-                -AssetTypes $opts.AssetTypes `
-                -OutBase $opts.OutBase `
-                -OnlyMissing:$opts.OnlyMissing `
-                -SaveIntoMedia:$opts.SaveIntoMedia `
-                -WriteAssets:$opts.WriteAssets `
-                -RenameToTitle:$opts.RenameToTitle `
-                -ConvertToPng:$opts.ConvertToPng `
-                -OneGameOnly:$opts.OneGameOnly `
-                -OneGameTitle $opts.OneGameTitle
-        } elseif ($opts.Source -eq "libretro") {
-            Start-LibretroCoverPackDownload `
-                -Platform $opts.Platform `
-                -OutBase $opts.OutBase `
-                -CollectionOnly:$opts.CollectionOnly `
-                -OnlyMissing:$opts.OnlyMissing `
-                -SaveIntoMedia:$opts.SaveIntoMedia `
-                -WriteAssets:$opts.WriteAssets `
-                -UseBoxFull:$opts.UseBoxFull `
-                -RenameToTitle:$opts.RenameToTitle `
-                -ConvertToPng:$opts.ConvertToPng `
-                -OneGameOnly:$opts.OneGameOnly `
-                -OneGameTitle $opts.OneGameTitle `
-                -UpscaleAfterDownload:$opts.UpscaleAfter
-        } else {
-            Start-GameTDBCoverPackDownload `
-                -Platform $opts.Platform `
-                -CoverTypes $opts.CoverTypes `
-                -Region $opts.Region `
-                -OutBase $opts.OutBase `
-                -CollectionOnly:$opts.CollectionOnly `
-                -OnlyMissing:$opts.OnlyMissing `
-                -RegionFallback:$opts.RegionFallback `
-                -SaveIntoMedia:$opts.SaveIntoMedia `
-                -WriteAssets:$opts.WriteAssets `
-                -UseBoxFull:$opts.UseBoxFull `
-                -RenameToTitle:$opts.RenameToTitle `
-                -ConvertToPng:$opts.ConvertToPng `
-                -OneGameOnly:$opts.OneGameOnly `
-                -OneGameId $opts.OneGameId `
-                -OneGameTitle $opts.OneGameTitle
-        }
-    } catch {
-        $msg = "Cover Pack dialog error: $($_.Exception.Message)"
-        try { Log-Message $msg "Red" } catch {}
-        try {
-            [System.Windows.Forms.MessageBox]::Show($msg, "GameTDB Cover Pack", "OK", "Error") | Out-Null
-        } catch {}
-    }
-}
-
-function Show-TCPAssetTypePrompt {
-    # Small picker so a saved image can be filed as Box Front, Box Full, or
-    # Box Back instead of always assuming Box Front. TheCoverProject listings
-    # often mix full covers (front+back scan) in with front-only art, and the
-    # app has no way to tell them apart from the file itself.
-    #
-    # Box Full writes to BOTH assets.box_full (box2dfull/ - scraper/Skraper
-    # convention) and assets.boxFull (boxFull/ - what many Pegasus themes,
-    # including this user's, actually look for) - same dual-key convention
-    # already used by "Add All Media Types" elsewhere in this app.
-    param([string]$DefaultType = "Box Front")
-
-    $map = [ordered]@{
-        "Box Front" = @{ Keys = @("assets.box_front"); Folders = @("box2dfront") }
-        "Box Full"  = @{ Keys = @("assets.box_full", "assets.boxFull"); Folders = @("box2dfull", "boxFull") }
-        "Box Back"  = @{ Keys = @("assets.box_back"); Folders = @("box2dback") }
-    }
-
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "What kind of cover is this?"
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.MinimizeBox = $false
-    $dlg.BackColor = $script:theme.background
-    $dlg.ClientSize = New-Object System.Drawing.Size(280, 190)
-
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Text = "Is the image you saved a front cover only, a full wrap (front+back+spine), or a back cover?"
-    $lbl.Location = New-Object System.Drawing.Point(12, 10)
-    $lbl.Size = New-Object System.Drawing.Size(256, 44)
-    $lbl.ForeColor = $script:theme.text
-    $dlg.Controls.Add($lbl)
-
-    $y = 60
-    $radios = @{}
-    foreach ($name in $map.Keys) {
-        $rb = New-Object System.Windows.Forms.RadioButton
-        $rb.Text = if ($name -eq "Box Full") { "Box Full (box_full + boxFull)" } else { $name }
-        $rb.Location = New-Object System.Drawing.Point(20, $y)
-        $rb.Size = New-Object System.Drawing.Size(240, 22)
-        $rb.ForeColor = $script:theme.text
-        $rb.Checked = ($name -eq $DefaultType)
-        $dlg.Controls.Add($rb)
-        $radios[$name] = $rb
-        $y += 26
-    }
-
-    $result = $null
-    $btnOK = Create-Button "OK" 84 150 100 28
-    $btnOK.Add_Click({
-        foreach ($name in $radios.Keys) { if ($radios[$name].Checked) { $script:__tcpAssetTypeChoice = $name } }
-        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-        $dlg.Close()
-    })
-    $dlg.Controls.Add($btnOK)
-    $dlg.AcceptButton = $btnOK
-
-    $script:__tcpAssetTypeChoice = $null
-    $r = $dlg.ShowDialog()
-    if ($r -ne [System.Windows.Forms.DialogResult]::OK -or -not $script:__tcpAssetTypeChoice) { return $null }
-    return $map[$script:__tcpAssetTypeChoice]
-}
-
-function Get-TCPNoCoverStorePath {
-    param($Collection)
-    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
-    $dir = Split-Path $Collection.metadataPath -Parent
-    if (-not $dir) { return $null }
-    return (Join-Path $dir "tcp_no_cover_marks.json")
-}
-
-function Get-TCPNoCoverMap {
-    # Games the user has confirmed (by hand, after checking the actual site)
-    # have no cover available on TheCoverProject, along with when they last
-    # checked. Persisted per-collection so this window doesn't keep nagging
-    # about the same already-checked games every time it's reopened - since
-    # the app can't detect "no results" on its own (the site blocks
-    # scripted access, so there's no page to read). Returns a hashtable of
-    # normalized title -> ISO 8601 timestamp string.
-    param($Collection)
-    $map = @{}
-    $path = Get-TCPNoCoverStorePath -Collection $Collection
-    if (-not $path -or -not (Test-Path $path)) { return $map }
-    try {
-        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        if ($data -is [System.Management.Automation.PSCustomObject]) {
-            foreach ($p in $data.PSObject.Properties) {
-                if ($p.Name) { $map[$p.Name] = [string]$p.Value }
-            }
-        }
-    } catch {}
-    return $map
-}
-
-function Save-TCPNoCoverMap {
-    param($Collection, [hashtable]$Map)
-    $path = Get-TCPNoCoverStorePath -Collection $Collection
-    if (-not $path) { return }
-    try {
-        ($Map | ConvertTo-Json -Depth 2) | Set-Content -Path $path -Encoding UTF8
-    } catch {
-        Log-Message "TheCoverProject: couldn't save no-cover list: $_" "Yellow"
-    }
-}
-
-function Format-TCPNoCoverStamp {
-    # Formats a stored ISO timestamp into "6:44 PM 9/1/2026" for display, or
-    # returns a generic label if it can't be parsed (e.g. an older file
-    # written before timestamps existed).
-    param([string]$Iso)
-    if (-not $Iso) { return "unknown" }
-    try {
-        $dt = [datetime]::Parse($Iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
-        return "{0:h:mm tt} {0:M/d/yyyy}" -f $dt
-    } catch {
-        return "unknown"
-    }
-}
-
-function Format-TCPSearchTitle {
-    # Collection titles follow ROM-naming conventions (No-Intro/GoodTools
-    # style) that TheCoverProject's own titles don't: comma-swapped
-    # articles ("Legend of Zelda, The"), a " - " or ":" between main title
-    # and subtitle, and a trailing system/region tag. The site's search
-    # looks like plain word-matching against its own display titles (e.g.
-    # "Legend of Zelda: The Minish Cap, The"), so a query built from the
-    # raw collection title - commas, dashes, and "(GBA)" tag included -
-    # often matches nothing even though the game is listed. This unpacks
-    # the ROM-naming quirks into plain word order so the query's words
-    # line up with how the site actually phrases the title.
-    param([string]$Title)
-    if ([string]::IsNullOrWhiteSpace($Title)) { return $Title }
-
-    $t = $Title.Trim()
-
-    # Strip trailing system/region/language tags in parentheses, e.g.
-    # "(GBA)", "(USA)", "(Europe) (En,Fr,De)" - can be more than one.
-    while ($t -match '\s*\([^()]*\)\s*$') {
-        $t = [regex]::Replace($t, '\s*\([^()]*\)\s*$', '')
-    }
-
-    # Split the remaining title on the separators ROM names use between a
-    # main title and subtitle (" - " or ":"), then un-swap a trailing
-    # ", The"/", A"/", An" on each piece so "Legend of Zelda, The" reads
-    # as "The Legend of Zelda" - matching normal English word order.
-    $parts = [regex]::Split($t, '\s*[-:]\s*')
-    $fixedParts = foreach ($p in $parts) {
-        $p = $p.Trim()
-        if ($p -match '^(?<base>.+),\s*(?<article>The|A|An)$') {
-            "$($Matches['article']) $($Matches['base'])".Trim()
-        } else {
-            $p
-        }
-    }
-
-    $result = ($fixedParts -join ' ').Trim()
-    $result = [regex]::Replace($result, '\s{2,}', ' ')
-    return $result
-}
-
-function Show-TCPFrontBackCropDialog {
-    # TheCoverProject files are a full wrap: back cover, spine, front cover
-    # laid out left-to-right in one image. Rather than the user having to
-    # crop that by hand in a separate program, this shows the wrap with two
-    # draggable divider lines (auto-fit to a typical 45/10/45 split) and,
-    # on save, crops out the back and front pieces and writes them straight
-    # to assets.box_back / assets.box_front - same as any other cover
-    # source. The full wrap itself is untouched; this only adds the two
-    # extra crops on top of it. Returns $true if crops were saved, $false
-    # if the user skipped/cancelled.
-    param(
-        [string]$ImagePath,
-        $Collection,
-        [string]$Title,
-        [string]$Norm
-    )
-    if (-not (Test-Path -LiteralPath $ImagePath) -or -not $Collection -or -not $Norm) { return $false }
-
-    $srcBmp = $null
-    try {
-        $fs = [System.IO.File]::Open($ImagePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
-        try {
-            $img = [System.Drawing.Image]::FromStream($fs)
-            $srcBmp = New-Object System.Drawing.Bitmap $img
-            $img.Dispose()
-        } finally { $fs.Close(); $fs.Dispose() }
-    } catch {
-        Log-Message "Couldn't open '$ImagePath' for cropping: $_" "Red"
-        return $false
-    }
-    if (-not $srcBmp) { return $false }
-
-    $imgW = $srcBmp.Width
-    $imgH = $srcBmp.Height
-
-    # Fit the preview into a max box, never upscaling small images.
-    $maxW = 860; $maxH = 460
-    $scale = [Math]::Min([double]$maxW / $imgW, [double]$maxH / $imgH)
-    if ($scale -gt 1) { $scale = 1 }
-    $dispW = [Math]::Max(200, [int]([Math]::Round($imgW * $scale)))
-    $dispH = [Math]::Max(120, [int]([Math]::Round($imgH * $scale)))
-
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "Crop Front / Back - $Title"
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.MinimizeBox = $false
-    $dlg.BackColor = $script:theme.panel
-    $dlg.ForeColor = $script:theme.text
-    $dlg.ClientSize = New-Object System.Drawing.Size(($dispW + 40), ($dispH + 132))
-
-    $lblHint = New-Object System.Windows.Forms.Label
-    $lblHint.Text = "Drag the two lines onto the spine edges - shaded band is the spine. Left saves as Box Back, right as Box Front (plus a Box Thumb made from it)."
-    $lblHint.Location = New-Object System.Drawing.Point(20, 8)
-    $lblHint.Size = New-Object System.Drawing.Size($dispW, 32)
-    $lblHint.ForeColor = $script:theme.textDim
-    $dlg.Controls.Add($lblHint)
-
-    $panel = New-Object System.Windows.Forms.Panel
-    $panel.Location = New-Object System.Drawing.Point(20, 44)
-    $panel.Size = New-Object System.Drawing.Size($dispW, $dispH)
-    $panel.BackColor = [System.Drawing.Color]::Black
-    $dlg.Controls.Add($panel)
-    try {
-        $dbProp = [System.Windows.Forms.Control].GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance,NonPublic")
-        $dbProp.SetValue($panel, $true, $null)
-    } catch {}
-
-    # Auto-fit default: back 0-45%, spine 45-55%, front 55-100%.
-    $script:__cropLine1 = [int]([Math]::Round($dispW * 0.45))
-    $script:__cropLine2 = [int]([Math]::Round($dispW * 0.55))
-    $script:__cropDrag = 0
-
-    $panel.Add_Paint({
-        param($s, $e)
-        $g = $e.Graphics
-        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-        $g.DrawImage($srcBmp, 0, 0, $dispW, $dispH)
-
-        $spineBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(90, 255, 200, 0))
-        $g.FillRectangle($spineBrush, $script:__cropLine1, 0, ($script:__cropLine2 - $script:__cropLine1), $dispH)
-        $spineBrush.Dispose()
-
-        $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 255, 60, 60)), 2
-        $g.DrawLine($pen, $script:__cropLine1, 0, $script:__cropLine1, $dispH)
-        $g.DrawLine($pen, $script:__cropLine2, 0, $script:__cropLine2, $dispH)
-        $pen.Dispose()
-
-        $font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
-        $textBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
-        $shadowBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
-        $labels = @(
-            @{ Text = "BACK";  CenterX = [int]($script:__cropLine1 / 2) },
-            @{ Text = "SPINE"; CenterX = [int](($script:__cropLine1 + $script:__cropLine2) / 2) },
-            @{ Text = "FRONT"; CenterX = [int](($script:__cropLine2 + $dispW) / 2) }
-        )
-        foreach ($lb in $labels) {
-            $sz = $g.MeasureString($lb.Text, $font)
-            $x = $lb.CenterX - ($sz.Width / 2)
-            $g.DrawString($lb.Text, $font, $shadowBrush, ($x + 1), 11)
-            $g.DrawString($lb.Text, $font, $textBrush, $x, 10)
-        }
-        $font.Dispose(); $textBrush.Dispose(); $shadowBrush.Dispose()
-    })
-
-    $hitTest = {
-        param($x)
-        if ([Math]::Abs($x - $script:__cropLine1) -le 6) { return 1 }
-        if ([Math]::Abs($x - $script:__cropLine2) -le 6) { return 2 }
-        return 0
-    }
-    $panel.Add_MouseDown({
-        param($s, $e)
-        $script:__cropDrag = & $hitTest $e.X
-    })
-    $panel.Add_MouseMove({
-        param($s, $e)
-        if ($script:__cropDrag -eq 0) {
-            $panel.Cursor = if ((& $hitTest $e.X) -ne 0) { [System.Windows.Forms.Cursors]::SizeWE } else { [System.Windows.Forms.Cursors]::Default }
-            return
-        }
-        $x = [Math]::Max(2, [Math]::Min($dispW - 2, $e.X))
-        if ($script:__cropDrag -eq 1) {
-            $script:__cropLine1 = [Math]::Min($x, $script:__cropLine2 - 4)
-        } else {
-            $script:__cropLine2 = [Math]::Max($x, $script:__cropLine1 + 4)
-        }
-        $panel.Invalidate()
-    })
-    $panel.Add_MouseUp({ $script:__cropDrag = 0 })
-
-    $btnAutoFit = Create-Button "Auto-Fit" 20 ($dispH + 54) 100 28
-    $btnAutoFit.Add_Click({
-        $script:__cropLine1 = [int]([Math]::Round($dispW * 0.45))
-        $script:__cropLine2 = [int]([Math]::Round($dispW * 0.55))
-        $panel.Invalidate()
-    })
-    $dlg.Controls.Add($btnAutoFit)
-
-    $btnSkip = Create-Button "Skip" ($dispW - 200) ($dispH + 54) 90 28
-    $btnSkip.Add_Click({
-        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
-        $dlg.Close()
-    })
-    $dlg.Controls.Add($btnSkip)
-
-    $btnSave = Create-Button "Save Crops" ($dispW - 100) ($dispH + 54) 140 28
-    $btnSave.Add_Click({
-        $backW  = [int]([Math]::Round($script:__cropLine1 / $scale))
-        $frontX = [int]([Math]::Round($script:__cropLine2 / $scale))
-        $backW  = [Math]::Max(1, [Math]::Min($imgW - 1, $backW))
-        $frontX = [Math]::Max(1, [Math]::Min($imgW - 1, $frontX))
-        $frontW = $imgW - $frontX
-        if ($backW -lt 10 -or $frontW -lt 10) {
-            [System.Windows.Forms.MessageBox]::Show("That crop is too thin to save - drag the lines further apart first.", "Crop Front / Back", "OK", "Warning") | Out-Null
-            return
-        }
-
-        $safeFormat = [System.Drawing.Imaging.PixelFormat]::Format32bppArgb
-        $backRect  = New-Object System.Drawing.Rectangle 0, 0, $backW, $imgH
-        $frontRect = New-Object System.Drawing.Rectangle $frontX, 0, $frontW, $imgH
-        $backBmp  = $null; $frontBmp = $null; $thumbBmp = $null
-        try {
-            $backBmp  = $srcBmp.Clone($backRect, $safeFormat)
-            $frontBmp = $srcBmp.Clone($frontRect, $safeFormat)
-
-            $frontDir = Join-Path $Collection.mediaPath "box2dfront"
-            $backDir  = Join-Path $Collection.mediaPath "box2dback"
-            $thumbDir = Join-Path $Collection.mediaPath "box2dThumb"
-            if (-not (Test-Path $frontDir)) { New-Item -ItemType Directory -Path $frontDir -Force | Out-Null }
-            if (-not (Test-Path $backDir))  { New-Item -ItemType Directory -Path $backDir -Force | Out-Null }
-            if (-not (Test-Path $thumbDir)) { New-Item -ItemType Directory -Path $thumbDir -Force | Out-Null }
-
-            $safeTitle = $Title -replace '[\\/:*?"<>|]', '_'
-            $frontPath = Join-Path $frontDir "$safeTitle.png"
-            $backPath  = Join-Path $backDir "$safeTitle.png"
-            $thumbPath = Join-Path $thumbDir "$safeTitle.png"
-            $frontBmp.Save($frontPath, [System.Drawing.Imaging.ImageFormat]::Png)
-            $backBmp.Save($backPath, [System.Drawing.Imaging.ImageFormat]::Png)
-
-            # Box Thumb (assets.box_front_thumb / box2dThumb) - same
-            # thumbnail-res convention used elsewhere in this app: PNG,
-            # max ~512px wide, scaled down proportionally from the front
-            # crop (never upscaled if the crop is already smaller).
-            $thumbMaxW = 512
-            $thumbScale = [Math]::Min(1, [double]$thumbMaxW / $frontBmp.Width)
-            $thumbW = [Math]::Max(1, [int]([Math]::Round($frontBmp.Width * $thumbScale)))
-            $thumbH = [Math]::Max(1, [int]([Math]::Round($frontBmp.Height * $thumbScale)))
-            $thumbBmp = New-Object System.Drawing.Bitmap $thumbW, $thumbH
-            $tg = [System.Drawing.Graphics]::FromImage($thumbBmp)
-            try {
-                $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-                $tg.DrawImage($frontBmp, 0, 0, $thumbW, $thumbH)
-            } finally { $tg.Dispose() }
-            $thumbBmp.Save($thumbPath, [System.Drawing.Imaging.ImageFormat]::Png)
-
-            $updates = @{
-                $Norm = @{
-                    "assets.box_front"       = Get-RelativeAssetPath -Path $frontPath -Collection $Collection
-                    "assets.box_back"        = Get-RelativeAssetPath -Path $backPath -Collection $Collection
-                    "assets.box_front_thumb" = Get-RelativeAssetPath -Path $thumbPath -Collection $Collection
-                }
-            }
-            Apply-TitleKeyedAssetUpdates -Updates $updates
-            Log-Message "TheCoverProject: cropped Front/Back/Thumb for '$Title'" "Green"
-        } catch {
-            [System.Windows.Forms.MessageBox]::Show("Couldn't save the crops: $_", "Crop Front / Back", "OK", "Error") | Out-Null
-            return
-        } finally {
-            if ($backBmp) { $backBmp.Dispose() }
-            if ($frontBmp) { $frontBmp.Dispose() }
-            if ($thumbBmp) { $thumbBmp.Dispose() }
-        }
-
-        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
-        $dlg.Close()
-    })
-    $dlg.Controls.Add($btnSave)
-    $dlg.AcceptButton = $btnSave
-    $dlg.CancelButton = $btnSkip
-
-    $r = $dlg.ShowDialog($script:mainForm)
-    $srcBmp.Dispose()
-    return ($r -eq [System.Windows.Forms.DialogResult]::OK)
-}
-
-function Show-TCPAssistDialog {
-    # TheCoverProject has no API and blocks scripted access (Cloudflare), so
-    # this can't download automatically. Instead: scan the current collection
-    # for games missing assets.box_front, generate a direct search link per
-    # missing game, let the user click through and save covers into a folder,
-    # then match those saved files back to games by title and import them -
-    # same box2dfront placement + assets.box_front write as every other source.
-    $col = Get-Col
-    if (-not $col) {
-        [System.Windows.Forms.MessageBox]::Show("Select a collection first.", "TheCoverProject", "OK", "Warning") | Out-Null
-        return
-    }
-
-    $titleMap = Get-CollectionGameTitleMap
-    $noCoverMap = Get-TCPNoCoverMap -Collection $col
-    $missing = @()
-    foreach ($norm in $titleMap.Keys) {
-        $entry = $titleMap[$norm]
-        if (-not $entry.HasBoxFront) {
-            $missing += [pscustomobject]@{
-                Norm         = $norm
-                Title        = $entry.Title
-                Url          = "https://www.thecoverproject.net/view.php?searchstring=" + [Uri]::EscapeDataString((Format-TCPSearchTitle $entry.Title))
-                AssignedFile = $null
-                AssignedKeys = $null
-                AssignedFolders = $null
-                NoCover      = $noCoverMap.ContainsKey($norm)
-                NoCoverStamp = $(if ($noCoverMap.ContainsKey($norm)) { $noCoverMap[$norm] } else { $null })
-            }
-        }
-    }
-    $missing = $missing | Sort-Object Title
-
-    if ($missing.Count -eq 0) {
-        [System.Windows.Forms.MessageBox]::Show("Nothing missing - every game already has box_front art.", "TheCoverProject", "OK", "Information") | Out-Null
-        return
-    }
-
-    $dlg = New-Object System.Windows.Forms.Form
-    $dlg.Text = "TheCoverProject - Missing Covers ($($missing.Count))"
-    $dlg.StartPosition = "CenterParent"
-    $dlg.FormBorderStyle = "FixedDialog"
-    $dlg.MaximizeBox = $false
-    $dlg.MinimizeBox = $false
-    $dlg.BackColor = $script:theme.background
-    $dlg.ClientSize = New-Object System.Drawing.Size(869, 679)
-
-    $lblHint = New-Object System.Windows.Forms.Label
-    $lblHint.Text = "$($missing.Count) game(s) missing box_front art. Double-click a row (or select + Open) to search for it on TheCoverProject. Save whatever you find into the folder below, then click 'Match && Import'. Greyed rows were already marked 'No cover available' - select one and click Retry to check again."
-    $lblHint.Location = New-Object System.Drawing.Point(12, 10)
-    $lblHint.Size = New-Object System.Drawing.Size(845, 40)
-    $lblHint.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $lblHint.ForeColor = $script:theme.text
-    $dlg.Controls.Add($lblHint)
-
-    $lst = New-Object System.Windows.Forms.ListView
-    $lst.Location = New-Object System.Drawing.Point(12, 58)
-    $lst.Size = New-Object System.Drawing.Size(845, 520)
-    $lst.View = "Details"
-    $lst.FullRowSelect = $true
-    $lst.MultiSelect = $true
-    $lst.BackColor = $script:theme.editor
-    $lst.ForeColor = $script:theme.text
-    [void]$lst.Columns.Add("Game", 568)
-    [void]$lst.Columns.Add("Status", 260)
-    foreach ($m in $missing) {
-        $li = New-Object System.Windows.Forms.ListViewItem($m.Title)
-        if ($m.NoCover) {
-            [void]$li.SubItems.Add("Not Available As of " + (Format-TCPNoCoverStamp $m.NoCoverStamp))
-            $li.ForeColor = $script:theme.textDim
-        } else {
-            [void]$li.SubItems.Add("Not opened")
-        }
-        $li.Tag = $m
-        [void]$lst.Items.Add($li)
-    }
-    $lst.Add_MouseDoubleClick({
-        foreach ($item in $lst.SelectedItems) {
-            Start-Process ([string]$item.Tag.Url)
-            $item.SubItems[1].Text = "Opened"
-        }
-    })
-    $dlg.Controls.Add($lst)
-
-    $btnOpen = Create-Button "Open Selected" 12 641 135 26
-    $btnOpen.Add_Click({
-        if ($lst.SelectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Select one or more games first.", "TheCoverProject", "OK", "Information") | Out-Null
-            return
-        }
-        if ($lst.SelectedItems.Count -gt 8) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "That will open $($lst.SelectedItems.Count) browser tabs at once. Continue?",
-                "TheCoverProject", "YesNo", "Warning")
-            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-        }
-        foreach ($item in $lst.SelectedItems) {
-            Start-Process ([string]$item.Tag.Url)
-            if ($item.Tag.AssignedFile) {
-                $item.SubItems[1].Text = "Assigned: " + [System.IO.Path]::GetFileName($item.Tag.AssignedFile)
-            } else {
-                $item.SubItems[1].Text = "Opened"
-            }
-        }
-    })
-    $dlg.Controls.Add($btnOpen)
-
-    $btnAssign = Create-Button "Assign Saved Cover" 155 641 175 26
-    $btnAssign.Add_Click({
-        # Lets the user point directly at the file they just saved for the
-        # currently-selected game, instead of relying on the filename to be
-        # re-parsed later. The app already knows which game this is for -
-        # no renaming needed, and no ambiguity from title-matching.
-        if ($lst.SelectedItems.Count -ne 1) {
-            [System.Windows.Forms.MessageBox]::Show("Select exactly one game to assign a file to.", "TheCoverProject", "OK", "Information") | Out-Null
-            return
-        }
-        $item = $lst.SelectedItems[0]
-        $ofd = New-Object System.Windows.Forms.OpenFileDialog
-        $ofd.Title = "Select the cover you saved for: $($item.Tag.Title)"
-        $ofd.Filter = "Image files|*.png;*.jpg;*.jpeg;*.webp;*.bmp|All files|*.*"
-        $startDir = $txtFolder.Text.Trim()
-        if ($startDir -and (Test-Path $startDir)) { $ofd.InitialDirectory = $startDir }
-        if ($ofd.ShowDialog() -eq "OK") {
-            # TheCoverProject only lists full box scans (front+back+spine),
-            # never front-only art, so there's nothing to ask here - every
-            # file saved from it is Box Full. Writes to both assets.box_full
-            # (box2dfull/ - Skraper convention) and assets.boxFull (boxFull/
-            # - what this user's Pegasus theme looks for), same dual-key
-            # convention "Add All Media Types" uses elsewhere in this app.
-            $typeInfo = @{ Keys = @("assets.box_full", "assets.boxFull"); Folders = @("box2dfull", "boxFull") }
-            $item.Tag.AssignedFile = $ofd.FileName
-            $item.Tag.AssignedKeys = $typeInfo.Keys
-            $item.Tag.AssignedFolders = $typeInfo.Folders
-            if ($item.Tag.NoCover) {
-                # They'd previously marked this as having no cover, but found
-                # one after all - clear the mark so it doesn't come back
-                # grayed-out next time.
-                $item.Tag.NoCover = $false
-                $item.Tag.NoCoverStamp = $null
-                $noCoverMap.Remove($item.Tag.Norm)
-                Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
-            }
-            $item.ForeColor = $lst.ForeColor
-            $label = ($typeInfo.Keys -join " + ") -replace 'assets\.', ''
-            $item.SubItems[1].Text = "Assigned ($label): " + [System.IO.Path]::GetFileName($ofd.FileName)
-
-            # TheCoverProject files are always a full wrap, so offer to crop
-            # the front and back covers out of it right now instead of
-            # leaving that for later - saves a trip to another program.
-            $cropped = Show-TCPFrontBackCropDialog -ImagePath $ofd.FileName -Collection $col -Title $item.Tag.Title -Norm $item.Tag.Norm
-            if ($cropped) {
-                $item.SubItems[1].Text += " (+ Front/Back/Thumb cropped)"
-            }
-        }
-    })
-    $dlg.Controls.Add($btnAssign)
-
-    $btnNoCover = Create-Button "Mark No Cover Available" 338 641 210 26
-    $btnNoCover.Add_Click({
-        # For games you've actually checked and confirmed have nothing on
-        # TheCoverProject. Persisted to disk (per collection) so this window
-        # stops re-listing them as open work every time you reopen it - the
-        # app can't detect "no results" itself since the site blocks
-        # scripted access, so this is the manual equivalent. Timestamped so
-        # you can see at a glance how stale that check is.
-        if ($lst.SelectedItems.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Select one or more games first.", "TheCoverProject", "OK", "Information") | Out-Null
-            return
-        }
-        $now = (Get-Date).ToString("o")
-        foreach ($item in $lst.SelectedItems) {
-            $item.Tag.NoCover = $true
-            $item.Tag.NoCoverStamp = $now
-            $item.Tag.AssignedFile = $null
-            $item.SubItems[1].Text = "Not Available As of " + (Format-TCPNoCoverStamp $now)
-            $item.ForeColor = $script:theme.textDim
-            $noCoverMap[$item.Tag.Norm] = $now
-        }
-        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
-    })
-    $dlg.Controls.Add($btnNoCover)
-
-    $btnRetry = Create-Button "Retry" 556 641 70 26
-    $btnRetry.Add_Click({
-        # Clears a "No cover available" mark and re-opens the search right
-        # away, for when it might have shown up on the site since you last
-        # checked. Only touches rows that are actually marked; anything else
-        # in the selection is left alone.
-        $targets = @($lst.SelectedItems | Where-Object { $_.Tag.NoCover })
-        if ($targets.Count -eq 0) {
-            [System.Windows.Forms.MessageBox]::Show("Select one or more games marked 'No cover available' first.", "TheCoverProject", "OK", "Information") | Out-Null
-            return
-        }
-        if ($targets.Count -gt 8) {
-            $r = [System.Windows.Forms.MessageBox]::Show(
-                "That will open $($targets.Count) browser tabs at once. Continue?",
-                "TheCoverProject", "YesNo", "Warning")
-            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
-        }
-        foreach ($item in $targets) {
-            $item.Tag.NoCover = $false
-            $item.Tag.NoCoverStamp = $null
-            $noCoverMap.Remove($item.Tag.Norm)
-            $item.ForeColor = $lst.ForeColor
-            $item.SubItems[1].Text = "Opened"
-            Start-Process ([string]$item.Tag.Url)
-        }
-        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
-    })
-    $dlg.Controls.Add($btnRetry)
-
-    $lblFolder = New-Object System.Windows.Forms.Label
-    $lblFolder.Text = "Saved covers folder:"
-    $lblFolder.Location = New-Object System.Drawing.Point(12, 586)
-    $lblFolder.Size = New-Object System.Drawing.Size(200, 18)
-    $lblFolder.ForeColor = $script:theme.text
-    $dlg.Controls.Add($lblFolder)
-
-    $txtFolder = New-Object System.Windows.Forms.TextBox
-    $txtFolder.Location = New-Object System.Drawing.Point(12, 606)
-    $txtFolder.Size = New-Object System.Drawing.Size(798, 22)
-    $txtFolder.BackColor = $script:theme.editor
-    $txtFolder.ForeColor = $script:theme.text
-    $txtFolder.Text = [string](Join-Path $env:USERPROFILE "Downloads\TCP_Covers")
-    # Create it now so there's somewhere to save to the first time this runs -
-    # no more hitting "no cover available" and having nowhere to put the ones
-    # that DO exist because the folder was never made.
-    try {
-        if (-not (Test-Path $txtFolder.Text)) {
-            New-Item -ItemType Directory -Path $txtFolder.Text -Force | Out-Null
-        }
-    } catch {}
-    $dlg.Controls.Add($txtFolder)
-
-    $btnBrowse = Create-Button "..." 822 605 35 25
-    $btnBrowse.Add_Click({
-        $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-        $fd.Description = "Folder where you saved covers from TheCoverProject"
-        if (-not (Test-Path $txtFolder.Text)) { New-Item -ItemType Directory -Path $txtFolder.Text -Force | Out-Null }
-        $fd.SelectedPath = $txtFolder.Text
-        if ($fd.ShowDialog() -eq "OK") { $txtFolder.Text = $fd.SelectedPath }
-    })
-    $dlg.Controls.Add($btnBrowse)
-
-    $btnImport = Create-Button "Match && Import" 634 641 145 26
-    $btnImport.Add_Click({
-        $folder = $txtFolder.Text.Trim()
-        if (-not (Test-Path $folder)) {
-            [System.Windows.Forms.MessageBox]::Show("Folder doesn't exist yet - save some covers into it first.", "TheCoverProject", "OK", "Warning") | Out-Null
-            return
-        }
-        if (-not $col.mediaPath) {
-            [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "TheCoverProject", "OK", "Warning") | Out-Null
-            return
-        }
-        $fullDir = Join-Path $col.mediaPath "boxFull"
-        if (-not (Test-Path $fullDir)) { New-Item -ItemType Directory -Path $fullDir -Force | Out-Null }
-        $fullDirLegacy = Join-Path $col.mediaPath "box2dfull"
-        if (-not (Test-Path $fullDirLegacy)) { New-Item -ItemType Directory -Path $fullDirLegacy -Force | Out-Null }
-
-        $updates = @{}
-        $matched = 0; $unmatched = 0
-        $usedFiles = New-Object 'System.Collections.Generic.HashSet[string]'
-
-        # Pass 1: explicit assignments made with "Assign Saved Cover". Every
-        # file from TheCoverProject is a full wrap (front+back+spine), so
-        # this is always Box Full - written to both assets.box_full
-        # (box2dfull/ - Skraper convention) and assets.boxFull (boxFull/ -
-        # what this user's Pegasus theme looks for), same dual-key
-        # convention "Add All Media Types" uses elsewhere in this app.
-        foreach ($m in $missing) {
-            if (-not $m.AssignedFile) { continue }
-            if (-not (Test-Path $m.AssignedFile)) {
-                Log-Message "TheCoverProject: assigned file for '$($m.Title)' no longer exists: $($m.AssignedFile)" "Red"
-                continue
-            }
-            $keys = if ($m.AssignedKeys) { $m.AssignedKeys } else { @("assets.box_full", "assets.boxFull") }
-            $folders = if ($m.AssignedFolders) { $m.AssignedFolders } else { @("box2dfull", "boxFull") }
-
-            $safeTitle = $m.Title -replace '[\\/:*?""<>|]', '_'
-            $srcExt = [System.IO.Path]::GetExtension($m.AssignedFile)
-            $rowUpdates = @{}
-            for ($i = 0; $i -lt $keys.Count; $i++) {
-                $destDir = Join-Path $col.mediaPath $folders[$i]
-                if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
-                $dest = Join-Path $destDir "$safeTitle$srcExt"
-                Copy-Item -Path $m.AssignedFile -Destination $dest -Force
-                $dest = Convert-ImageFileToPng -Path $dest
-                $rowUpdates[$keys[$i]] = Get-RelativeAssetPath -Path $dest -Collection $col
-            }
-            $updates[$m.Norm] = $rowUpdates
-            [void]$usedFiles.Add((Resolve-Path $m.AssignedFile).Path)
-            $matched++
-        }
-
-        # Pass 2: fallback filename matching for anything saved into the
-        # folder without being explicitly assigned. Tries both the normal
-        # normalized title and a whitespace-stripped version, since saved
-        # filenames often drop spaces entirely (e.g. "kurukurukurin.jpg").
-        # Same as Pass 1, this is always Box Full - everything saved from
-        # TheCoverProject is a full wrap, never a front-only scan.
-        $missingLookup = @{}
-        foreach ($m in $missing) {
-            if ($m.AssignedFile) { continue }
-            $missingLookup[$m.Norm] = $m
-            $missingLookup[($m.Norm -replace '\s+', '')] = $m
-        }
-        $files = Get-ChildItem -Path $folder -File -Include *.png,*.jpg,*.jpeg,*.webp,*.bmp -ErrorAction SilentlyContinue
-        foreach ($f in $files) {
-            if ($usedFiles.Contains($f.FullName)) { continue }
-            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-            $norm = Get-NormalizedGameTitle $base
-            $normSquashed = $norm -replace '\s+', ''
-            $hit = $null
-            if ($norm -and $missingLookup.ContainsKey($norm)) { $hit = $missingLookup[$norm] }
-            elseif ($normSquashed -and $missingLookup.ContainsKey($normSquashed)) { $hit = $missingLookup[$normSquashed] }
-            if (-not $hit) {
-                $unmatched++
-                continue
-            }
-            $dest = Join-Path $fullDir $f.Name
-            Copy-Item -Path $f.FullName -Destination $dest -Force
-            $dest = Convert-ImageFileToPng -Path $dest
-            $destLegacy = Join-Path $fullDirLegacy ([System.IO.Path]::GetFileName($dest))
-            Copy-Item -Path $dest -Destination $destLegacy -Force
-            $updates[$hit.Norm] = @{
-                "assets.box_full" = Get-RelativeAssetPath -Path $destLegacy -Collection $col
-                "assets.boxFull"  = Get-RelativeAssetPath -Path $dest -Collection $col
-            }
-            if ($hit.NoCover) {
-                # A file did turn up for something previously marked "no
-                # cover available" - clear that mark so it doesn't keep
-                # showing as unavailable now that it's actually imported.
-                $hit.NoCover = $false
-                $hit.NoCoverStamp = $null
-                $noCoverMap.Remove($hit.Norm)
-            }
-            $matched++
-        }
-        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
-
-        if ($updates.Count -gt 0) {
-            try { Apply-TitleKeyedAssetUpdates -Updates $updates }
-            catch { Log-Message "TheCoverProject import - asset write error: $_" "Red" }
-        }
-        [System.Windows.Forms.MessageBox]::Show(
-            "Matched && imported: $matched`nSaved files that didn't match any missing game: $unmatched`n`nTip: instead of renaming files to match, select a game and click 'Assign Saved Cover' - no matching needed. For games with nothing available on the site, select them and click 'Mark No Cover Available' so they stop showing up here.",
-            "TheCoverProject", "OK", "Information") | Out-Null
-        Log-Message "TheCoverProject: imported $matched cover(s), $unmatched file(s) unmatched." "Green"
-    })
-    $dlg.Controls.Add($btnImport)
-
-    $btnClose = Create-Button "Close" 787 641 70 26
-    $btnClose.Add_Click({ $dlg.Close() })
-    $dlg.Controls.Add($btnClose)
-
-    [void]$dlg.ShowDialog($script:mainForm)
-}
-
-function Show-GameTDBProgressWindow {
-    # Non-modal progress overlay so the main terminal stays visible underneath
-    param(
-        [string]$Title = "GameTDB Cover Pack"
-    )
-    $form = New-Object System.Windows.Forms.Form
-    $form.Text = $Title
-    $form.Size = New-Object System.Drawing.Size(420, 160)
-    $form.StartPosition = "CenterScreen"
-    $form.FormBorderStyle = "FixedDialog"
-    $form.MaximizeBox = $false
-    $form.MinimizeBox = $false
-    $form.TopMost = $true
-    $form.ShowInTaskbar = $true
-    $form.BackColor = $script:theme.background
-    $form.ForeColor = $script:theme.text
-    $form.ControlBox = $false
-
-    $lbl = New-Object System.Windows.Forms.Label
-    $lbl.Name = "statusLabel"
-    $lbl.Text = "Starting..."
-    $lbl.Location = New-Object System.Drawing.Point(16, 16)
-    $lbl.Size = New-Object System.Drawing.Size(370, 36)
-    $lbl.ForeColor = $script:theme.text
-    $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 9)
-    $form.Controls.Add($lbl)
-
-    $bar = New-Object System.Windows.Forms.ProgressBar
-    $bar.Name = "progressBar"
-    $bar.Location = New-Object System.Drawing.Point(16, 60)
-    $bar.Size = New-Object System.Drawing.Size(370, 22)
-    $bar.Minimum = 0
-    $bar.Maximum = 100
-    $bar.Value = 0
-    $bar.Style = "Continuous"
-    $form.Controls.Add($bar)
-
-    $btnAbort = Create-Button "Abort" 150 95 100 26
-    $btnAbort.Name = "abortButton"
-    $btnAbort.Tag = $form
-    $btnAbort.Add_Click({
-        param($sender, $e)
-        $script:gtdbCoverPackAbort = $true
-        try {
-            if ($sender.Text -eq "Close") {
-                $f = $sender.Tag
-                if ($f -and -not $f.IsDisposed) { $f.Close() }
-                return
-            }
-            $sender.Enabled = $false
-            $sender.Text = "Aborting..."
-        } catch {}
-    })
-    $form.Controls.Add($btnAbort)
-
-    $script:gtdbCoverPackAbort = $false
-    $form.Show()
-    $form.BringToFront()
-    [System.Windows.Forms.Application]::DoEvents()
-    return $form
-}
-
-function Update-GameTDBProgressWindow {
-    param(
-        $Form,
-        [int]$Percent,
-        [string]$Status,
-        [switch]$Completed,
-        [switch]$Aborted
-    )
-    if (-not $Form -or $Form.IsDisposed) { return }
-    try {
-        $bar = $Form.Controls["progressBar"]
-        $lbl = $Form.Controls["statusLabel"]
-        $btn = $Form.Controls["abortButton"]
-        if ($Percent -lt 0) { $Percent = 0 }
-        if ($Percent -gt 100) { $Percent = 100 }
-        if ($bar) { $bar.Value = $Percent }
-        if ($lbl -and $Status) { $lbl.Text = $Status }
-        if ($Completed) {
-            if ($bar) { $bar.Value = 100 }
-            if ($lbl) {
-                if ($Status) { $lbl.Text = "Completed`r`n$Status" }
-                else { $lbl.Text = "Completed" }
-            }
-            if ($btn) {
-                $btn.Text = "Close"
-                $btn.Enabled = $true
-            }
-        } elseif ($Aborted) {
-            if ($lbl) { $lbl.Text = $(if ($Status) { $Status } else { "Aborted" }) }
-            if ($btn) {
-                $btn.Text = "Close"
-                $btn.Enabled = $true
-            }
-        }
-        [System.Windows.Forms.Application]::DoEvents()
-    } catch {}
-}
-
-function Start-GameTDBCoverPackDownload {
-    param(
-        [string]$Platform,
-        [string[]]$CoverTypes,
-        [string]$Region,
-        [string]$OutBase,
-        [switch]$CollectionOnly,
-        [switch]$OnlyMissing,
-        [switch]$RegionFallback,
-        [switch]$SaveIntoMedia,
-        [switch]$WriteAssets,
-        [switch]$UseBoxFull,
-        [switch]$RenameToTitle,
-        [switch]$ConvertToPng,
-        [switch]$OneGameOnly,
-        [string]$OneGameId,
-        [string]$OneGameTitle,
-        [int]$RequestDelayMs = 200
-    )
-    if (-not $CoverTypes -or $CoverTypes.Count -eq 0) {
-        Log-Message "No cover types selected." "Red"
-        return
-    }
-
-    $info = $script:gameTdbPlatforms[$Platform]
-    if (-not $info) {
-        Log-Message "Unknown platform: $Platform" "Red"
-        return
-    }
-    $script:lastGameTdbPlatform = $Platform
-    $artPlat = if ($Platform -eq "gamecube") { "wii" } else { $Platform }
-    $artInfo = $script:gameTdbPlatforms[$artPlat]
-
-    $col = $null
-    if ($CollectionOnly -or $SaveIntoMedia -or $WriteAssets) {
-        $col = Get-Col
-        if (-not $col) {
-            Log-Message "No collection selected." "Red"
-            return
-        }
-    }
-
-    $regionsToTry = New-Object System.Collections.ArrayList
-    [void]$regionsToTry.Add($Region)
-    if ($RegionFallback) {
-        $prefer = @("US", "EN", "AU", "JP", "JA", "FR", "DE", "ES", "IT", "NL", "PT", "SE", "DK", "NO", "FI", "RU", "KO", "ZH", "CA")
-        foreach ($r in $prefer) {
-            if ($r -ne $Region -and -not $regionsToTry.Contains($r)) { [void]$regionsToTry.Add($r) }
-        }
-        foreach ($r in $script:gameTdbRegions) {
-            if (-not $regionsToTry.Contains($r)) { [void]$regionsToTry.Add($r) }
-        }
-    }
-
-    Log-Message "========================================" "Cyan"
-    Log-Message "GAMETDB COVER PACK - $($info.Label)" "Cyan"
-    Log-Message ("Types: " + ($CoverTypes -join ", ")) "White"
-    Log-Message ("Region: $Region" + $(if ($RegionFallback) { " (+ fallback)" } else { "" })) "White"
-    if ($CollectionOnly) { Log-Message "Scope: current collection only" "Cyan" }
-    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
-    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
-    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
-    if ($UseBoxFull) { Log-Message "Full covers folder: boxFull (assets.boxFull)" "Cyan" }
-    if ($RenameToTitle) { Log-Message "Rename to game titles: on" "Cyan" }
-    if ($ConvertToPng) { Log-Message "Convert to PNG: on" "Cyan" }
-    Log-Message "========================================" "Cyan"
-
-    $prog = $null
-    $assetUpdates = @{}
-    $failRows = New-Object System.Collections.ArrayList
-    $pct = 0
-
-    try {
-        $prog = Show-GameTDBProgressWindow -Title "GameTDB: $($info.Label)"
-        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching titles list..."
-
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-        Log-Message "Fetching titles: $($info.TitlesUrl)" "White"
-        $data = $wc.DownloadString($info.TitlesUrl)
-        $lines = @($data -split "`r?`n" | Where-Object { $_ -match '^\s*[A-Z0-9]+\s*=' })
-        $allIds = New-Object System.Collections.ArrayList
-        $titleById = @{}
-        foreach ($line in $lines) {
-            if ($line -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
-                $id = $matches[1].Trim()
-                $title = $matches[2].Trim()
-                if ($info.IdFilter -eq "gamecube") {
-                    if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
-                } elseif ($Platform -eq "wii") {
-                    if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
-                }
-                [void]$allIds.Add($id)
-                if ($title) { $titleById[$id.ToUpperInvariant()] = $title }
-            } elseif ($line -match '^\s*([A-Z0-9]+)\s*=') {
-                $id = $matches[1].Trim()
-                if ($info.IdFilter -eq "gamecube") {
-                    if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
-                } elseif ($Platform -eq "wii") {
-                    if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
-                }
-                [void]$allIds.Add($id)
-            }
-        }
-        Log-Message "Titles list IDs: $($allIds.Count) (names: $($titleById.Count))" "Cyan"
-
-        $collectionMap = @{}
-        if ($CollectionOnly -or $OnlyMissing -or $WriteAssets) {
-            $collectionMap = Get-CollectionGameIdMap
-            Log-Message "Collection game_id entries: $($collectionMap.Count)" "Cyan"
-        }
-
-        $ids = New-Object System.Collections.ArrayList
-        if ($CollectionOnly) {
-            if ($collectionMap.Count -eq 0) {
-                Log-Message "No game_id fields in this collection. Add IDs first or uncheck Collection only." "Yellow"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No game_id in collection" -Aborted
-                $wc.Dispose()
-                return
-            }
-            # Only keep collection game_ids that exist in THIS platform's titles list.
-            # Prevents e.g. a Wii collection driving Nintendo DS cover downloads.
-            $titleSet = @{}
-            foreach ($id in $allIds) { $titleSet[$id.ToUpperInvariant()] = $true }
-            $matched = 0
-            $skippedPlat = 0
-            foreach ($sid in @($collectionMap.Keys)) {
-                $key = $sid.ToUpperInvariant()
-                if ($titleSet.ContainsKey($key)) {
-                    [void]$ids.Add($key)
-                    $matched++
-                } else {
-                    $skippedPlat++
-                }
-            }
-            $ids = [System.Collections.ArrayList]@($ids | Sort-Object -Unique)
-            Log-Message ("Collection IDs on this platform: {0}  |  skipped (wrong platform / not in titles): {1}" -f $matched, $skippedPlat) "Cyan"
-            if ($ids.Count -eq 0) {
-                Log-Message "No collection game_id values match the selected platform ($Platform). Pick the matching system, or uncheck Collection only." "Yellow"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No matching IDs for platform" -Aborted
-                $wc.Dispose()
-                return
-            }
-        } else {
-            foreach ($id in $allIds) { [void]$ids.Add($id) }
-        }
-
-        # One-game-only: keep just the selected game_id
-        if ($OneGameOnly) {
-            $want = if ($OneGameId) { $OneGameId.Trim().ToUpperInvariant() } else { $null }
-            if (-not $want) {
-                Log-Message "One game only: no game_id provided for the selected game." "Red"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No game_id for selected game" -Aborted
-                $wc.Dispose()
-                return
-            }
-            $filtered = New-Object System.Collections.ArrayList
-            foreach ($id in $ids) {
-                if ($id.ToUpperInvariant() -eq $want) { [void]$filtered.Add($id) }
-            }
-            if ($filtered.Count -eq 0) {
-                [void]$filtered.Add($want)
-                Log-Message ("One game only: ID {0} not in filtered list - trying direct download" -f $want) "Yellow"
-            }
-            $ids = $filtered
-            $label = if ($OneGameTitle) { $OneGameTitle } else { $want }
-            Log-Message ("One game only: {0} [{1}]" -f $label, $want) "Cyan"
-        }
-
-        $total = $ids.Count * $CoverTypes.Count
-        if ($total -eq 0) {
-            Log-Message "Nothing to download." "Yellow"
-            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Nothing to download" -Aborted
-            $wc.Dispose()
-            return
-        }
-        Log-Message "Jobs: $($ids.Count) ID(s) x $($CoverTypes.Count) type(s) = $total" "Cyan"
-        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $total  (starting...)"
-
-        $ok = 0; $skip = 0; $fail = 0; $n = 0
-        $aborted = $false
-        # Consecutive-failure circuit breaker: a genuine 404 just means this
-        # game has no art on GameTDB, which is expected and shouldn't count
-        # against anything. Repeated non-404 errors in a row (timeouts,
-        # connection failures, 5xx) usually mean the server is unreachable or
-        # rate-limiting - grinding through the rest of a 500-game list in
-        # that state just wastes time and hammers a server that's already
-        # struggling. So only THOSE count toward the threshold below.
-        $consecutiveErrors = 0
-        $maxConsecutiveErrors = 8
-        $circuitBroken = $false
-        $skipKnownMissing = 0
-        $noArtMap = if ($col) { Get-GameTDBNoArtMap -Collection $col } else { @{} }
-        $noArtMapDirty = $false
-
-        foreach ($id in $ids) {
-            if ($script:gtdbCoverPackAbort) {
-                $aborted = $true
-                Log-Message "Abort requested - stopping cover pack download." "Yellow"
-                break
-            }
-
-            $idUpper = $id.ToUpperInvariant()
-            $entry = $null
-            if ($collectionMap.ContainsKey($idUpper)) { $entry = $collectionMap[$idUpper] }
-
-            foreach ($coverType in $CoverTypes) {
-                if ($script:gtdbCoverPackAbort) {
-                    $aborted = $true
-                    break
-                }
-                $n++
-                $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
-                if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
-                    Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status (
-                        "{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
-                }
-                if ($n % 50 -eq 0) {
-                    Log-Message "Progress: $n / $total (ok=$ok skip=$skip fail=$fail)" "White"
-                }
-                [System.Windows.Forms.Application]::DoEvents()
-
-                $ext = Get-GameTDBCoverExt $artPlat $coverType
-                $folderName = Get-GameTDBCoverTypeFolder -CoverType $coverType -UseBoxFull:$UseBoxFull
-                $assetKey = Get-GameTDBCoverTypeAssetKey -CoverType $coverType -UseBoxFull:$UseBoxFull
-
-                # Only-missing: skip when this cover type's asset already exists for the game.
-                # Supports box2dfront (assets.box_front), Unicovers boxFull (assets.boxFull),
-                # alternate Box Full (assets.box_full), and box backs.
-                if ($OnlyMissing -and $entry) {
-                    $alreadyHas = $false
-                    if ($entry.PresentAssets -and $entry.PresentAssets.ContainsKey($assetKey)) {
-                        $alreadyHas = $true
-                    } elseif ($assetKey -eq "assets.box_front" -and $entry.HasBoxFront) {
-                        $alreadyHas = $true
-                    } elseif ($assetKey -eq "assets.boxFull" -and $entry.HasBoxFull) {
-                        $alreadyHas = $true
-                    } elseif ($assetKey -eq "assets.box_full" -and $entry.HasBox_Full) {
-                        $alreadyHas = $true
-                    } elseif ($assetKey -eq "assets.box_back" -and $entry.HasBoxBack) {
-                        $alreadyHas = $true
-                    }
-                    if ($alreadyHas) {
-                        $skip++
-                        continue
-                    }
-                }
-
-                # Skip a game/type GameTDB has already confirmed (via a clean
-                # 404, not a network hiccup) has no art, unless that check is
-                # more than 30 days old. Saves a network round-trip on every
-                # rescan for art that was already established not to exist.
-                if ($col -and (Test-GameTDBNoArtFresh -Map $noArtMap -AssetKey $assetKey -IdUpper $idUpper)) {
-                    $skip++
-                    $skipKnownMissing++
-                    continue
-                }
-
-                if ($SaveIntoMedia -and $col -and $col.mediaPath) {
-                    $outDir = Join-Path $col.mediaPath $folderName
-                } else {
-                    $outDir = Join-Path $OutBase (Join-Path $info.Label (Join-Path $coverType $Region))
-                }
-                if (-not (Test-Path $outDir)) {
-                    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
-                }
-
-                $dest = Join-Path $outDir "$id.$ext"
-                if (Test-Path $dest) {
-                    $skip++
-                    if ($WriteAssets -and $col) {
-                        if (-not $assetUpdates.ContainsKey($idUpper)) { $assetUpdates[$idUpper] = @{} }
-                        $rel = $dest
-                        try {
-                            $metaParent = Split-Path $col.metadataPath -Parent
-                            if ($dest.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
-                                $rel = $dest.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
-                            }
-                        } catch {}
-                        $assetUpdates[$idUpper][$assetKey] = $rel
-                    }
-                    continue
-                }
-
-                $saved = $false
-                $lastUrl = ""
-                $lastFailReason = "Unknown error"
-                $allNotFound = $true
-                foreach ($reg in $regionsToTry) {
-                    $url = "https://art.gametdb.com/$($artInfo.ArtPath)/$coverType/$reg/$id.$ext"
-                    $lastUrl = $url
-                    # Pace every real network request - GameTDB is a small
-                    # community-run server, not something to hit as fast as
-                    # the loop allows.
-                    Start-Sleep -Milliseconds $RequestDelayMs
-                    try {
-                        $wc.DownloadFile($url, $dest)
-                        if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
-                            $ok++
-                            $saved = $true
-                            $consecutiveErrors = 0
-                            if ($col -and $noArtMap.ContainsKey($assetKey) -and $noArtMap[$assetKey].ContainsKey($idUpper)) {
-                                # Art showed up on GameTDB since it was last
-                                # confirmed missing - clear the stale mark.
-                                $noArtMap[$assetKey].Remove($idUpper)
-                                $noArtMapDirty = $true
-                            }
-                            # Optional: rename to game title, then convert to PNG
-                            $finalPath = $dest
-                            try {
-                                $gameTitle = $null
-                                if ($titleById.ContainsKey($idUpper)) { $gameTitle = $titleById[$idUpper] }
-                                elseif ($entry -and $entry.Title) { $gameTitle = $entry.Title }
-                                if ($RenameToTitle -and $gameTitle) {
-                                    $safe = Get-SafeGameFileName $gameTitle
-                                    if ($safe) {
-                                        $renamed = Join-Path $outDir ($safe + [System.IO.Path]::GetExtension($finalPath))
-                                        if (-not (Test-Path -LiteralPath $renamed)) {
-                                            Move-Item -LiteralPath $finalPath -Destination $renamed -Force
-                                            $finalPath = $renamed
-                                        } elseif ($renamed -ne $finalPath) {
-                                            # Title file exists - keep ID name unless same path
-                                        }
-                                    }
-                                }
-                                if ($ConvertToPng) {
-                                    $finalPath = Convert-ImageFileToPng -Path $finalPath
-                                }
-                                $dest = $finalPath
-                            } catch {
-                                Log-Message ("Post-process failed for {0}: {1}" -f $id, $_.Exception.Message) "Yellow"
-                            }
-                            if ($WriteAssets -and $col) {
-                                if (-not $assetUpdates.ContainsKey($idUpper)) { $assetUpdates[$idUpper] = @{} }
-                                $rel = $dest
-                                try {
-                                    $metaParent = Split-Path $col.metadataPath -Parent
-                                    if ($dest.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
-                                        $rel = $dest.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
-                                    }
-                                } catch {}
-                                $assetUpdates[$idUpper][$assetKey] = $rel
-                            }
-                            break
-                        } else {
-                            if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                        }
-                    } catch {
-                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                        # A clean 404 means "no art for this game" - that's a
-                        # real, expected answer, not a sign anything is wrong,
-                        # so it doesn't touch the error streak. Anything else
-                        # (timeout, DNS failure, 5xx, connection reset) means
-                        # something's actually wrong with the request itself.
-                        $statusCode = $null
-                        if ($_.Exception -is [System.Net.WebException] -and $_.Exception.Response -is [System.Net.HttpWebResponse]) {
-                            $statusCode = [int]$_.Exception.Response.StatusCode
-                        }
-                        if ($statusCode -eq 404) {
-                            $lastFailReason = "Not found (404)"
-                            $consecutiveErrors = 0
-                        } else {
-                            $allNotFound = $false
-                            $lastFailReason = if ($statusCode) { "HTTP $statusCode" } else { $_.Exception.Message }
-                            $consecutiveErrors++
-                        }
-                    }
-                }
-                if (-not $saved) {
-                    $fail++
-                    [void]$failRows.Add([PSCustomObject]@{
-                        Id     = $id
-                        Type   = $coverType
-                        Region = $Region
-                        Url    = $lastUrl
-                        Reason = $lastFailReason
-                    })
-                    if ($col -and $allNotFound) {
-                        # Every region tried came back a clean 404 - genuinely
-                        # confirmed missing, not just a network hiccup, so
-                        # it's worth remembering for next time.
-                        if (-not $noArtMap.ContainsKey($assetKey)) { $noArtMap[$assetKey] = @{} }
-                        $noArtMap[$assetKey][$idUpper] = (Get-Date).ToString("o")
-                        $noArtMapDirty = $true
-                    }
-                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
-                        $circuitBroken = $true
-                        $aborted = $true
-                        $script:gtdbCoverPackAbort = $true
-                        Log-Message ("Stopping: $maxConsecutiveErrors consecutive network/server errors (last: $lastFailReason). This usually means GameTDB is unreachable or rate-limiting right now, not that these games have no art - try again later.") "Red"
-                        break
-                    }
-                }
-            }
-        }
-        $wc.Dispose()
-
-        if ($noArtMapDirty -and $col) {
-            Save-GameTDBNoArtMap -Collection $col -Map $noArtMap
-        }
-
-        $reportDir = $null
-        if ($SaveIntoMedia -and $col -and $col.mediaPath) {
-            $reportDir = Get-ToolsFolder $col.mediaPath
-        } elseif ($OutBase) {
-            $reportDir = $OutBase
-        }
-        if ($failRows.Count -gt 0 -and $reportDir) {
-            try {
-                if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
-                $csvPath = Join-Path $reportDir "failed_covers.csv"
-                $failRows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
-                Log-Message "Fail report: $csvPath ($($failRows.Count) rows)" "Yellow"
-            } catch {
-                Log-Message "Could not write fail report: $_" "Yellow"
-            }
-        }
-
-        if ($WriteAssets -and $col -and $assetUpdates.Count -gt 0) {
-            try {
-                Apply-GameTDBAssetUpdates -Updates $assetUpdates
-            } catch {
-                Log-Message "Asset path write error: $_" "Red"
-            }
-        }
-
-        $summary = "Downloaded: $ok   Skipped: $skip (of which $skipKnownMissing already confirmed missing)   Missing: $fail"
-        if ($circuitBroken) {
-            Log-Message "Stopped early due to repeated network errors. $summary" "Red"
-            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Stopped - network errors`n$summary" -Aborted
-        } elseif ($aborted) {
-            Log-Message "Aborted. $summary" "Yellow"
-            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
-        } else {
-            Log-Message "Done. $summary" "Green"
-            if ($SaveIntoMedia -and $col) {
-                Log-Message "Media: $($col.mediaPath)" "Cyan"
-            } elseif ($OutBase) {
-                Log-Message "Folder: $OutBase" "Cyan"
-            }
-            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
-        }
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-        if ($prog -and -not $prog.IsDisposed) {
-            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
-        }
-    }
-}
-
-function Start-SteamGridDBCoverPackDownload {
-    # Mirrors Start-GameTDBCoverPackDownload's shape (pacing, real-error vs
-    # confirmed-missing circuit breaker, persisted no-art tracking) but for
-    # SteamGridDB's title-search API instead of GameTDB's ID-based direct
-    # image URLs. Matches games by normalized title (like TheCoverProject /
-    # Libretro-Thumbnails), since SteamGridDB has no relation to GameTDB's
-    # console game_id scheme at all.
-    param(
-        [string[]]$AssetTypes,
-        [string]$OutBase,
-        [switch]$OnlyMissing,
-        [switch]$SaveIntoMedia,
-        [switch]$WriteAssets,
-        [switch]$RenameToTitle,
-        [switch]$ConvertToPng,
-        [switch]$OneGameOnly,
-        [string]$OneGameTitle,
-        [int]$RequestDelayMs = 300
-    )
-    if (-not $AssetTypes -or $AssetTypes.Count -eq 0) {
-        Log-Message "No asset types selected." "Red"
-        return
-    }
-    $apiKey = $script:steamGridDbApiKey
-    if ([string]::IsNullOrWhiteSpace($apiKey)) {
-        [System.Windows.Forms.MessageBox]::Show(
-            "No SteamGridDB API key set.`n`nGet a free key at steamgriddb.com/profile/preferences/api and add it under Settings -> API Keys.",
-            "SteamGridDB", "OK", "Warning") | Out-Null
-        return
-    }
-
-    $col = Get-Col
-    if (-not $col) {
-        [System.Windows.Forms.MessageBox]::Show("Select a collection first - SteamGridDB matches by game title, which requires a loaded collection.", "SteamGridDB", "OK", "Warning") | Out-Null
-        return
-    }
-    if ($SaveIntoMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
-        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "SteamGridDB", "OK", "Warning") | Out-Null
-        return
-    }
-
-    $typeMap = Get-SteamGridDBAssetTypeMap
-    $titleMap = Get-CollectionGameTitleMap
-
-    $games = New-Object System.Collections.ArrayList
-    if ($OneGameOnly) {
-        if ([string]::IsNullOrWhiteSpace($OneGameTitle)) {
-            Log-Message "One game only: no title provided." "Red"
-            return
-        }
-        $norm = Get-NormalizedGameTitle $OneGameTitle
-        $present = @{}
-        if ($norm -and $titleMap.ContainsKey($norm)) { $present = $titleMap[$norm].PresentAssets }
-        [void]$games.Add([PSCustomObject]@{ Title = $OneGameTitle; Norm = $norm; PresentAssets = $present })
-    } else {
-        foreach ($norm in $titleMap.Keys) {
-            $entry = $titleMap[$norm]
-            [void]$games.Add([PSCustomObject]@{ Title = $entry.Title; Norm = $norm; PresentAssets = $entry.PresentAssets })
-        }
-    }
-    $games = @($games | Sort-Object Title)
-
-    if ($games.Count -eq 0) {
-        Log-Message "Nothing to process - no games in the collection." "Yellow"
-        return
-    }
-
-    Log-Message "========================================" "Cyan"
-    Log-Message "STEAMGRIDDB COVER PACK" "Cyan"
-    Log-Message ("Types: " + ($AssetTypes -join ", ")) "White"
-    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
-    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
-    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
-    if ($RenameToTitle) { Log-Message "Rename to game titles: on" "Cyan" }
-    if ($ConvertToPng) { Log-Message "Convert to PNG: on" "Cyan" }
-    Log-Message "========================================" "Cyan"
-
-    $prog = $null
-    $assetUpdates = @{}
-    $failRows = New-Object System.Collections.ArrayList
-    $pct = 0
-
-    try {
-        $prog = Show-GameTDBProgressWindow -Title "SteamGridDB Cover Pack"
-        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $($games.Count)  (starting...)"
-
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-        $wc.Headers.Add("Authorization", "Bearer $apiKey")
-
-        $noArtMap = Get-SteamGridDBNoArtMap -Collection $col
-        $noArtMapDirty = $false
-        $sgdbIdCache = @{}   # norm -> game id, or $false for "confirmed no match"
-
-        $ok = 0; $skip = 0; $fail = 0; $skipKnownMissing = 0; $n = 0
-        $aborted = $false
-        $circuitBroken = $false
-        $consecutiveErrors = 0
-        $maxConsecutiveErrors = 8
-        $total = $games.Count
-
-        foreach ($game in $games) {
-            if ($script:gtdbCoverPackAbort) {
-                $aborted = $true
-                Log-Message "Abort requested - stopping cover pack download." "Yellow"
-                break
-            }
-            $n++
-            $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
-            if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
-                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status (
-                    "{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
-            }
-            [System.Windows.Forms.Application]::DoEvents()
-
-            $norm = $game.Norm
-            if (-not $norm) { continue }
-
-            # Work out which of the checked asset types this game still needs
-            # before spending a single network call on it.
-            $neededTypes = New-Object System.Collections.ArrayList
-            foreach ($typeLabel in $AssetTypes) {
-                $info = $typeMap[$typeLabel]
-                if (-not $info) { continue }
-                if ($OnlyMissing) {
-                    $already = $false
-                    foreach ($k in $info.Keys) {
-                        if ($game.PresentAssets -and $game.PresentAssets.ContainsKey($k)) { $already = $true; break }
-                    }
-                    if ($already) { $skip++; continue }
-                }
-                if (Test-SteamGridDBNoArtFresh -Map $noArtMap -TypeLabel $typeLabel -Norm $norm) {
-                    $skip++; $skipKnownMissing++; continue
-                }
-                [void]$neededTypes.Add($typeLabel)
-            }
-            if ($neededTypes.Count -eq 0) { continue }
-
-            # Resolve the SteamGridDB game ID once per game, reused across
-            # every asset type - no reason to search the same title 4 times.
-            $sgdbId = $null
-            $searchFailed = $false
-            if ($sgdbIdCache.ContainsKey($norm)) {
-                $cached = $sgdbIdCache[$norm]
-                if ($cached -eq $false) { $searchFailed = $true } else { $sgdbId = $cached }
-            } else {
-                Start-Sleep -Milliseconds $RequestDelayMs
-                try {
-                    $sgdbId = Search-SteamGridDBGameId -Title $game.Title -ApiKey $apiKey -WebClient $wc
-                    $consecutiveErrors = 0
-                    $sgdbIdCache[$norm] = $(if ($sgdbId) { $sgdbId } else { $false })
-                } catch {
-                    $consecutiveErrors++
-                    $sgdbIdCache[$norm] = $false
-                    $searchFailed = $true
-                }
-            }
-
-            if (-not $sgdbId) {
-                foreach ($typeLabel in $neededTypes) {
-                    $fail++
-                    [void]$failRows.Add([PSCustomObject]@{
-                        Title  = $game.Title
-                        Type   = $typeLabel
-                        Reason = $(if ($searchFailed) { "Search error" } else { "Not found on SteamGridDB" })
-                    })
-                    if (-not $searchFailed) {
-                        if (-not $noArtMap.ContainsKey($typeLabel)) { $noArtMap[$typeLabel] = @{} }
-                        $noArtMap[$typeLabel][$norm] = (Get-Date).ToString("o")
-                        $noArtMapDirty = $true
-                    }
-                }
-                if ($consecutiveErrors -ge $maxConsecutiveErrors) {
-                    $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
-                    Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row - it's likely unreachable or rate-limiting right now, not that these games all lack art. Try again later." "Red"
-                    break
-                }
-                continue
-            }
-
-            foreach ($typeLabel in $neededTypes) {
-                if ($script:gtdbCoverPackAbort) { $aborted = $true; break }
-                $info = $typeMap[$typeLabel]
-                $imgUrl = $null
-                Start-Sleep -Milliseconds $RequestDelayMs
-                try {
-                    $imgUrl = Get-SteamGridDBImageUrl -GameId $sgdbId -Endpoint $info.Endpoint -ApiKey $apiKey -WebClient $wc
-                    $consecutiveErrors = 0
-                } catch {
-                    $consecutiveErrors++
-                    $fail++
-                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "Fetch error" })
-                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
-                        $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
-                        Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row - it's likely unreachable or rate-limiting right now. Try again later." "Red"
-                        break
-                    }
-                    continue
-                }
-                if (-not $imgUrl) {
-                    $fail++
-                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "No $typeLabel art on SteamGridDB" })
-                    if (-not $noArtMap.ContainsKey($typeLabel)) { $noArtMap[$typeLabel] = @{} }
-                    $noArtMap[$typeLabel][$norm] = (Get-Date).ToString("o")
-                    $noArtMapDirty = $true
-                    continue
-                }
-
-                $ext = [System.IO.Path]::GetExtension($imgUrl)
-                if (-not $ext -or $ext.Length -gt 5) { $ext = ".png" }
-                $folderName = $info.Folders[0]
-                if ($SaveIntoMedia -and $col.mediaPath) {
-                    $outDir = Join-Path $col.mediaPath $folderName
-                } else {
-                    $outDir = Join-Path $OutBase (Join-Path "SteamGridDB" $folderName)
-                }
-                if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
-                $safeTitle = Get-SafeGameFileName $game.Title
-                if (-not $safeTitle) { $safeTitle = $norm }
-                $dest = Join-Path $outDir "$safeTitle$ext"
-
-                if (Test-Path $dest) {
-                    $skip++
-                    if ($WriteAssets) {
-                        if (-not $assetUpdates.ContainsKey($norm)) { $assetUpdates[$norm] = @{} }
-                        $assetUpdates[$norm][$info.Keys[0]] = Get-RelativeAssetPath -Path $dest -Collection $col
-                    }
-                    continue
-                }
-
-                Start-Sleep -Milliseconds $RequestDelayMs
-                try {
-                    $wc.DownloadFile($imgUrl, $dest)
-                    if (-not (Test-Path $dest) -or (Get-Item $dest).Length -le 200) {
-                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                        throw "Empty download"
-                    }
-                    $ok++
-                    $consecutiveErrors = 0
-                    if ($noArtMap.ContainsKey($typeLabel) -and $noArtMap[$typeLabel].ContainsKey($norm)) {
-                        $noArtMap[$typeLabel].Remove($norm)
-                        $noArtMapDirty = $true
-                    }
-                    $finalPath = $dest
-                    try {
-                        if ($ConvertToPng) { $finalPath = Convert-ImageFileToPng -Path $finalPath }
-                    } catch {
-                        Log-Message ("Post-process failed for {0}: {1}" -f $game.Title, $_.Exception.Message) "Yellow"
-                    }
-                    if ($WriteAssets) {
-                        if (-not $assetUpdates.ContainsKey($norm)) { $assetUpdates[$norm] = @{} }
-                        $assetUpdates[$norm][$info.Keys[0]] = Get-RelativeAssetPath -Path $finalPath -Collection $col
-                    }
-                } catch {
-                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                    $consecutiveErrors++
-                    $fail++
-                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "Download error" })
-                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
-                        $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
-                        Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row. Try again later." "Red"
-                        break
-                    }
-                }
-            }
-        }
-        $wc.Dispose()
-
-        if ($noArtMapDirty) { Save-SteamGridDBNoArtMap -Collection $col -Map $noArtMap }
-
-        if ($failRows.Count -gt 0) {
-            try {
-                $reportDir = if ($SaveIntoMedia -and $col.mediaPath) { Get-ToolsFolder $col.mediaPath } else { $OutBase }
-                if ($reportDir) {
-                    if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
-                    $csvPath = Join-Path $reportDir "failed_steamgriddb.csv"
-                    $failRows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
-                    Log-Message "Fail report: $csvPath ($($failRows.Count) rows)" "Yellow"
-                }
-            } catch {
-                Log-Message "Could not write fail report: $_" "Yellow"
-            }
-        }
-
-        if ($WriteAssets -and $assetUpdates.Count -gt 0) {
-            try { Apply-TitleKeyedAssetUpdates -Updates $assetUpdates }
-            catch { Log-Message "Asset path write error: $_" "Red" }
-        }
-
-        $summary = "Downloaded: $ok   Skipped: $skip (of which $skipKnownMissing already confirmed missing)   Missing: $fail"
-        if ($circuitBroken) {
-            Log-Message "Stopped early due to repeated errors. $summary" "Red"
-            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Stopped - errors`n$summary" -Aborted
-        } elseif ($aborted) {
-            Log-Message "Aborted. $summary" "Yellow"
-            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
-        } else {
-            Log-Message "Done. $summary" "Green"
-            if ($SaveIntoMedia) {
-                Log-Message "Media: $($col.mediaPath)" "Cyan"
-            } elseif ($OutBase) {
-                Log-Message "Folder: $OutBase" "Cyan"
-            }
-            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
-        }
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-        if ($prog -and -not $prog.IsDisposed) {
-            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
-        }
-    }
-}
-
-function Find-UpscaylBinary {
-    # Locates upscayl-bin.exe. Checks the remembered config path first, then
-    # the standard Windows install locations, then gives up (caller decides
-    # whether to prompt). Returns $null if nothing found.
-    if ($script:upscaylPath -and (Test-Path $script:upscaylPath)) {
-        return $script:upscaylPath
-    }
-    $candidates = @(
-        "$env:ProgramFiles\Upscayl\resources\bin\upscayl-bin.exe",
-        "${env:ProgramFiles(x86)}\Upscayl\resources\bin\upscayl-bin.exe",
-        "$env:LOCALAPPDATA\Programs\Upscayl\resources\bin\upscayl-bin.exe",
-        "$env:LOCALAPPDATA\Programs\upscayl\resources\bin\upscayl-bin.exe"
-    )
-    foreach ($c in $candidates) {
-        if ($c -and (Test-Path $c)) {
-            $script:upscaylPath = $c
-            Save-Config
-            return $c
-        }
-    }
-    return $null
-}
-
-function Invoke-UpscaylBatchUpscale {
-    # Batch-upscales every image in $InputFolder that doesn't already have a
-    # matching file (by base name) in $OutputFolder, using the real Upscayl
-    # CLI binary (upscayl-bin.exe, shipped inside the Upscayl app install).
-    # Only the missing files are staged and processed in one call, so images
-    # already upscaled on a previous run are never reprocessed.
-    param(
-        [Parameter(Mandatory)][string]$InputFolder,
-        [Parameter(Mandatory)][string]$OutputFolder,
-        [string]$Model = "digital-art-4x",
-        [int]$Scale = 4
-    )
-    $result = @{ Upscaled = 0; Skipped = 0; Failed = 0; Files = @() }
-
-    $bin = Find-UpscaylBinary
-    if (-not $bin) {
-        Log-Message "Upscayl not found. Install it (upscayl.org) or locate upscayl-bin.exe." "Red"
-        $fd = New-Object System.Windows.Forms.OpenFileDialog
-        $fd.Title = "Locate upscayl-bin.exe (inside your Upscayl install folder)"
-        $fd.Filter = "upscayl-bin.exe|upscayl-bin.exe|All files|*.*"
-        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK -and (Test-Path $fd.FileName)) {
-            $bin = $fd.FileName
-            $script:upscaylPath = $bin
-            Save-Config
-        } else {
-            Log-Message "Upscayl upscaling skipped - no binary selected." "Yellow"
-            return $result
-        }
-    }
-    $modelsDir = Join-Path (Split-Path (Split-Path $bin -Parent) -Parent) "models"
-    if (-not (Test-Path $modelsDir)) {
-        Log-Message "Upscayl models folder not found at $modelsDir - upscale may fail." "Yellow"
-    }
-
-    if (-not (Test-Path $InputFolder)) {
-        Log-Message "Upscayl input folder not found: $InputFolder" "Red"
-        return $result
-    }
-    if (-not (Test-Path $OutputFolder)) {
-        New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
-    }
-
-    $srcFiles = Get-ChildItem -Path $InputFolder -File -Include *.png,*.jpg,*.jpeg,*.webp -ErrorAction SilentlyContinue
-    $todo = @()
-    foreach ($f in $srcFiles) {
-        $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-        $existing = Get-ChildItem -Path $OutputFolder -File -Filter "$base.*" -ErrorAction SilentlyContinue
-        if ($existing -and $existing.Count -gt 0) {
-            $result.Skipped++
-        } else {
-            $todo += $f
-        }
-    }
-    if ($todo.Count -eq 0) {
-        Log-Message "Upscayl: nothing to do, all $($srcFiles.Count) already present in output." "Cyan"
-        return $result
-    }
-
-    # Stage only the missing files so upscayl-bin's single directory-batch
-    # call never touches (or re-upscales) files that already have output.
-    $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("upscayl_stage_" + [Guid]::NewGuid().ToString("N"))
-    New-Item -ItemType Directory -Path $stage -Force | Out-Null
-    try {
-        foreach ($f in $todo) { Copy-Item -Path $f.FullName -Destination (Join-Path $stage $f.Name) -Force }
-
-        Log-Message "Upscayl: upscaling $($todo.Count) image(s) with $Model at ${Scale}x..." "Cyan"
-        $argList = @(
-            "-i", $stage,
-            "-o", $OutputFolder,
-            "-s", $Scale,
-            "-m", $modelsDir,
-            "-n", $Model,
-            "-f", "png",
-            "-c", "0"
-        )
-        $proc = Start-Process -FilePath $bin -ArgumentList $argList -NoNewWindow -Wait -PassThru
-        if ($proc.ExitCode -ne 0) {
-            Log-Message "Upscayl exited with code $($proc.ExitCode) - check GPU/Vulkan drivers." "Red"
-        }
-
-        foreach ($f in $todo) {
-            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-            $outFile = Join-Path $OutputFolder "$base.png"
-            if (Test-Path $outFile) {
-                $result.Upscaled++
-                $result.Files += @{ SourceName = $f.Name; OutputPath = $outFile }
-            } else {
-                $result.Failed++
-            }
-        }
-    } finally {
-        Remove-Item -Path $stage -Recurse -Force -ErrorAction SilentlyContinue
-    }
-
-    Log-Message "Upscayl done: Upscaled $($result.Upscaled)  Skipped(existing) $($result.Skipped)  Failed $($result.Failed)" "Green"
-    return $result
-}
-
-function Start-LibretroCoverPackDownload {
-    # Boxart-only (Named_Boxarts) download from the libretro-thumbnails GitHub org.
-    # Matches by normalized game title (no ID scheme on this source), one GitHub
-    # API call per platform (git trees, recursive) rather than per game.
-    param(
-        [string]$Platform,
-        [string]$OutBase,
-        [switch]$CollectionOnly,
-        [switch]$OnlyMissing,
-        [switch]$SaveIntoMedia,
-        [switch]$WriteAssets,
-        [switch]$UseBoxFull,
-        [switch]$RenameToTitle,
-        [switch]$ConvertToPng,
-        [switch]$OneGameOnly,
-        [string]$OneGameTitle,
-        # If set, after all thumbnails are downloaded, batch-upscale them
-        # (box2dThumb -> box2dfront) with the real Upscayl CLI at 4x using
-        # the Digital Art model, and write assets.box_front for the results.
-        [switch]$UpscaleAfterDownload
-    )
-    $info = $script:libretroPlatforms[$Platform]
-    if (-not $info) {
-        Log-Message "Unknown Libretro-Thumbnails platform: $Platform" "Red"
-        return
-    }
-
-    $col = $null
-    if ($CollectionOnly -or $SaveIntoMedia -or $WriteAssets) {
-        $col = Get-Col
-        if (-not $col) {
-            Log-Message "No collection selected." "Red"
-            return
-        }
-    }
-
-    # Named_Boxarts on libretro-thumbnails is small/thumbnail-res (max ~512px
-    # wide), so these land in box2dThumb, not box2dfront. If -UpscaleAfterDownload
-    # is set, a batch Upscayl pass (4x, Digital Art) turns them into real
-    # box2dfront images afterward; assets.box_front_thumb is written here so
-    # you always have a record of the raw source even before upscaling.
-    $assetKey = "assets.box_front_thumb"
-    $folderName = "box2dThumb"
-
-    Log-Message "========================================" "Cyan"
-    Log-Message "LIBRETRO-THUMBNAILS COVER PACK - $($info.Label)" "Cyan"
-    Log-Message "Source: github.com/libretro-thumbnails/$($info.RepoName)" "White"
-    Log-Message "Type: Boxart (matched by title)" "White"
-    if ($CollectionOnly) { Log-Message "Scope: current collection only" "Cyan" }
-    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
-    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
-    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
-    Log-Message "========================================" "Cyan"
-
-    $prog = $null
-    $assetUpdates = @{}
-    $pct = 0
-
-    try {
-        $prog = Show-GameTDBProgressWindow -Title "Libretro-Thumbnails: $($info.Label)"
-        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching repo file list (1 API call)..."
-
-        $mapping = Get-LibretroAssetMapping -RepoName $info.RepoName -Folder "Named_Boxarts"
-        Log-Message "Boxart files found in repo: $($mapping.Count)" "Cyan"
-        if ($mapping.Count -eq 0) {
-            Log-Message "No boxart files found (or the GitHub API rate limit was hit - unauthenticated requests are limited to ~60/hour per IP)." "Yellow"
-            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No files found" -Aborted
-            return
-        }
-
-        $titleMap = @{}
-        if ($CollectionOnly -or $OnlyMissing -or $WriteAssets) {
-            $titleMap = Get-CollectionGameTitleMap
-            Log-Message "Collection titles: $($titleMap.Count)" "Cyan"
-        }
-
-        # Build the work list of normalized titles to fetch.
-        $keys = New-Object System.Collections.ArrayList
-        if ($CollectionOnly) {
-            if ($titleMap.Count -eq 0) {
-                Log-Message "No games in this collection. Add games first or uncheck Collection only." "Yellow"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No games in collection" -Aborted
-                return
-            }
-            $matched = 0
-            $noArt = 0
-            $noArtTitles = New-Object System.Collections.ArrayList
-            foreach ($tk in @($titleMap.Keys)) {
-                if ($mapping.ContainsKey($tk)) { [void]$keys.Add($tk); $matched++ }
-                else {
-                    $noArt++
-                    $shownTitle = $tk
-                    if ($titleMap[$tk] -and $titleMap[$tk].Title) { $shownTitle = [string]$titleMap[$tk].Title }
-                    [void]$noArtTitles.Add($shownTitle)
-                }
-            }
-            Log-Message ("Collection titles matched to Libretro boxart: {0}  |  no match: {1}" -f $matched, $noArt) "Cyan"
-            if ($noArt -gt 0) {
-                Log-Message "Titles with no matching boxart in this repo (name doesn't line up closely enough - try renaming to match No-Intro style, e.g. 'Game Title (USA)'):" "Yellow"
-                $noArtTitles | Select-Object -First 15 | ForEach-Object { Log-Message "  [$_]" "Yellow" }
-                if ($noArtTitles.Count -gt 15) {
-                    Log-Message "  ... and $($noArtTitles.Count - 15) more" "Yellow"
-                }
-            }
-            if ($keys.Count -eq 0) {
-                Log-Message "No collection titles matched boxart in this repo. Titles must match closely (region tags are ignored automatically)." "Yellow"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No title matches" -Aborted
-                return
-            }
-        } else {
-            foreach ($k in $mapping.Keys) { [void]$keys.Add($k) }
-        }
-
-        # One-game-only: keep the normalized title for the selected collection game
-        if ($OneGameOnly) {
-            if ([string]::IsNullOrWhiteSpace($OneGameTitle)) {
-                Log-Message "One game only: no title provided." "Red"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No title for selected game" -Aborted
-                return
-            }
-            $wantKey = Get-NormalizedGameTitle $OneGameTitle
-            $filtered = New-Object System.Collections.ArrayList
-            foreach ($k in $keys) {
-                if ($k -eq $wantKey) { [void]$filtered.Add($k) }
-            }
-            if ($filtered.Count -eq 0 -and $mapping.ContainsKey($wantKey)) {
-                [void]$filtered.Add($wantKey)
-            }
-            if ($filtered.Count -eq 0) {
-                Log-Message ("One game only: no Libretro boxart match for '{0}' (key={1})" -f $OneGameTitle, $wantKey) "Yellow"
-                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No boxart match for game" -Aborted
-                return
-            }
-            $keys = $filtered
-            Log-Message ("One game only: {0}" -f $OneGameTitle) "Cyan"
-        }
-
-        $total = $keys.Count
-        if ($total -eq 0) {
-            Log-Message "Nothing to download." "Yellow"
-            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Nothing to download" -Aborted
-            return
-        }
-        Log-Message "Jobs: $total" "Cyan"
-
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-
-        $ok = 0; $skip = 0; $fail = 0; $n = 0
-        $aborted = $false
-        $thumbList = New-Object System.Collections.ArrayList
-
-        foreach ($tk in $keys) {
-            if ($script:gtdbCoverPackAbort) {
-                $aborted = $true
-                Log-Message "Abort requested - stopping cover pack download." "Yellow"
-                break
-            }
-            $n++
-            $pct = [Math]::Min(100, [int](($n / [double]$total) * 100))
-            if (($n % 5) -eq 0 -or $n -eq $total) {
-                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "$n / $total"
-                [System.Windows.Forms.Application]::DoEvents()
-            }
-
-            $entry = $null
-            if ($titleMap.ContainsKey($tk)) { $entry = $titleMap[$tk] }
-
-            if ($OnlyMissing -and $entry) {
-                $alreadyHas = $false
-                if ($entry.PresentAssets -and $entry.PresentAssets.ContainsKey($assetKey)) { $alreadyHas = $true }
-                elseif ($assetKey -eq "assets.box_front" -and $entry.HasBoxFront) { $alreadyHas = $true }
-                elseif ($assetKey -eq "assets.boxFull" -and $entry.HasBoxFull) { $alreadyHas = $true }
-                if ($alreadyHas) { $skip++; continue }
-            }
-
-            $relPath = $mapping[$tk]
-            $ext = [System.IO.Path]::GetExtension($relPath)
-            if (-not $ext) { $ext = ".png" }
-            $displayTitle = if ($entry -and $entry.Title) { $entry.Title } else { [System.IO.Path]::GetFileNameWithoutExtension($relPath) }
-            $safeName = Get-SafeGameFileName $displayTitle
-            if (-not $safeName) { $safeName = [System.IO.Path]::GetFileNameWithoutExtension($relPath) }
-
-            if ($SaveIntoMedia -and $col -and $col.mediaPath) {
-                $outDir = Join-Path $col.mediaPath $folderName
-            } else {
-                $outDir = Join-Path $OutBase (Join-Path $info.Label "boxart")
-            }
-            if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
-
-            $dest = Join-Path $outDir "$safeName$ext"
-            if (Test-Path $dest) {
-                $skip++
-                if ($WriteAssets -and $col) {
-                    if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
-                    $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $dest -Collection $col
-                }
-                if ($UpscaleAfterDownload) { [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $dest }) }
-                continue
-            }
-
-            $url = "https://raw.githubusercontent.com/libretro-thumbnails/$($info.RepoName)/master/$relPath"
-            try {
-                $wc.DownloadFile($url, $dest)
-                if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
-                    $ok++
-                    $finalPath = $dest
-                    try {
-                        if ($ConvertToPng) { $finalPath = Convert-ImageFileToPng -Path $finalPath }
-                    } catch {
-                        Log-Message ("Post-process failed for {0}: {1}" -f $displayTitle, $_.Exception.Message) "Yellow"
-                    }
-                    if ($WriteAssets -and $col) {
-                        if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
-                        $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $finalPath -Collection $col
-                    }
-                    if ($UpscaleAfterDownload) { [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $finalPath }) }
-                } else {
-                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                    $fail++
-                }
-            } catch {
-                if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                $fail++
-            }
-        }
-        $wc.Dispose()
-
-        if ($WriteAssets -and $col -and $assetUpdates.Count -gt 0) {
-            try {
-                Apply-TitleKeyedAssetUpdates -Updates $assetUpdates
-            } catch {
-                Log-Message "Asset path write error: $_" "Red"
-            }
-        }
-
-        if ($UpscaleAfterDownload -and $thumbList.Count -gt 0 -and $col -and $col.mediaPath) {
-            Log-Message "========================================" "Cyan"
-            Log-Message "UPSCAYL: box2dThumb -> box2dfront (4x, Digital Art)" "Cyan"
-            $thumbDir = Join-Path $col.mediaPath "box2dThumb"
-            $frontDir = Join-Path $col.mediaPath "box2dfront"
-            $upResult = Invoke-UpscaylBatchUpscale -InputFolder $thumbDir -OutputFolder $frontDir -Model "digital-art-4x" -Scale 4
-
-            if ($WriteAssets -and $col -and $upResult.Files.Count -gt 0) {
-                # Map upscaled output files back to their title key via the
-                # thumb-file base name recorded in $thumbList (same base name
-                # is preserved through the upscale, only the folder changes).
-                $baseToTk = @{}
-                foreach ($item in $thumbList) {
-                    $b = [System.IO.Path]::GetFileNameWithoutExtension($item.ThumbPath)
-                    $baseToTk[$b] = $item.Tk
-                }
-                $frontUpdates = @{}
-                foreach ($f in $upResult.Files) {
-                    $b = [System.IO.Path]::GetFileNameWithoutExtension($f.SourceName)
-                    if ($baseToTk.ContainsKey($b)) {
-                        $ftk = $baseToTk[$b]
-                        if (-not $frontUpdates.ContainsKey($ftk)) { $frontUpdates[$ftk] = @{} }
-                        $frontUpdates[$ftk]["assets.box_front"] = Get-RelativeAssetPath -Path $f.OutputPath -Collection $col
-                    }
-                }
-                if ($frontUpdates.Count -gt 0) {
-                    try { Apply-TitleKeyedAssetUpdates -Updates $frontUpdates }
-                    catch { Log-Message "Asset path write error (box_front after upscale): $_" "Red" }
-                }
-            }
-        }
-
-        $summary = "Downloaded: $ok   Skipped: $skip   Missing: $fail"
-        if ($aborted) {
-            Log-Message "Aborted. $summary" "Yellow"
-            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
-        } else {
-            Log-Message "Done. $summary" "Green"
-            if ($SaveIntoMedia -and $col) { Log-Message "Media: $($col.mediaPath)" "Cyan" }
-            elseif ($OutBase) { Log-Message "Folder: $OutBase" "Cyan" }
-            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
-        }
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-        if ($prog -and -not $prog.IsDisposed) {
-            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
-        }
-    }
-}
-
-function Get-RelativeAssetPath {
-    param([string]$Path, $Collection)
-    $rel = $Path
-    try {
-        $metaParent = Split-Path $Collection.metadataPath -Parent
-        if ($Path.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
-            $rel = $Path.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
-        }
-    } catch {}
-    return $rel
-}
-
-function Apply-GameTDBAssetUpdates {
-    param([hashtable]$Updates)
-    $c = Get-Col
-    if (-not $c -or -not $Updates -or $Updates.Count -eq 0) { return }
-
-    $p = $c.metadataPath
-    if (-not (Test-Path $p)) { return }
-
-    CreateBackup
-    $content = Get-Content $p -Raw -ErrorAction Stop
-    $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
-    $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
-    $sb = New-Object System.Text.StringBuilder
-    $count = 0
-
-    foreach ($part in $parts) {
-        if ([string]::IsNullOrWhiteSpace($part)) { continue }
-        if ($part -match '(?m)^game:\s*') {
-            $gid = $null
-            if ($part -match '(?m)^game_id:\s*(\S+)') { $gid = $matches[1].Trim() }
-            $short = $null
-            if ($gid) {
-                $short = Get-GameTDBShortId $gid
-                if ($short) { $short = $short.ToUpperInvariant() }
-            }
-            if ($short -and $Updates.ContainsKey($short)) {
-                $paths = $Updates[$short]
-                foreach ($ak in @($paths.Keys)) {
-                    $val = $paths[$ak]
-                    if ([string]::IsNullOrWhiteSpace($val)) { continue }
-                    $escapedKey = [regex]::Escape($ak)
-                    if ($part -match "(?m)^${escapedKey}:\s*") {
-                        $part = [regex]::Replace($part, "(?m)^${escapedKey}:\s*.*$", "${ak}: $val", 1)
-                    } else {
-                        if ($part -match '(?m)^game_id:\s*.+$') {
-                            $part = [regex]::Replace($part, '((?m)^game_id:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
-                        } else {
-                            $part = [regex]::Replace($part, '((?m)^game:\s*.+$)', ('$1' + "`n${ak}: $val"), 1)
-                        }
-                    }
-                    $count++
-                }
-            }
-        }
-        [void]$sb.Append($part.TrimEnd())
-        [void]$sb.Append("`n")
-    }
-
-    $utf8 = New-Object System.Text.UTF8Encoding $false
-    [System.IO.File]::WriteAllText($p, ($sb.ToString().TrimEnd() + "`n"), $utf8)
-    Log-Message "Wrote $count asset path field(s) for $($Updates.Count) game(s)" "Green"
-    UpdateEditor
-}
-
-function Download-GameTDBCovers {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "DOWNLOADING GAMETDB COVERS" "Cyan"
-    Log-Message "========================================" "Cyan"
-    
-    try {
-        $bp = $c.mediaPath
-        if ([string]::IsNullOrWhiteSpace($bp)) {
-            Log-Message "ERROR: Media folder not set." "Red"
-            return
-        }
-        $fp = Join-Path $bp "box2dfront"
-        if (-not (Test-Path $fp)) {
-            New-Item -ItemType Directory -Path $fp -Force | Out-Null
-        }
-        
-        $p = $c.metadataPath
-        $content = Get-Content $p -Raw
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-        $ok = 0
-        $fail = 0
-        $skip = 0
-        
-        foreach ($g in $games) {
-            if ($g -match 'game: (.+?)(?:\r?\n|$)') {
-                $name = $matches[1].Trim()
-            } else { continue }
-            
-            if ($g -notmatch 'game_id:\s*(\S+)') {
-                $skip++
-                continue
-            }
-            $gid = $matches[1].Trim()
-            $plat = Get-GameTDBPlatformKey $gid
-            if (-not $plat) {
-                $skip++
-                continue
-            }
-            
-            $safe = $name -replace '[^\w\s-]', '' -replace '\s+', ' ' -replace ' ', '_'
-            $info = $script:gameTdbPlatforms[$plat]
-            $dest = Join-Path $fp "$safe.$($info.Ext)"
-            if (Test-Path $dest) {
-                $skip++
-                continue
-            }
-            
-            $url = Build-GameTDBCoverUrl $gid "cover"
-            if (-not $url) { $fail++; continue }
-            
-            try {
-                $wc.DownloadFile($url, $dest)
-                if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 500) {
-                    $ok++
-                    Log-Message "  OK: $name <- $url" "Green"
-                } else {
-                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                    $shortId = Get-GameTDBShortId $gid
-                    $url2 = "https://art.gametdb.com/$($info.ArtPath)/cover/EN/$shortId.$($info.Ext)"
-                    try {
-                        $wc.DownloadFile($url2, $dest)
-                        if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 500) {
-                            $ok++
-                            Log-Message "  OK (EN): $name" "Green"
-                        } else {
-                            if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                            $fail++
-                            Log-Message "  MISS: $name ($gid)" "Yellow"
-                        }
-                    } catch {
-                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                        $fail++
-                        Log-Message "  MISS: $name ($gid)" "Yellow"
-                    }
-                }
-            } catch {
-                $fail++
-                Log-Message "  FAIL: $name - $_" "Red"
-            }
-        }
-        
-        $wc.Dispose()
-        Log-Message "Downloaded: $ok  |  Missed: $fail  |  Skipped: $skip" "Cyan"
-        Log-Message "Done!" "Green"
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Apply-GameTDBTitles {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $plat = Select-GameTDBPlatform
-    if (-not $plat) { return }
-    
-    $map = Load-GameTDBTitlesCache $plat
-    if ($map.Count -eq 0) {
-        Log-Message "No titles for $plat. Run Download Titles DB first." "Yellow"
-        return
-    }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "APPLYING GAMETDB TITLES ($plat)" "Cyan"
-    Log-Message "========================================" "Cyan"
-    
-    try {
-        $p = $c.metadataPath
-        $content = Get-Content $p -Raw
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        $updated = $content
-        $count = 0
-        
-        foreach ($g in $games) {
-            if ($g -match 'game: (.+?)(?:\r?\n|$)') {
-                $name = $matches[1].Trim()
-            } else { continue }
-            if ($g -notmatch 'game_id:\s*(\S+)') { continue }
-            $gid = $matches[1].Trim()
-            $shortId = Get-GameTDBShortId $gid
-            $newTitle = $null
-            if ($map.ContainsKey($shortId)) { $newTitle = $map[$shortId] }
-            elseif ($map.ContainsKey($gid)) { $newTitle = $map[$gid] }
-            if (-not $newTitle) { continue }
-            if ($newTitle -eq $name) { continue }
-            
-            $updated = $updated -replace [regex]::Escape("game: $name"), "game: $newTitle"
-            $count++
-            Log-Message "  $name -> $newTitle" "Green"
-        }
-        
-        if ($count -gt 0) {
-            CreateBackup
-            $updated | Out-File -FilePath $p -Encoding UTF8
-            Log-Message "Renamed: $count games from GameTDB titles" "Green"
-            UpdateEditor
-        } else {
-            Log-Message "No title changes applied (need game_id matches)." "Yellow"
-        }
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Open-GameTDBPage {
-    $gameId = ""
-    if ($script:fieldControls -and $script:fieldControls.ContainsKey("game_id")) {
-        $gameId = $script:fieldControls["game_id"].Text.Trim()
-    }
-    if ([string]::IsNullOrWhiteSpace($gameId)) {
-        $input = Show-InputBox "Enter Game ID (e.g. RMGE01):" "Open GameTDB" ""
-        if ([string]::IsNullOrWhiteSpace($input)) { return }
-        $gameId = $input.Trim()
-    }
-    
-    $shortId = Get-GameTDBShortId $gameId
-    $plat = Get-GameTDBPlatformKey $gameId
-    if (-not $plat) {
-        $url = "https://www.gametdb.com/Wii/$shortId"
-    } else {
-        $pathMap = @{
-            "wii" = "Wii"; "wiiu" = "WiiU"; "switch" = "Switch"
-            "3ds" = "3DS"; "ds" = "DS"; "ps3" = "PS3"
-        }
-        $seg = if ($pathMap.ContainsKey($plat)) { $pathMap[$plat] } else { "Wii" }
-        $url = "https://www.gametdb.com/$seg/$shortId"
-    }
-    Log-Message "Opening: $url" "Cyan"
-    Start-Process $url
-}
-
-function Fill-GameTDBBoxArtPaths {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "FILLING BOX ART PATHS FROM LOCAL FILES" "Cyan"
-    Log-Message "========================================" "Cyan"
-    
-    try {
-        $p = $c.metadataPath
-        $bp = $c.mediaPath
-        if ([string]::IsNullOrWhiteSpace($bp)) {
-            Log-Message "ERROR: Media folder empty." "Red"
-            return
-        }
-        $fp = Join-Path $bp "box2dfront"
-        $tp = Join-Path $bp "box2dThumb"
-        if (-not (Test-Path $fp)) {
-            Log-Message "ERROR: box2dfront not found: $fp" "Red"
-            return
-        }
-        if (-not (Test-Path $tp)) {
-            New-Item -ItemType Directory -Path $tp -Force | Out-Null
-        }
-        
-        $images = @()
-        $images += @(Get-ChildItem $fp -Filter "*.png" -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName })
-        $images += @(Get-ChildItem $fp -Filter "*.jpg" -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName })
-        
-        $content = Get-Content $p -Raw
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        $updated = $content
-        $count = 0
-        
-        foreach ($g in $games) {
-            if ($g -match 'game: (.+?)(?:\r?\n|$)') {
-                $name = $matches[1].Trim()
-            } else { continue }
-            if ($g -match 'assets\.box_front:') { continue }
-            
-            $safe = $name -replace '[^\w\s-]', '' -replace '\s+', ' ' -replace ' ', '_'
-            if ($images -contains $safe) {
-                $ext = "png"
-                if (-not (Test-Path (Join-Path $fp "$safe.png"))) {
-                    if (Test-Path (Join-Path $fp "$safe.jpg")) { $ext = "jpg" }
-                }
-                $front = Join-Path $fp "$safe.$ext"
-                $thumb = Join-Path $tp "${safe}_thumb.$ext"
-                $new = "`nassets.box_front: $front`nassets.box_front_thumb: $thumb"
-                $updated = $updated -replace "($([regex]::Escape($name)).*?)(?=\r?\nfile:|\Z)", ('$1' + $new)
-                $count++
-                Log-Message "  Linked: $name" "Green"
-            }
-        }
-        
-        if ($count -gt 0) {
-            CreateBackup
-            $updated | Out-File -FilePath $p -Encoding UTF8
-            Log-Message "Linked box art on $count games" "Green"
-            UpdateEditor
-        } else {
-            Log-Message "No new box art links. Download covers first or match filenames to game names." "Yellow"
-        }
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-
-
-try {
-    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
-} catch {}
-
-function Show-InputBox {
-    param([string]$Prompt, [string]$Title, [string]$Default = "")
-    try {
-        $r = [Microsoft.VisualBasic.Interaction]::InputBox($Prompt, $Title, $Default)
-        return $r
-    } catch {
-        $dlg = New-Object System.Windows.Forms.Form
-        $dlg.Text = $Title
-        $dlg.Size = New-Object System.Drawing.Size(420, 160)
-        $dlg.StartPosition = "CenterParent"
-        $dlg.FormBorderStyle = "FixedDialog"
-        $dlg.MaximizeBox = $false
-        $dlg.BackColor = $script:theme.background
-        $dlg.ForeColor = $script:theme.text
-        $lbl = New-Object System.Windows.Forms.Label
-        $lbl.Text = $Prompt
-        $lbl.Location = New-Object System.Drawing.Point(15, 15)
-        $lbl.Size = New-Object System.Drawing.Size(380, 30)
-        $dlg.Controls.Add($lbl)
-        $tb = New-Object System.Windows.Forms.TextBox
-        $tb.Location = New-Object System.Drawing.Point(15, 50)
-        $tb.Size = New-Object System.Drawing.Size(375, 25)
-        $tb.Text = $Default
-        $tb.BackColor = $script:theme.editor
-        $tb.ForeColor = $script:theme.text
-        $dlg.Controls.Add($tb)
-        $script:__inputResult = ""
-        $ok = Create-Button "OK" 120 90 80 28
-        $ok.Add_Click({ $script:__inputResult = $tb.Text; $dlg.Close() })
-        $dlg.Controls.Add($ok)
-        $cn = Create-Button "Cancel" 220 90 80 28
-        $cn.Add_Click({ $script:__inputResult = ""; $dlg.Close() })
-        $dlg.Controls.Add($cn)
-        $dlg.ShowDialog() | Out-Null
-        return $script:__inputResult
-    }
-}
-
-# ============================================================================
-# BUILDER / REPAIR HELPERS
-# ============================================================================
-function Get-GameNameFromFileName {
-    param([string]$FileName)
-    $base = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
-    $base = $base -replace '\(.*?\)', '' -replace '\[.*?\]', ''
-    $base = $base -replace '_', ' '
-    $base = $base.Trim()
-    $base = $base -replace '\s+', ' '
-    return $base
-}
-
-function Get-RomExtensions {
-    return @(
-        '.sfc', '.smc', '.fig', '.swc',
-        '.nes', '.fds', '.unf',
-        '.gb', '.gbc', '.gba',
-        '.n64', '.z64', '.v64',
-        '.iso', '.cso', '.chd', '.rvz', '.wud', '.wux', '.wbfs', '.gcm', '.gcz',
-        '.nsp', '.xci',
-        '.3ds', '.cia', '.nds',
-        '.pce', '.sgx',
-        '.md', '.gen', '.smd', '.bin',
-        '.cue', '.gdi',
-        '.ngp', '.ngc', '.npc', '.neo',
-        '.pbp', '.vpk',
-        '.zip', '.7z', '.rar'
-    )
-}
-
-function Scan-GamesFromFolder {
-    $c = Get-Col
-    $start = $null
-    if ($c -and $c.metadataPath) { $start = Split-Path $c.metadataPath -Parent }
-    
-    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fd.Description = "Select folder with ROMs / game files (names become the game list)"
-    $fd.ShowNewFolderButton = $false
-    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
-    if ($fd.ShowDialog() -ne "OK") { return }
-    
-    $folder = $fd.SelectedPath
-    Log-Message "========================================" "Cyan"
-    Log-Message "SCAN FOLDER FOR GAMES" "Cyan"
-    Log-Message "========================================" "Cyan"
-    Log-Message "Folder: $folder" "White"
-    
-    try {
-        $exts = Get-RomExtensions
-        $files = @(Get-ChildItem $folder -File -ErrorAction SilentlyContinue | Where-Object {
-            $exts -contains $_.Extension.ToLowerInvariant()
-        })
-        $files += @(Get-ChildItem $folder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
-            Get-ChildItem $_.FullName -File -ErrorAction SilentlyContinue | Where-Object {
-                $exts -contains $_.Extension.ToLowerInvariant()
-            }
-        })
-        
-        $names = @()
-        $seen = @{}
-        foreach ($f in $files) {
-            $n = Get-GameNameFromFileName $f.Name
-            if ([string]::IsNullOrWhiteSpace($n)) { continue }
-            $key = $n.ToLowerInvariant()
-            if ($seen.ContainsKey($key)) { continue }
-            $seen[$key] = $true
-            $names += $n
-        }
-        $names = @($names | Sort-Object)
-        
-        $outDir = $folder
-        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
-        $outFile = Join-Path $outDir "games_from_folder.txt"
-        $names | Out-File -FilePath $outFile -Encoding UTF8
-        
-        $pathsFile = Join-Path $outDir "games_from_folder_paths.txt"
-        $pathLines = @()
-        foreach ($f in $files) {
-            $n = Get-GameNameFromFileName $f.Name
-            if ($n) { $pathLines += "$n|$($f.FullName)" }
-        }
-        $pathLines | Sort-Object -Unique | Out-File -FilePath $pathsFile -Encoding UTF8
-        
-        Log-Message "Found $($names.Count) unique game names from $($files.Count) files" "Green"
-        Log-Message "Saved names: $outFile" "Cyan"
-        Log-Message "Saved name|path: $pathsFile" "Cyan"
-        $names | Select-Object -First 15 | ForEach-Object { Log-Message "  $_" "White" }
-        if ($names.Count -gt 15) { Log-Message "  ... and $($names.Count - 15) more" "White" }
-        Log-Message "Next: Builder -> Build Meta from Folder, or mapping + Download Covers" "Yellow"
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Export-GameList {
-    $c = Get-Col
-    if (-not $c) { return }
-    try {
-        $p = $c.metadataPath
-        $content = Get-Content $p -Raw
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        $names = @()
-        foreach ($g in $games) {
-            if ($g -match 'game: (.+?)(?:\r?\n|$)') {
-                $names += $matches[1].Trim()
-            }
-        }
-        $out = Join-Path (Get-ToolsFolder $c.mediaPath) "game_list_export.txt"
-        $names | Out-File -FilePath $out -Encoding UTF8
-        Log-Message "Exported $($names.Count) games to: $out" "Green"
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Export-MissingCoversList {
-    $c = Get-Col
-    if (-not $c) { return }
-    FindMissing
-    try {
-        $p = $c.metadataPath
-        $missingFile = Join-Path (Get-ToolsFolder $c.mediaPath) "missing_covers.txt"
-        if (Test-Path $missingFile) {
-            Log-Message "Missing list ready: $missingFile" "Cyan"
-        }
-    } catch {}
-}
-
-function Import-GamesFromList {
-    $c = Get-Col
-    if (-not $c) { return }
-    $of = New-Object System.Windows.Forms.OpenFileDialog
-    $of.Title = "Select game list (one title per line, or Name|path)"
-    $of.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
-    $metaDir = Split-Path $c.metadataPath -Parent
-    if (Test-Path $metaDir) { $of.InitialDirectory = $metaDir }
-    if ($of.ShowDialog() -ne "OK") { return }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "IMPORT GAMES FROM LIST" "Cyan"
-    Log-Message "========================================" "Cyan"
-    try {
-        $p = $c.metadataPath
-        $content = Get-Content $p -Raw
-        if ($null -eq $content) { $content = "" }
-        $existing = @{}
-        foreach ($m in [regex]::Matches($content, '(?m)^game: (.+)$')) {
-            $existing[$m.Groups[1].Value.Trim().ToLowerInvariant()] = $true
-        }
-        
-        $added = 0
-        $blocks = New-Object System.Collections.ArrayList
-        foreach ($line in Get-Content $of.FileName) {
-            $line = $line.Trim()
-            if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { continue }
-            $name = $line
-            $filePath = ""
-            if ($line -match '^(.+?)\|(.+)$') {
-                $name = $matches[1].Trim()
-                $filePath = $matches[2].Trim()
-            }
-            $key = $name.ToLowerInvariant()
-            if ($existing.ContainsKey($key)) { continue }
-            $existing[$key] = $true
-            $block = "game: $name`n"
-            if ($filePath) { $block += "file: $filePath`n" }
-            $block += "`n"
-            [void]$blocks.Add($block)
-            $added++
-        }
-        
-        if ($added -eq 0) {
-            Log-Message "No new games to import (all already present or list empty)." "Yellow"
-            return
-        }
-        
-        CreateBackup
-        $newContent = $content.TrimEnd() + "`r`n`r`n" + ($blocks -join "")
-        $utf8 = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $newContent, $utf8)
-        Log-Message "Imported $added new game entries" "Green"
-        UpdateEditor
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Build-MetadataFromFolder {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $result = [System.Windows.Forms.MessageBox]::Show(
-        "Scan a folder for ROM/game files and ADD any missing games to the current metadata?`n`nExisting games are left unchanged.",
-        "Build Meta from Folder",
-        "YesNo",
-        "Question"
-    )
-    if ($result -ne "Yes") { return }
-    
-    Scan-GamesFromFolder
-    
-    $metaDir = Split-Path $c.metadataPath -Parent
-    $toolsDir = Get-ToolsFolder $c.mediaPath
-    $pathsFile = Join-Path $toolsDir "games_from_folder_paths.txt"
-    if (-not (Test-Path $pathsFile)) {
-        $of = New-Object System.Windows.Forms.OpenFileDialog
-        $of.Title = "Select games_from_folder_paths.txt"
-        $of.Filter = "Text (*.txt)|*.txt"
-        $of.InitialDirectory = $toolsDir
-        if ($of.ShowDialog() -eq "OK") { $pathsFile = $of.FileName }
-        else { return }
-    }
-    
-    try {
-        $p = $c.metadataPath
-        $content = Get-Content $p -Raw
-        if ($null -eq $content) { $content = "" }
-        $existing = @{}
-        foreach ($m in [regex]::Matches($content, '(?m)^game: (.+)$')) {
-            $existing[$m.Groups[1].Value.Trim().ToLowerInvariant()] = $true
-        }
-        $added = 0
-        $blocks = New-Object System.Collections.ArrayList
-        foreach ($line in Get-Content $pathsFile) {
-            if ($line -match '^(.+?)\|(.+)$') {
-                $name = $matches[1].Trim()
-                $filePath = $matches[2].Trim()
-                $key = $name.ToLowerInvariant()
-                if ($existing.ContainsKey($key)) { continue }
-                $existing[$key] = $true
-                [void]$blocks.Add("game: $name`nfile: $filePath`n`n")
-                $added++
-            }
-        }
-        if ($added -eq 0) {
-            Log-Message "No new games to add from folder scan." "Yellow"
-            return
-        }
-        CreateBackup
-        $newContent = $content.TrimEnd() + "`r`n`r`n" + ($blocks -join "")
-        $utf8 = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $newContent, $utf8)
-        Log-Message "Built metadata: added $added games from folder" "Green"
-        UpdateEditor
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Sync-FilePathsFromFolder {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fd.Description = "Select folder containing ROM files to match against game titles"
-    if ($c.metadataPath) {
-        $parent = Split-Path $c.metadataPath -Parent
-        if (Test-Path $parent) { $fd.SelectedPath = $parent }
-    }
-    if ($fd.ShowDialog() -ne "OK") { return }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "SYNC FILE PATHS FROM FOLDER" "Cyan"
-    Log-Message "========================================" "Cyan"
-    try {
-        $exts = Get-RomExtensions
-        $files = @(Get-ChildItem $fd.SelectedPath -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-            $exts -contains $_.Extension.ToLowerInvariant()
-        })
-        $byNorm = @{}
-        foreach ($f in $files) {
-            $n = Get-GameNameFromFileName $f.Name
-            $norm = ($n -replace '[^a-zA-Z0-9]', '').ToLowerInvariant()
-            if ($norm.Length -ge 3 -and -not $byNorm.ContainsKey($norm)) {
-                $byNorm[$norm] = $f.FullName
-            }
-        }
-        
-        $p = $c.metadataPath
-        $content = Get-Content $p -Raw
-        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
-        $updated = $content
-        $count = 0
-        
-        foreach ($g in $games) {
-            if ($g -match 'game: (.+?)(?:\r?\n|$)') { $name = $matches[1].Trim() } else { continue }
-            $norm = ($name -replace '[^a-zA-Z0-9]', '').ToLowerInvariant()
-            if (-not $byNorm.ContainsKey($norm)) { continue }
-            $romPath = $byNorm[$norm]
-            $escaped = [regex]::Escape($name)
-            if ($g -match '(?m)^file:\s*.+$') {
-                $updated = [regex]::Replace($updated, "(?m)(game: $escaped(?:\r?\n(?:(?!game: ).*\r?\n)*?)file:\s*).+", ('${1}' + $romPath), 1)
-            } else {
-                $updated = [regex]::Replace($updated, "(game: $escaped\r?\n)", ('${1}' + "file: $romPath`n"), 1)
-            }
-            $count++
-            Log-Message "  $name -> $(Split-Path $romPath -Leaf)" "Green"
-        }
-        
-        CreateBackup
-        $utf8 = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $updated, $utf8)
-        Log-Message "Synced file paths for $count games" "Green"
-        UpdateEditor
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Download-CoversFromMapping {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $metaDir = Split-Path $c.metadataPath -Parent
-    $bp = $c.mediaPath
-    $mapFile = Resolve-ToolsFile $bp "sns_mappings.txt" $metaDir
-    if (-not ($mapFile -and (Test-Path $mapFile))) {
-        $mapFile = Resolve-ToolsFile $bp "game_id_mappings.txt" $metaDir
-    }
-    if (-not ($mapFile -and (Test-Path $mapFile))) {
-        Log-Message "No sns_mappings.txt or game_id_mappings.txt found. Create a mapping first." "Red"
-        return
-    }
-    
-    if ([string]::IsNullOrWhiteSpace($bp)) {
-        Log-Message "Media folder not set." "Red"
-        return
-    }
-    $fp = Join-Path $bp "box2dfront"
-    if (-not (Test-Path $fp)) { New-Item -ItemType Directory -Path $fp -Force | Out-Null }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "DOWNLOAD COVERS FROM MAPPING" "Cyan"
-    Log-Message "========================================" "Cyan"
-    Log-Message "Mapping: $mapFile" "White"
-    
-    try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
-        $ok = 0; $fail = 0; $skip = 0
-        
-        foreach ($line in Get-Content $mapFile) {
-            if ($line -notmatch '^(.+?)=(.+)$') { continue }
-            $name = $matches[1].Trim()
-            $id = $matches[2].Trim()
-            
-            $have = $false
-            foreach ($lc in @((Join-Path $fp "$id.png"), (Join-Path $fp "$id.jpg"))) {
-                if (Test-Path $lc) { $have = $true; break }
-            }
-            if ($have) { $skip++; continue }
-            
-            $urls = @()
-            if ($id -match '^SNS-') {
-                $urls += "https://art.gametdb.com/snes/cover/US/$id.png"
-                $urls += "https://art.gametdb.com/snes/cover/EN/$id.png"
-                $urls += "https://art.gametdb.com/snes/coverfull/US/$id.png"
-            } elseif ($id -match '^[A-Z0-9]{4,16}$') {
-                $plat = Get-GameTDBPlatformKey $id
-                $region = Get-GameTDBRegionCode $id
-                $short = Get-GameTDBShortId $id
-                if ($plat -and $short) {
-                    $urls += "https://art.gametdb.com/$plat/cover/$region/$short.png"
-                    $urls += "https://art.gametdb.com/$plat/cover/US/$short.png"
-                    $urls += "https://art.gametdb.com/$plat/cover/EN/$short.png"
-                }
-            }
-            
-            $saved = $false
-            foreach ($url in $urls) {
-                $dest = Join-Path $fp "$id.png"
-                try {
-                    $wc.DownloadFile($url, $dest)
-                    if ((Test-Path $dest) -and ((Get-Item $dest).Length -gt 500)) {
-                        Log-Message "  OK: $name <- $url" "Green"
-                        $ok++
-                        $saved = $true
-                        break
-                    } else {
-                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                    }
-                } catch {
-                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
-                }
-            }
-            if (-not $saved) {
-                $fail++
-                Log-Message "  FAIL: $name ($id)" "Yellow"
-            }
-        }
-        
-        Log-Message "Downloaded: $ok | Failed: $fail | Already had: $skip" "Cyan"
-        Log-Message "Next: Add Box Art (Mapping) then Save Changes" "Yellow"
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Download-CoversFromGameList {
-    $c = Get-Col
-    if (-not $c) { return }
-    
-    $of = New-Object System.Windows.Forms.OpenFileDialog
-    $of.Title = "Select game list (one name per line). Optional: Name=ID lines"
-    $of.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
-    $metaDir = Split-Path $c.metadataPath -Parent
-    $bp = $c.mediaPath
-    $toolsDir = Get-ToolsFolder $bp
-    if ($toolsDir -and (Test-Path $toolsDir)) { $of.InitialDirectory = $toolsDir }
-    elseif (Test-Path $metaDir) { $of.InitialDirectory = $metaDir }
-    if ($of.ShowDialog() -ne "OK") { return }
-    
-    Log-Message "========================================" "Cyan"
-    Log-Message "DOWNLOAD COVERS FROM GAME LIST" "Cyan"
-    Log-Message "========================================" "Cyan"
-    
-    $nameToId = @{}
-    foreach ($mf in @("sns_mappings.txt", "game_id_mappings.txt")) {
-        $mp = Resolve-ToolsFile $bp $mf $metaDir
-        if (-not ($mp -and (Test-Path $mp))) { continue }
-        foreach ($line in Get-Content $mp) {
-            if ($line -match '^(.+?)=(.+)$') {
-                $nameToId[$matches[1].Trim()] = $matches[2].Trim()
-            }
-        }
-    }
-    foreach ($tf in @("sns_titles.txt", "snes_titles.txt", "gametdb_titles.txt")) {
-        $tp = Resolve-ToolsFile $bp $tf $metaDir
-        if (-not ($tp -and (Test-Path $tp))) { continue }
-        foreach ($line in Get-Content $tp) {
-            if ($line -match '^(SNS-[A-Z0-9]{4}-[A-Z]{3,4})\s*[=:\t]\s*(.+)$') {
-                $nameToId[$matches[2].Trim()] = $matches[1]
-            }
-        }
-    }
-    
-    $toolsDir = Get-ToolsFolder $bp
-    if (-not $toolsDir) { $toolsDir = $metaDir }
-    $tempMap = Join-Path $toolsDir "_temp_cover_map.txt"
-    $lines = @()
-    $unresolved = @()
-    foreach ($line in Get-Content $of.FileName) {
-        $line = $line.Trim()
-        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { continue }
-        if ($line -match '^(.+?)=(.+)$') {
-            $lines += "$($matches[1].Trim())=$($matches[2].Trim())"
-            continue
-        }
-        $name = $line
-        if ($nameToId.ContainsKey($name)) {
-            $lines += "$name=$($nameToId[$name])"
-        } else {
-            $unresolved += $name
-        }
-    }
-    
-    if ($lines.Count -eq 0) {
-        Log-Message "No games with known IDs in the list." "Yellow"
-        Log-Message "Create mapping/titles first so names resolve to SNS/Game IDs." "Yellow"
-        if ($unresolved.Count -gt 0) {
-            $u = Join-Path $toolsDir "unresolved_cover_names.txt"
-            $unresolved | Out-File $u -Encoding UTF8
-            Log-Message "Unresolved: $u" "Cyan"
-        }
-        return
-    }
-    
-    $lines | Out-File $tempMap -Encoding UTF8
-    Log-Message "Resolved $($lines.Count) names to IDs ($($unresolved.Count) unresolved)" "Cyan"
-    
-    $backupMap = Join-Path $toolsDir "sns_mappings.txt"
-    $hadBackup = $false
-    $bakPath = $null
-    if (Test-Path $backupMap) {
-        $bakPath = Join-Path $toolsDir "sns_mappings.txt.bak_tool"
-        Copy-Item $backupMap $bakPath -Force
-        $hadBackup = $true
-    }
-    try {
-        Copy-Item $tempMap $backupMap -Force
-        Download-CoversFromMapping
-    } finally {
-        if ($hadBackup -and $bakPath) {
-            Copy-Item $bakPath $backupMap -Force
-            Remove-Item $bakPath -Force -ErrorAction SilentlyContinue
-        }
-        Remove-Item $tempMap -Force -ErrorAction SilentlyContinue
-        if ($unresolved.Count -gt 0) {
-            $u = Join-Path $toolsDir "unresolved_cover_names.txt"
-            $unresolved | Out-File $u -Encoding UTF8
-            Log-Message "Unresolved names: $u" "Yellow"
-        }
-    }
-}
-
-function Strip-BoxArtPaths {
-    $c = Get-Col
-    if (-not $c) { return }
-    $r = [System.Windows.Forms.MessageBox]::Show(
-        "Remove ALL assets.box_front and assets.box_front_thumb lines from metadata?`nA backup will be created.",
-        "Strip Box Art Paths",
-        "YesNo",
-        "Warning"
-    )
-    if ($r -ne "Yes") { return }
-    try {
-        $p = $c.metadataPath
-        CreateBackup
-        $content = Get-Content $p -Raw
-        $updated = $content -replace '(?m)^assets\.box_front(_thumb)?:.*\r?\n', ''
-        $utf8 = New-Object System.Text.UTF8Encoding $false
-        [System.IO.File]::WriteAllText($p, $updated, $utf8)
-        Log-Message "Stripped all box art paths from metadata" "Green"
-        UpdateEditor
-        UpdateStats
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Get-ImageExtensions {
-    return @('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp')
-}
-
-function Scan-TitlesFromCoverImages {
-    $c = Get-Col
-    $start = $null
-    if ($c -and -not [string]::IsNullOrWhiteSpace($c.mediaPath)) {
-        $try = Join-Path $c.mediaPath "box2dfront"
-        if (Test-Path $try) { $start = $try }
-        elseif (Test-Path $c.mediaPath) { $start = $c.mediaPath }
-    }
-    if (-not $start -and $c -and $c.metadataPath) {
-        $start = Split-Path $c.metadataPath -Parent
-    }
-    
-    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fd.Description = "Select folder with cover images (names become titles)"
-    $fd.ShowNewFolderButton = $false
-    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
-    if ($fd.ShowDialog() -ne "OK") { return }
-    
-    $folder = $fd.SelectedPath
-    Log-Message "========================================" "Cyan"
-    Log-Message "TITLES FROM COVER IMAGES" "Cyan"
-    Log-Message "========================================" "Cyan"
-    Log-Message "Folder: $folder" "White"
-    
-    try {
-        $exts = Get-ImageExtensions
-        $files = @(Get-ChildItem $folder -File -ErrorAction SilentlyContinue | Where-Object {
-            $exts -contains $_.Extension.ToLowerInvariant()
-        })
-        
-        $titles = @()
-        $snsCodes = @()
-        $seen = @{}
-        foreach ($f in $files) {
-            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
-            if ($base -match '^(SNS|SNSP|SHVC|SFC)-[A-Z0-9]{2,6}(-[A-Z]{2,4})?$') {
-                $snsCodes += $base.ToUpperInvariant()
-                continue
-            }
-            $n = Get-GameNameFromFileName $f.Name
-            if ([string]::IsNullOrWhiteSpace($n)) { continue }
-            $key = $n.ToLowerInvariant()
-            if ($seen.ContainsKey($key)) { continue }
-            $seen[$key] = $true
-            $titles += $n
-        }
-        $titles = @($titles | Sort-Object)
-        $snsCodes = @($snsCodes | Sort-Object -Unique)
-        
-        $outDir = $folder
-        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
-        
-        $titlesFile = Join-Path $outDir "titles_from_covers.txt"
-        $titles | Out-File -FilePath $titlesFile -Encoding UTF8
-        
-        if ($snsCodes.Count -gt 0) {
-            $snsFile = Join-Path $outDir "sns_codes_from_images.txt"
-            $snsCodes | Out-File -FilePath $snsFile -Encoding UTF8
-            Update-SnsCodeList $snsCodes $snsFile
-            Log-Message "Also found $($snsCodes.Count) SNS-style filenames -> SNS list updated" "Cyan"
-        }
-        
-        Log-Message "Found $($titles.Count) game-title-style cover names" "Green"
-        Log-Message "Saved: $titlesFile" "Cyan"
-        $titles | Select-Object -First 15 | ForEach-Object { Log-Message "  $_" "White" }
-        if ($titles.Count -gt 15) { Log-Message "  ... and $($titles.Count - 15) more" "White" }
-        Log-Message "Next: Add Box Art (Game Name) if metadata titles match these names" "Yellow"
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
-function Get-SnesHeaderOffsets {
-    return @(0x7FC0, 0xFFC0, 0x81C0, 0x101C0, 0x40FFC0, 0x4101C0)
-}
-
-# ============================================================================
-# READ SNES ROM HEADERS - FIXED VERSION (Detects bad headers)
-# ============================================================================
-function Read-SnesInternalTitle {
-    param([string]$RomPath)
-    try {
-        $fi = Get-Item $RomPath -ErrorAction Stop
-        if ($fi.Length -lt 0x8000) { return $null }
-        $fs = [System.IO.File]::OpenRead($RomPath)
-        try {
-            $buf = New-Object byte[] 32
-            foreach ($off in (Get-SnesHeaderOffsets)) {
-                if ($off + 21 -gt $fi.Length) { continue }
-                $fs.Position = $off
-                $read = $fs.Read($buf, 0, 21)
-                if ($read -lt 21) { continue }
-                $chars = @()
-                $ok = 0
-                for ($i = 0; $i -lt 21; $i++) {
-                    $b = $buf[$i]
-                    if ($b -ge 32 -and $b -le 126) {
-                        $chars += [char]$b
-                        $ok++
-                    } elseif ($b -eq 0) {
-                        $chars += ' '
-                    } else {
-                        $chars += ' '
-                    }
-                }
-                if ($ok -lt 4) { continue }
-                $title = (-join $chars).Trim()
-                if ($title.Length -lt 2) { continue }
-                if ($title -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') { continue }
-                return $title
-            }
-        } finally {
-            $fs.Close()
-        }
-    } catch {}
-    return $null
-}
-
-function Test-ValidSnesHeader {
-    param([string]$Header)
-    
-    if ([string]::IsNullOrWhiteSpace($Header)) { return $false }
-    
-    # Must be at least 3 characters
-    if ($Header.Length -lt 3) { return $false }
-    
-    # Count letters (A-Z and a-z)
-    $letters = ([regex]::Matches($Header, '[A-Za-z]')).Count
-    if ($letters -lt 2) { return $false }
-    
-    # Check for control characters (ASCII 0-31)
-    if ($Header -match '[\x00-\x1F]') { return $false }
-    
-    # Check for common garbage patterns
-    $garbagePatterns = @(
-        '^[^A-Za-z]+$',              # No letters at all
-        '^[\s\.\-_,;:!?]+$',         # Only punctuation/spaces
-        '^[0-9\s]+$',                # Only numbers/spaces
-        '[\x7F-\xFF]'                # Extended ASCII (often garbage)
-    )
-    
-    foreach ($pattern in $garbagePatterns) {
-        if ($Header -match $pattern) { return $false }
-    }
-    
-    return $true
-}
-
-function Read-SnesRomHeaders {
-    $c = Get-Col
-    $start = $null
-    if ($c -and $c.metadataPath) {
-        $start = Split-Path $c.metadataPath -Parent
-    }
-    
-    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
-    $fd.Description = "Select folder with SNES ROMs (.sfc/.smc) to read internal titles"
-    $fd.ShowNewFolderButton = $false
-    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
-    if ($fd.ShowDialog() -ne "OK") { return }
-    
-    $folder = $fd.SelectedPath
-    Log-Message "========================================" "Cyan"
-    Log-Message "READ SNES ROM HEADERS" "Cyan"
-    Log-Message "========================================" "Cyan"
-    Log-Message "Folder: $folder" "White"
-    
-    try {
-        $romExt = @('.sfc', '.smc', '.fig', '.swc')
-        $files = @(Get-ChildItem $folder -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
-            $romExt -contains $_.Extension.ToLowerInvariant()
-        })
-        if ($files.Count -eq 0) {
-            Log-Message "No SNES ROM files found." "Yellow"
-            return
-        }
-        
-        $lines = @()
-        $badHeaders = @()
-        $ok = 0
-        $bad = 0
-        $empty = 0
-        $badExamples = New-Object System.Collections.ArrayList
-        
-        foreach ($f in $files) {
-            $internal = Read-SnesInternalTitle $f.FullName
-            $fromName = Get-GameNameFromFileName $f.Name
-            $isValid = Test-ValidSnesHeader $internal
-            
-            if ($internal) {
-                if ($isValid) {
-                    $ok++
-                    $lines += "$fromName|$internal|VALID|$($f.FullName)"
-                    Log-Message "  $fromName  <=  [$internal]  ✅ VALID" "Green"
-                } else {
-                    $bad++
-                    $badHeaders += "$fromName|$internal|BAD|$($f.FullName)"
-                    $lines += "$fromName|$internal|BAD|$($f.FullName)"
-                    if ($badExamples.Count -lt 10) {
-                        [void]$badExamples.Add("  $fromName -> [$internal]")
-                    }
-                    Log-Message "  $fromName  <=  [$internal]  ⚠️ BAD HEADER" "Red"
-                }
-            } else {
-                $empty++
-                $lines += "$fromName||EMPTY|$($f.FullName)"
-                Log-Message "  $fromName  (header not read)  ⚠️ EMPTY HEADER" "Yellow"
-            }
-        }
-        
-        $outDir = $folder
-        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
-        $outFile = Join-Path $outDir "snes_rom_headers.txt"
-        $header = "# filename_title|internal_header_title|status|full_path"
-        (@($header) + $lines) | Out-File -FilePath $outFile -Encoding UTF8
-        
-        $titleList = @()
-        foreach ($line in $lines) {
-            if ($line -match '^[^|]+\|([^|]+)\|') {
-                $t = $matches[1].Trim()
-                if ($t -and $t -ne "BAD" -and $t -ne "EMPTY") { $titleList += $t }
-            }
-        }
-        $titleList = @($titleList | Sort-Object -Unique)
-        $titlesOut = Join-Path $outDir "titles_from_rom_headers.txt"
-        $titleList | Out-File -FilePath $titlesOut -Encoding UTF8
-        
-        # --- Bad headers list ---
-        if ($badHeaders.Count -gt 0 -or $empty -gt 0) {
-            $badOut = Join-Path $outDir "bad_rom_headers.txt"
-            $badReport = @()
-            $badReport += "# ROMs with BAD or EMPTY headers"
-            $badReport += "# Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-            $badReport += "#"
-            $badReport += "# These ROMs have corrupted or stripped headers."
-            $badReport += "# Consider replacing them with clean No-Intro dumps."
-            $badReport += "#"
-            $badReport += "# format: filename|internal_header|status|full_path"
-            $badReport += ""
-            $badReport += $badHeaders
-            $badReport | Out-File -FilePath $badOut -Encoding UTF8
-            Log-Message "Bad headers list: $badOut" "Yellow"
-        }
-        
-        Log-Message "----------------------------------------" "Cyan"
-        Log-Message "READ SNES ROM HEADERS - COMPLETE" "Cyan"
-        Log-Message "----------------------------------------" "Cyan"
-        Log-Message "Total ROMs scanned: $($files.Count)" "White"
-        Log-Message "Valid headers: $ok  ✅" "Green"
-        Log-Message "Bad headers: $bad  ⚠️" "Red"
-        Log-Message "Empty headers: $empty  ⚠️" "Yellow"
-        
-        if ($badExamples.Count -gt 0) {
-            Log-Message "" "White"
-            Log-Message "Bad header examples (first 10):" "Red"
-            foreach ($ex in $badExamples) {
-                Log-Message "  $ex" "Red"
-            }
-            if ($bad + $empty -gt 10) {
-                Log-Message "  ... and $($bad + $empty - 10) more bad/empty headers" "Red"
-            }
-            Log-Message "" "White"
-            Log-Message "Bad headers saved to: $badOut" "Yellow"
-            Log-Message "Next: Replace bad ROMs with clean No-Intro dumps." "Yellow"
-            Log-Message "Do NOT use bad headers to create metadata entries!" "Red"
-        }
-        
-        Log-Message "Saved: $outFile" "Cyan"
-        Log-Message "Titles list: $titlesOut" "Cyan"
-        
-    } catch {
-        Log-Message "ERROR: $_" "Red"
-    }
-}
-
 function Download-SnsTitlesDatabase {
     $c = Get-Col
     $outDir = $null
@@ -13144,20 +6481,20 @@ function Download-SnsTitlesDatabase {
         if ($fd.ShowDialog() -ne "OK") { return }
         $outDir = $fd.SelectedPath
     }
-    
+
     Log-Message "========================================" "Cyan"
     Log-Message "DOWNLOAD SNS TITLES DATABASE" "Cyan"
     Log-Message "========================================" "Cyan"
-    
+
     $outFile = Join-Path $outDir "sns_titles.txt"
     $rawJson = Join-Path $outDir "snes_titles_raw.json"
-    
+
     $urls = @(
         "https://github.com/niemasd/GameDB-SNES/releases/latest/download/SNES.titles.json",
         "https://raw.githubusercontent.com/niemasd/GameDB-SNES/main/SNES.titles.json",
         "https://cdn.jsdelivr.net/gh/niemasd/GameDB-SNES@main/SNES.titles.json"
     )
-    
+
     try {
         [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         $wc = New-Object System.Net.WebClient
@@ -13176,16 +6513,16 @@ function Download-SnsTitlesDatabase {
                 Log-Message "  failed: $($_.Exception.Message)" "Yellow"
             }
         }
-        
+
         if (-not $jsonText) {
             Log-Message "Could not download titles database (offline or URL changed)." "Red"
             Log-Message "You can still place sns_titles.txt manually: SNS-XXXX-USA=Game Title" "Yellow"
             return
         }
-        
+
         [System.IO.File]::WriteAllText($rawJson, $jsonText)
         Log-Message "Downloaded raw JSON ($([Math]::Round($jsonText.Length/1KB)) KB) from $usedUrl" "Green"
-        
+
         $map = @{}
         $rx = [regex]'"((?:SNS|SNSP|SHVC|SFC)[-_A-Z0-9]+)"\s*:\s*"([^"]+)"'
         foreach ($m in $rx.Matches($jsonText)) {
@@ -13200,7 +6537,7 @@ function Download-SnsTitlesDatabase {
                 $map[$id] = $title
             }
         }
-        
+
         if ($map.Count -eq 0) {
             try {
                 $obj = $jsonText | ConvertFrom-Json
@@ -13213,7 +6550,7 @@ function Download-SnsTitlesDatabase {
                 }
             } catch {}
         }
-        
+
         if ($map.Count -eq 0) {
             Log-Message "0 SNS-code entries found in this database - that's expected." "Yellow"
             Log-Message "GameDB-SNES keys its data by ROM checksum, not by SNS-XXXX-USA" "Yellow"
@@ -13222,10 +6559,10 @@ function Download-SnsTitlesDatabase {
             Log-Message "Next: SNS Code Tools -> Match ROMs by Checksum (uses this file directly)" "Green"
             return
         }
-        
+
         $lines = @($map.GetEnumerator() | Sort-Object Name | ForEach-Object { "$($_.Key)=$($_.Value)" })
         $lines | Out-File -FilePath $outFile -Encoding UTF8
-        
+
         Log-Message "Wrote $($lines.Count) entries to: $outFile" "Green"
         Log-Message "Next: SNS Code Tools -> Map by Titles File (or Create SNS Mapping)" "Yellow"
         Log-Message "Then: Add Box Art (Mapping) or DL Covers from Mapping" "Yellow"
@@ -13235,16 +6572,6 @@ function Download-SnsTitlesDatabase {
 }
 
 function ConvertFrom-NoIntroDat {
-    # Parses a No-Intro / Redump / TOSEC-style DAT file (standard
-    # <datafile><game name="..."><rom crc="..."/></game></datafile> XML)
-    # into a hashtable: lowercase 8-char CRC32 hex -> game title.
-    #
-    # These DAT files are the standard hash databases used by dedicated
-    # scrapers (Skyscraper, Steven Selph's Scraper, etc.) - freely
-    # downloadable from datomatic.no-intro.org and redump.org, but behind
-    # manual download/login flows, so this tool doesn't fetch them itself;
-    # you download one yourself and point this at the file. Once imported
-    # it's cached locally the same way GameDB-SNES's titles list is.
     param([string]$Path)
     $map = @{}
     $count = 0
@@ -13253,8 +6580,6 @@ function ConvertFrom-NoIntroDat {
     } catch {
         throw "Could not parse '$Path' as XML: $_"
     }
-    # Most DAT tools use <game>, some (MAME-derived) use <machine> instead -
-    # try both root element names.
     $gameNodes = @($xml.SelectNodes("//game"))
     if ($gameNodes.Count -eq 0) { $gameNodes = @($xml.SelectNodes("//machine")) }
     foreach ($g in $gameNodes) {
@@ -13275,11 +6600,6 @@ function ConvertFrom-NoIntroDat {
 }
 
 function Import-DatFileDatabase {
-    # UI flow for ConvertFrom-NoIntroDat: pick a .dat/.xml file, parse it,
-    # cache it as JSON in the collection's Tools folder using the exact
-    # same crc32-hex -> title shape as snes_titles_raw.json, so
-    # Match-RomsByChecksumGeneric (and, for SNES specifically, the existing
-    # Match-RomsByChecksum) can both read it.
     $of = New-Object System.Windows.Forms.OpenFileDialog
     $of.Title = "Select a No-Intro / Redump / TOSEC DAT file"
     $of.Filter = "DAT / XML files (*.dat;*.xml)|*.dat;*.xml|All files (*.*)|*.*"
@@ -13324,21 +6644,6 @@ function Import-DatFileDatabase {
 }
 
 function Match-RomsByChecksumGeneric {
-    # Same idea as Match-RomsByChecksum (SNES/GameDB-SNES specific), but for
-    # any platform using an imported No-Intro/Redump DAT database instead.
-    # This is the actual fix for the class of bug this whole hash-matching
-    # effort was about: title/filename normalization ("Kuru Kuru Kururin"
-    # vs "kurukurukurin.jpg", etc.) can't go wrong here, because the game
-    # is identified by the exact bytes of the ROM, not by guessing at a
-    # filename or a fuzzy title string.
-    #
-    # Like Match-RomsByChecksum, this only ever produces a report and a
-    # KEY=Title map file - it does not touch metadata directly. If a
-    # collection is loaded, it additionally cross-checks each hash-
-    # confirmed title against that game's current metadata title (matched
-    # by filename) and flags any mismatch, so you can review real title
-    # errors (typos, wrong regions, mislabeled dumps) with certainty
-    # instead of guesswork.
     $c = Get-Col
     $bp = $null
     if ($c -and $c.mediaPath) { $bp = $c.mediaPath }
@@ -13508,27 +6813,9 @@ function Get-Md5Hex {
 }
 
 function Get-RetroAchievementsGameIdByHash {
-    # Resolves a ROM's MD5 to a RetroAchievements game ID via the
-    # "Connect API" endpoint emulator cores themselves use (dorequest.php
-    # with r=gameid), not the newer documented Web API - this specific
-    # lookup isn't part of the officially documented REST-style endpoints,
-    # but is the real, long-standing way hash->ID resolution works.
-    # Returns $null if there's no match (server returns "0"), or throws on
-    # a genuine network/HTTP error.
-    #
-    # IMPORTANT CAVEAT: a plain MD5 of the file only matches RA's own hash
-    # for platforms where RA hashes the ROM as-is (most cartridge-based
-    # systems: SNES, Genesis, GB/GBC/GBA, N64, etc.). Disc-based systems
-    # and a few others (NES, PSX, Sega CD...) use special hashing rules
-    # (specific sectors, headers stripped, executable extraction) that
-    # this function does NOT replicate - RetroAchievements' own RAHasher
-    # tool is the only fully correct way to hash those. Expect "no match"
-    # on those platforms even for games RA does support.
     param([string]$Md5, [System.Net.WebClient]$WebClient)
     $url = "https://retroachievements.org/dorequest.php?r=gameid&m=$Md5"
     $raw = $WebClient.DownloadString($url).Trim()
-    # Response is a bare number in practice ("0" = no match), but handle a
-    # JSON-wrapped form defensively too in case that ever changes.
     try {
         $obj = $raw | ConvertFrom-Json -ErrorAction Stop
         if ($obj.GameID) { $raw = [string]$obj.GameID }
@@ -13538,7 +6825,6 @@ function Get-RetroAchievementsGameIdByHash {
 }
 
 function Get-RetroAchievementsGameProgress {
-    # https://api-docs.retroachievements.org/v1/get-game-info-and-user-progress.html
     param([string]$GameId, [string]$Username, [string]$ApiKey, [System.Net.WebClient]$WebClient)
     $url = "https://retroachievements.org/API/API_GetGameInfoAndUserProgress.php?y=$ApiKey&u=$([Uri]::EscapeDataString($Username))&g=$GameId"
     $raw = $WebClient.DownloadString($url)
@@ -13546,10 +6832,6 @@ function Get-RetroAchievementsGameProgress {
 }
 
 function Start-RetroAchievementsCheck {
-    # Report-only tool (same non-destructive shape as the checksum
-    # matchers): for each ROM in a folder, resolve its RetroAchievements
-    # game ID by hash, then pull that game's achievement set size and how
-    # many the configured user has unlocked. Never touches metadata.
     if ([string]::IsNullOrWhiteSpace($script:raApiKey) -or [string]::IsNullOrWhiteSpace($script:raUsername)) {
         [System.Windows.Forms.MessageBox]::Show(
             "No RetroAchievements login set.`n`nAdd your username and Web API key under Settings -> API Keys (get the key at retroachievements.org/settings).",
@@ -13668,19 +6950,7 @@ function Start-RetroAchievementsCheck {
 }
 
 function Match-RomsByChecksum {
-    # GameDB-SNES (the source behind "DL SNS Titles DB") does NOT key its
-    # data by SNS-XXXX-USA product codes - SNES carts never had unique
-    # serial numbers, so the project identifies games by CRC32 of the ROM
-    # data instead (see snes_titles_raw.json: keys are 8-char hex CRC32s).
-    #
-    # This tool computes the real CRC32 of each ROM in a folder (stripping
-    # the optional 512-byte copier header first, same as GameDB/GameID do)
-    # and looks it up against that same database, then writes the result
-    # as "<rom-filename-without-extension>=Title" - the exact KEY=Title
-    # shape Rename-ImagesFromSnsCodes already reads from sns_titles.txt.
-    # If your box art images share a base filename with their ROM (e.g.
-    # both are "SNS-AMSE-USA"), the existing renamer will pick this up
-    # with no other changes needed.
+    # GameDB-SNES specific. Uses snes_titles_raw.json (CRC32 -> title).
     $c = Get-Col
     $bp = $null
     if ($c -and $c.mediaPath) { $bp = $c.mediaPath }
@@ -13698,8 +6968,6 @@ function Match-RomsByChecksum {
     Log-Message "ROM folder: $romFolder" "White"
 
     try {
-        # Locate (or download) the raw GameDB-SNES titles JSON, which is
-        # keyed by CRC32 hex, e.g. "002c3021": "Akumajou Dracula ..."
         $outDir = $romFolder
         if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
         $rawJson = Join-Path $outDir "snes_titles_raw.json"
@@ -13761,8 +7029,6 @@ function Match-RomsByChecksum {
             try {
                 $bytes = [System.IO.File]::ReadAllBytes($f.FullName)
                 $offset = 0
-                # Optional copier header: adds exactly 512 bytes, detectable
-                # because it throws the size off a clean 1KB boundary.
                 if (($bytes.Length % 1024) -eq 512) { $offset = 512 }
                 $len = $bytes.Length - $offset
                 if ($len -le 0) {
@@ -13821,9 +7087,806 @@ function Match-RomsByChecksum {
 }
 
 # ============================================================================
-# PORT FROM PEGASUS-TOOL + ES XML
+# BUILDER / REPAIR HELPERS
 # ============================================================================
+function Get-GameNameFromFileName {
+    param([string]$FileName)
+    $base = [System.IO.Path]::GetFileNameWithoutExtension($FileName)
+    $base = $base -replace '\(.*?\)', '' -replace '\[.*?\]', ''
+    $base = $base -replace '_', ' '
+    $base = $base.Trim()
+    $base = $base -replace '\s+', ' '
+    return $base
+}
 
+function Get-RomExtensions {
+    return @(
+        '.sfc', '.smc', '.fig', '.swc',
+        '.nes', '.fds', '.unf',
+        '.gb', '.gbc', '.gba',
+        '.n64', '.z64', '.v64',
+        '.iso', '.cso', '.chd', '.rvz', '.wud', '.wux', '.wbfs', '.gcm', '.gcz',
+        '.nsp', '.xci',
+        '.3ds', '.cia', '.nds',
+        '.pce', '.sgx',
+        '.md', '.gen', '.smd', '.bin',
+        '.cue', '.gdi',
+        '.ngp', '.ngc', '.npc', '.neo',
+        '.pbp', '.vpk',
+        '.zip', '.7z', '.rar'
+    )
+}
+
+function Scan-GamesFromFolder {
+    $c = Get-Col
+    $start = $null
+    if ($c -and $c.metadataPath) { $start = Split-Path $c.metadataPath -Parent }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select folder with ROMs / game files (names become the game list)"
+    $fd.ShowNewFolderButton = $false
+    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
+    if ($fd.ShowDialog() -ne "OK") { return }
+
+    $folder = $fd.SelectedPath
+    Log-Message "========================================" "Cyan"
+    Log-Message "SCAN FOLDER FOR GAMES" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Folder: $folder" "White"
+
+    try {
+        $exts = Get-RomExtensions
+        $files = @(Get-ChildItem $folder -File -ErrorAction SilentlyContinue | Where-Object {
+            $exts -contains $_.Extension.ToLowerInvariant()
+        })
+        $files += @(Get-ChildItem $folder -Directory -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem $_.FullName -File -ErrorAction SilentlyContinue | Where-Object {
+                $exts -contains $_.Extension.ToLowerInvariant()
+            }
+        })
+
+        $names = @()
+        $seen = @{}
+        foreach ($f in $files) {
+            $n = Get-GameNameFromFileName $f.Name
+            if ([string]::IsNullOrWhiteSpace($n)) { continue }
+            $key = $n.ToLowerInvariant()
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $names += $n
+        }
+        $names = @($names | Sort-Object)
+
+        $outDir = $folder
+        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
+        $outFile = Join-Path $outDir "games_from_folder.txt"
+        $names | Out-File -FilePath $outFile -Encoding UTF8
+
+        $pathsFile = Join-Path $outDir "games_from_folder_paths.txt"
+        $pathLines = @()
+        foreach ($f in $files) {
+            $n = Get-GameNameFromFileName $f.Name
+            if ($n) { $pathLines += "$n|$($f.FullName)" }
+        }
+        $pathLines | Sort-Object -Unique | Out-File -FilePath $pathsFile -Encoding UTF8
+
+        Log-Message "Found $($names.Count) unique game names from $($files.Count) files" "Green"
+        Log-Message "Saved names: $outFile" "Cyan"
+        Log-Message "Saved name|path: $pathsFile" "Cyan"
+        $names | Select-Object -First 15 | ForEach-Object { Log-Message "  $_" "White" }
+        if ($names.Count -gt 15) { Log-Message "  ... and $($names.Count - 15) more" "White" }
+        Log-Message "Next: Builder -> Build Meta from Folder, or mapping + Download Covers" "Yellow"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Export-GameList {
+    $c = Get-Col
+    if (-not $c) { return }
+    try {
+        $p = $c.metadataPath
+        $content = Get-Content $p -Raw
+        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
+        $names = @()
+        foreach ($g in $games) {
+            if ($g -match 'game: (.+?)(?:\r?\n|$)') {
+                $names += $matches[1].Trim()
+            }
+        }
+        $out = Join-Path (Get-ToolsFolder $c.mediaPath) "game_list_export.txt"
+        $names | Out-File -FilePath $out -Encoding UTF8
+        Log-Message "Exported $($names.Count) games to: $out" "Green"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Export-MissingCoversList {
+    $c = Get-Col
+    if (-not $c) { return }
+    FindMissing
+    try {
+        $p = $c.metadataPath
+        $missingFile = Join-Path (Get-ToolsFolder $c.mediaPath) "missing_covers.txt"
+        if (Test-Path $missingFile) {
+            Log-Message "Missing list ready: $missingFile" "Cyan"
+        }
+    } catch {}
+}
+
+function Import-GamesFromList {
+    $c = Get-Col
+    if (-not $c) { return }
+    $of = New-Object System.Windows.Forms.OpenFileDialog
+    $of.Title = "Select game list (one title per line, or Name|path)"
+    $of.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+    $metaDir = Split-Path $c.metadataPath -Parent
+    if (Test-Path $metaDir) { $of.InitialDirectory = $metaDir }
+    if ($of.ShowDialog() -ne "OK") { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "IMPORT GAMES FROM LIST" "Cyan"
+    Log-Message "========================================" "Cyan"
+    try {
+        $p = $c.metadataPath
+        $content = Get-Content $p -Raw
+        if ($null -eq $content) { $content = "" }
+        $existing = @{}
+        foreach ($m in [regex]::Matches($content, '(?m)^game: (.+)$')) {
+            $existing[$m.Groups[1].Value.Trim().ToLowerInvariant()] = $true
+        }
+
+        $added = 0
+        $blocks = New-Object System.Collections.ArrayList
+        foreach ($line in Get-Content $of.FileName) {
+            $line = $line.Trim()
+            if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { continue }
+            $name = $line
+            $filePath = ""
+            if ($line -match '^(.+?)\|(.+)$') {
+                $name = $matches[1].Trim()
+                $filePath = $matches[2].Trim()
+            }
+            $key = $name.ToLowerInvariant()
+            if ($existing.ContainsKey($key)) { continue }
+            $existing[$key] = $true
+            $block = "game: $name`n"
+            if ($filePath) { $block += "file: $filePath`n" }
+            $block += "`n"
+            [void]$blocks.Add($block)
+            $added++
+        }
+
+        if ($added -eq 0) {
+            Log-Message "No new games to import (all already present or list empty)." "Yellow"
+            return
+        }
+
+        CreateBackup
+        $newContent = $content.TrimEnd() + "`r`n`r`n" + ($blocks -join "")
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $newContent, $utf8)
+        Log-Message "Imported $added new game entries" "Green"
+        UpdateEditor
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Build-MetadataFromFolder {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $result = [System.Windows.Forms.MessageBox]::Show(
+        "Scan a folder for ROM/game files and ADD any missing games to the current metadata?`n`nExisting games are left unchanged.",
+        "Build Meta from Folder",
+        "YesNo",
+        "Question"
+    )
+    if ($result -ne "Yes") { return }
+
+    Scan-GamesFromFolder
+
+    $metaDir = Split-Path $c.metadataPath -Parent
+    $toolsDir = Get-ToolsFolder $c.mediaPath
+    $pathsFile = Join-Path $toolsDir "games_from_folder_paths.txt"
+    if (-not (Test-Path $pathsFile)) {
+        $of = New-Object System.Windows.Forms.OpenFileDialog
+        $of.Title = "Select games_from_folder_paths.txt"
+        $of.Filter = "Text (*.txt)|*.txt"
+        $of.InitialDirectory = $toolsDir
+        if ($of.ShowDialog() -eq "OK") { $pathsFile = $of.FileName }
+        else { return }
+    }
+
+    try {
+        $p = $c.metadataPath
+        $content = Get-Content $p -Raw
+        if ($null -eq $content) { $content = "" }
+        $existing = @{}
+        foreach ($m in [regex]::Matches($content, '(?m)^game: (.+)$')) {
+            $existing[$m.Groups[1].Value.Trim().ToLowerInvariant()] = $true
+        }
+        $added = 0
+        $blocks = New-Object System.Collections.ArrayList
+        foreach ($line in Get-Content $pathsFile) {
+            if ($line -match '^(.+?)\|(.+)$') {
+                $name = $matches[1].Trim()
+                $filePath = $matches[2].Trim()
+                $key = $name.ToLowerInvariant()
+                if ($existing.ContainsKey($key)) { continue }
+                $existing[$key] = $true
+                [void]$blocks.Add("game: $name`nfile: $filePath`n`n")
+                $added++
+            }
+        }
+        if ($added -eq 0) {
+            Log-Message "No new games to add from folder scan." "Yellow"
+            return
+        }
+        CreateBackup
+        $newContent = $content.TrimEnd() + "`r`n`r`n" + ($blocks -join "")
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $newContent, $utf8)
+        Log-Message "Built metadata: added $added games from folder" "Green"
+        UpdateEditor
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Sync-FilePathsFromFolder {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select folder containing ROM files to match against game titles"
+    if ($c.metadataPath) {
+        $parent = Split-Path $c.metadataPath -Parent
+        if (Test-Path $parent) { $fd.SelectedPath = $parent }
+    }
+    if ($fd.ShowDialog() -ne "OK") { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "SYNC FILE PATHS FROM FOLDER" "Cyan"
+    Log-Message "========================================" "Cyan"
+    try {
+        $exts = Get-RomExtensions
+        $files = @(Get-ChildItem $fd.SelectedPath -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            $exts -contains $_.Extension.ToLowerInvariant()
+        })
+        $byNorm = @{}
+        foreach ($f in $files) {
+            $n = Get-GameNameFromFileName $f.Name
+            $norm = ($n -replace '[^a-zA-Z0-9]', '').ToLowerInvariant()
+            if ($norm.Length -ge 3 -and -not $byNorm.ContainsKey($norm)) {
+                $byNorm[$norm] = $f.FullName
+            }
+        }
+
+        $p = $c.metadataPath
+        $content = Get-Content $p -Raw
+        $games = $content -split '(?=game: )' | Where-Object { $_ -match '^game: ' }
+        $updated = $content
+        $count = 0
+
+        foreach ($g in $games) {
+            if ($g -match 'game: (.+?)(?:\r?\n|$)') { $name = $matches[1].Trim() } else { continue }
+            $norm = ($name -replace '[^a-zA-Z0-9]', '').ToLowerInvariant()
+            if (-not $byNorm.ContainsKey($norm)) { continue }
+            $romPath = $byNorm[$norm]
+            $escaped = [regex]::Escape($name)
+            if ($g -match '(?m)^file:\s*.+$') {
+                $updated = [regex]::Replace($updated, "(?m)(game: $escaped(?:\r?\n(?:(?!game: ).*\r?\n)*?)file:\s*).+", ('${1}' + $romPath), 1)
+            } else {
+                $updated = [regex]::Replace($updated, "(game: $escaped\r?\n)", ('${1}' + "file: $romPath`n"), 1)
+            }
+            $count++
+            Log-Message "  $name -> $(Split-Path $romPath -Leaf)" "Green"
+        }
+
+        CreateBackup
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $updated, $utf8)
+        Log-Message "Synced file paths for $count games" "Green"
+        UpdateEditor
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Download-CoversFromMapping {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $metaDir = Split-Path $c.metadataPath -Parent
+    $bp = $c.mediaPath
+    $mapFile = Resolve-ToolsFile $bp "sns_mappings.txt" $metaDir
+    if (-not ($mapFile -and (Test-Path $mapFile))) {
+        $mapFile = Resolve-ToolsFile $bp "game_id_mappings.txt" $metaDir
+    }
+    if (-not ($mapFile -and (Test-Path $mapFile))) {
+        Log-Message "No sns_mappings.txt or game_id_mappings.txt found. Create a mapping first." "Red"
+        return
+    }
+
+    if ([string]::IsNullOrWhiteSpace($bp)) {
+        Log-Message "Media folder not set." "Red"
+        return
+    }
+    $fp = Join-Path $bp "box2dfront"
+    if (-not (Test-Path $fp)) { New-Item -ItemType Directory -Path $fp -Force | Out-Null }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "DOWNLOAD COVERS FROM MAPPING" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Mapping: $mapFile" "White"
+
+    try {
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        $ok = 0; $fail = 0; $skip = 0
+
+        foreach ($line in Get-Content $mapFile) {
+            if ($line -notmatch '^(.+?)=(.+)$') { continue }
+            $name = $matches[1].Trim()
+            $id = $matches[2].Trim()
+
+            $have = $false
+            foreach ($lc in @((Join-Path $fp "$id.png"), (Join-Path $fp "$id.jpg"))) {
+                if (Test-Path $lc) { $have = $true; break }
+            }
+            if ($have) { $skip++; continue }
+
+            $urls = @()
+            if ($id -match '^SNS-') {
+                $urls += "https://art.gametdb.com/snes/cover/US/$id.png"
+                $urls += "https://art.gametdb.com/snes/cover/EN/$id.png"
+                $urls += "https://art.gametdb.com/snes/coverfull/US/$id.png"
+            } elseif ($id -match '^[A-Z0-9]{4,16}$') {
+                $plat = Get-GameTDBPlatformKey $id
+                $region = Get-GameTDBRegionCode $id
+                $short = Get-GameTDBShortId $id
+                if ($plat -and $short) {
+                    $urls += "https://art.gametdb.com/$plat/cover/$region/$short.png"
+                    $urls += "https://art.gametdb.com/$plat/cover/US/$short.png"
+                    $urls += "https://art.gametdb.com/$plat/cover/EN/$short.png"
+                }
+            }
+
+            $saved = $false
+            foreach ($url in $urls) {
+                $dest = Join-Path $fp "$id.png"
+                try {
+                    $wc.DownloadFile($url, $dest)
+                    if ((Test-Path $dest) -and ((Get-Item $dest).Length -gt 500)) {
+                        Log-Message "  OK: $name <- $url" "Green"
+                        $ok++
+                        $saved = $true
+                        break
+                    } else {
+                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                    }
+                } catch {
+                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                }
+            }
+            if (-not $saved) {
+                $fail++
+                Log-Message "  FAIL: $name ($id)" "Yellow"
+            }
+        }
+
+        Log-Message "Downloaded: $ok | Failed: $fail | Already had: $skip" "Cyan"
+        Log-Message "Next: Add Box Art (Mapping) then Save Changes" "Yellow"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Download-CoversFromGameList {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    $of = New-Object System.Windows.Forms.OpenFileDialog
+    $of.Title = "Select game list (one name per line). Optional: Name=ID lines"
+    $of.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+    $metaDir = Split-Path $c.metadataPath -Parent
+    $bp = $c.mediaPath
+    $toolsDir = Get-ToolsFolder $bp
+    if ($toolsDir -and (Test-Path $toolsDir)) { $of.InitialDirectory = $toolsDir }
+    elseif (Test-Path $metaDir) { $of.InitialDirectory = $metaDir }
+    if ($of.ShowDialog() -ne "OK") { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "DOWNLOAD COVERS FROM GAME LIST" "Cyan"
+    Log-Message "========================================" "Cyan"
+
+    $nameToId = @{}
+    foreach ($mf in @("sns_mappings.txt", "game_id_mappings.txt")) {
+        $mp = Resolve-ToolsFile $bp $mf $metaDir
+        if (-not ($mp -and (Test-Path $mp))) { continue }
+        foreach ($line in Get-Content $mp) {
+            if ($line -match '^(.+?)=(.+)$') {
+                $nameToId[$matches[1].Trim()] = $matches[2].Trim()
+            }
+        }
+    }
+    foreach ($tf in @("sns_titles.txt", "snes_titles.txt", "gametdb_titles.txt")) {
+        $tp = Resolve-ToolsFile $bp $tf $metaDir
+        if (-not ($tp -and (Test-Path $tp))) { continue }
+        foreach ($line in Get-Content $tp) {
+            if ($line -match '^(SNS-[A-Z0-9]{4}-[A-Z]{3,4})\s*[=:\t]\s*(.+)$') {
+                $nameToId[$matches[2].Trim()] = $matches[1]
+            }
+        }
+    }
+
+    $toolsDir = Get-ToolsFolder $bp
+    if (-not $toolsDir) { $toolsDir = $metaDir }
+    $tempMap = Join-Path $toolsDir "_temp_cover_map.txt"
+    $lines = @()
+    $unresolved = @()
+    foreach ($line in Get-Content $of.FileName) {
+        $line = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($line) -or $line.StartsWith('#')) { continue }
+        if ($line -match '^(.+?)=(.+)$') {
+            $lines += "$($matches[1].Trim())=$($matches[2].Trim())"
+            continue
+        }
+        $name = $line
+        if ($nameToId.ContainsKey($name)) {
+            $lines += "$name=$($nameToId[$name])"
+        } else {
+            $unresolved += $name
+        }
+    }
+
+    if ($lines.Count -eq 0) {
+        Log-Message "No games with known IDs in the list." "Yellow"
+        Log-Message "Create mapping/titles first so names resolve to SNS/Game IDs." "Yellow"
+        if ($unresolved.Count -gt 0) {
+            $u = Join-Path $toolsDir "unresolved_cover_names.txt"
+            $unresolved | Out-File $u -Encoding UTF8
+            Log-Message "Unresolved: $u" "Cyan"
+        }
+        return
+    }
+
+    $lines | Out-File $tempMap -Encoding UTF8
+    Log-Message "Resolved $($lines.Count) names to IDs ($($unresolved.Count) unresolved)" "Cyan"
+
+    $backupMap = Join-Path $toolsDir "sns_mappings.txt"
+    $hadBackup = $false
+    $bakPath = $null
+    if (Test-Path $backupMap) {
+        $bakPath = Join-Path $toolsDir "sns_mappings.txt.bak_tool"
+        Copy-Item $backupMap $bakPath -Force
+        $hadBackup = $true
+    }
+    try {
+        Copy-Item $tempMap $backupMap -Force
+        Download-CoversFromMapping
+    } finally {
+        if ($hadBackup -and $bakPath) {
+            Copy-Item $bakPath $backupMap -Force
+            Remove-Item $bakPath -Force -ErrorAction SilentlyContinue
+        }
+        Remove-Item $tempMap -Force -ErrorAction SilentlyContinue
+        if ($unresolved.Count -gt 0) {
+            $u = Join-Path $toolsDir "unresolved_cover_names.txt"
+            $unresolved | Out-File $u -Encoding UTF8
+            Log-Message "Unresolved names: $u" "Yellow"
+        }
+    }
+}
+
+# ============================================================================
+# STRIP / HIDE
+# ============================================================================
+function Strip-BoxArtPaths {
+    $c = Get-Col
+    if (-not $c) { return }
+    $r = [System.Windows.Forms.MessageBox]::Show(
+        "Remove ALL assets.box_front and assets.box_front_thumb lines from metadata?`nA backup will be created.",
+        "Strip Box Art Paths",
+        "YesNo",
+        "Warning"
+    )
+    if ($r -ne "Yes") { return }
+    try {
+        $p = $c.metadataPath
+        CreateBackup
+        $content = Get-Content $p -Raw
+        $updated = $content -replace '(?m)^assets\.box_front(_thumb)?:.*\r?\n', ''
+        $utf8 = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $updated, $utf8)
+        Log-Message "Stripped all box art paths from metadata" "Green"
+        UpdateEditor
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Get-ImageExtensions {
+    return @('.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp')
+}
+
+function Scan-TitlesFromCoverImages {
+    $c = Get-Col
+    $start = $null
+    if ($c -and -not [string]::IsNullOrWhiteSpace($c.mediaPath)) {
+        $try = Join-Path $c.mediaPath "box2dfront"
+        if (Test-Path $try) { $start = $try }
+        elseif (Test-Path $c.mediaPath) { $start = $c.mediaPath }
+    }
+    if (-not $start -and $c -and $c.metadataPath) {
+        $start = Split-Path $c.metadataPath -Parent
+    }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select folder with cover images (names become titles)"
+    $fd.ShowNewFolderButton = $false
+    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
+    if ($fd.ShowDialog() -ne "OK") { return }
+
+    $folder = $fd.SelectedPath
+    Log-Message "========================================" "Cyan"
+    Log-Message "TITLES FROM COVER IMAGES" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Folder: $folder" "White"
+
+    try {
+        $exts = Get-ImageExtensions
+        $files = @(Get-ChildItem $folder -File -ErrorAction SilentlyContinue | Where-Object {
+            $exts -contains $_.Extension.ToLowerInvariant()
+        })
+
+        $titles = @()
+        $snsCodes = @()
+        $seen = @{}
+        foreach ($f in $files) {
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            if ($base -match '^(SNS|SNSP|SHVC|SFC)-[A-Z0-9]{2,6}(-[A-Z]{2,4})?$') {
+                $snsCodes += $base.ToUpperInvariant()
+                continue
+            }
+            $n = Get-GameNameFromFileName $f.Name
+            if ([string]::IsNullOrWhiteSpace($n)) { continue }
+            $key = $n.ToLowerInvariant()
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $titles += $n
+        }
+        $titles = @($titles | Sort-Object)
+        $snsCodes = @($snsCodes | Sort-Object -Unique)
+
+        $outDir = $folder
+        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
+
+        $titlesFile = Join-Path $outDir "titles_from_covers.txt"
+        $titles | Out-File -FilePath $titlesFile -Encoding UTF8
+
+        if ($snsCodes.Count -gt 0) {
+            $snsFile = Join-Path $outDir "sns_codes_from_images.txt"
+            $snsCodes | Out-File -FilePath $snsFile -Encoding UTF8
+            Update-SnsCodeList $snsCodes $snsFile
+            Log-Message "Also found $($snsCodes.Count) SNS-style filenames -> SNS list updated" "Cyan"
+        }
+
+        Log-Message "Found $($titles.Count) game-title-style cover names" "Green"
+        Log-Message "Saved: $titlesFile" "Cyan"
+        $titles | Select-Object -First 15 | ForEach-Object { Log-Message "  $_" "White" }
+        if ($titles.Count -gt 15) { Log-Message "  ... and $($titles.Count - 15) more" "White" }
+        Log-Message "Next: Add Box Art (Game Name) if metadata titles match these names" "Yellow"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+# ============================================================================
+# SNES ROM HEADERS
+# ============================================================================
+function Get-SnesHeaderOffsets {
+    return @(0x7FC0, 0xFFC0, 0x81C0, 0x101C0, 0x40FFC0, 0x4101C0)
+}
+
+function Read-SnesInternalTitle {
+    param([string]$RomPath)
+    try {
+        $fi = Get-Item $RomPath -ErrorAction Stop
+        if ($fi.Length -lt 0x8000) { return $null }
+        $fs = [System.IO.File]::OpenRead($RomPath)
+        try {
+            $buf = New-Object byte[] 32
+            foreach ($off in (Get-SnesHeaderOffsets)) {
+                if ($off + 21 -gt $fi.Length) { continue }
+                $fs.Position = $off
+                $read = $fs.Read($buf, 0, 21)
+                if ($read -lt 21) { continue }
+                $chars = @()
+                $ok = 0
+                for ($i = 0; $i -lt 21; $i++) {
+                    $b = $buf[$i]
+                    if ($b -ge 32 -and $b -le 126) {
+                        $chars += [char]$b
+                        $ok++
+                    } elseif ($b -eq 0) {
+                        $chars += ' '
+                    } else {
+                        $chars += ' '
+                    }
+                }
+                if ($ok -lt 4) { continue }
+                $title = (-join $chars).Trim()
+                if ($title.Length -lt 2) { continue }
+                if ($title -match '[\x00-\x08\x0B\x0C\x0E-\x1F]') { continue }
+                return $title
+            }
+        } finally {
+            $fs.Close()
+        }
+    } catch {}
+    return $null
+}
+
+function Test-ValidSnesHeader {
+    param([string]$Header)
+
+    if ([string]::IsNullOrWhiteSpace($Header)) { return $false }
+    if ($Header.Length -lt 3) { return $false }
+
+    $letters = ([regex]::Matches($Header, '[A-Za-z]')).Count
+    if ($letters -lt 2) { return $false }
+
+    if ($Header -match '[\x00-\x1F]') { return $false }
+
+    $garbagePatterns = @(
+        '^[^A-Za-z]+$',
+        '^[\s\.\-_,;:!?]+$',
+        '^[0-9\s]+$',
+        '[\x7F-\xFF]'
+    )
+
+    foreach ($pattern in $garbagePatterns) {
+        if ($Header -match $pattern) { return $false }
+    }
+
+    return $true
+}
+
+function Read-SnesRomHeaders {
+    $c = Get-Col
+    $start = $null
+    if ($c -and $c.metadataPath) {
+        $start = Split-Path $c.metadataPath -Parent
+    }
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select folder with SNES ROMs (.sfc/.smc) to read internal titles"
+    $fd.ShowNewFolderButton = $false
+    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
+    if ($fd.ShowDialog() -ne "OK") { return }
+
+    $folder = $fd.SelectedPath
+    Log-Message "========================================" "Cyan"
+    Log-Message "READ SNES ROM HEADERS" "Cyan"
+    Log-Message "========================================" "Cyan"
+    Log-Message "Folder: $folder" "White"
+
+    try {
+        $romExt = @('.sfc', '.smc', '.fig', '.swc')
+        $files = @(Get-ChildItem $folder -File -Recurse -ErrorAction SilentlyContinue | Where-Object {
+            $romExt -contains $_.Extension.ToLowerInvariant()
+        })
+        if ($files.Count -eq 0) {
+            Log-Message "No SNES ROM files found." "Yellow"
+            return
+        }
+
+        $lines = @()
+        $badHeaders = @()
+        $ok = 0
+        $bad = 0
+        $empty = 0
+        $badExamples = New-Object System.Collections.ArrayList
+
+        foreach ($f in $files) {
+            $internal = Read-SnesInternalTitle $f.FullName
+            $fromName = Get-GameNameFromFileName $f.Name
+            $isValid = Test-ValidSnesHeader $internal
+
+            if ($internal) {
+                if ($isValid) {
+                    $ok++
+                    $lines += "$fromName|$internal|VALID|$($f.FullName)"
+                    Log-Message "  $fromName  <=  [$internal]  ? VALID" "Green"
+                } else {
+                    $bad++
+                    $badHeaders += "$fromName|$internal|BAD|$($f.FullName)"
+                    $lines += "$fromName|$internal|BAD|$($f.FullName)"
+                    if ($badExamples.Count -lt 10) {
+                        [void]$badExamples.Add("  $fromName -> [$internal]")
+                    }
+                    Log-Message "  $fromName  <=  [$internal]  ?? BAD HEADER" "Red"
+                }
+            } else {
+                $empty++
+                $lines += "$fromName||EMPTY|$($f.FullName)"
+                Log-Message "  $fromName  (header not read)  ?? EMPTY HEADER" "Yellow"
+            }
+        }
+
+        $outDir = $folder
+        if ($c -and $c.mediaPath) { $outDir = Get-ToolsFolder $c.mediaPath }
+        $outFile = Join-Path $outDir "snes_rom_headers.txt"
+        $header = "# filename_title|internal_header_title|status|full_path"
+        (@($header) + $lines) | Out-File -FilePath $outFile -Encoding UTF8
+
+        $titleList = @()
+        foreach ($line in $lines) {
+            if ($line -match '^[^|]+\|([^|]+)\|') {
+                $t = $matches[1].Trim()
+                if ($t -and $t -ne "BAD" -and $t -ne "EMPTY") { $titleList += $t }
+            }
+        }
+        $titleList = @($titleList | Sort-Object -Unique)
+        $titlesOut = Join-Path $outDir "titles_from_rom_headers.txt"
+        $titleList | Out-File -FilePath $titlesOut -Encoding UTF8
+
+        if ($badHeaders.Count -gt 0 -or $empty -gt 0) {
+            $badOut = Join-Path $outDir "bad_rom_headers.txt"
+            $badReport = @()
+            $badReport += "# ROMs with BAD or EMPTY headers"
+            $badReport += "# Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+            $badReport += "#"
+            $badReport += "# These ROMs have corrupted or stripped headers."
+            $badReport += "# Consider replacing them with clean No-Intro dumps."
+            $badReport += "#"
+            $badReport += "# format: filename|internal_header|status|full_path"
+            $badReport += ""
+            $badReport += $badHeaders
+            $badReport | Out-File -FilePath $badOut -Encoding UTF8
+            Log-Message "Bad headers list: $badOut" "Yellow"
+        }
+
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "READ SNES ROM HEADERS - COMPLETE" "Cyan"
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Total ROMs scanned: $($files.Count)" "White"
+        Log-Message "Valid headers: $ok  ?" "Green"
+        Log-Message "Bad headers: $bad  ??" "Red"
+        Log-Message "Empty headers: $empty  ??" "Yellow"
+
+        if ($badExamples.Count -gt 0) {
+            Log-Message "" "White"
+            Log-Message "Bad header examples (first 10):" "Red"
+            foreach ($ex in $badExamples) {
+                Log-Message "  $ex" "Red"
+            }
+            if ($bad + $empty -gt 10) {
+                Log-Message "  ... and $($bad + $empty - 10) more bad/empty headers" "Red"
+            }
+            Log-Message "" "White"
+            Log-Message "Bad headers saved to: $badOut" "Yellow"
+            Log-Message "Next: Replace bad ROMs with clean No-Intro dumps." "Yellow"
+            Log-Message "Do NOT use bad headers to create metadata entries!" "Red"
+        }
+
+        Log-Message "Saved: $outFile" "Cyan"
+        Log-Message "Titles list: $titlesOut" "Cyan"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+# ============================================================================
+# HIDE MULTI-DISC / STRIP ASSETS / BACKUP ZIP / EDIT GENRES / FILE CHECK / ES XML
+# ============================================================================
 function Hide-MultiDiscAndBuildM3U {
     $c = Get-Col
     if (-not $c) { return }
@@ -13950,7 +8013,6 @@ function Backup-AllMetadataZip {
         Log-Message "Zipped $($list.Count) file(s) -> $zipPath" "Green"
     } catch { Log-Message "ERROR: $_" "Red" }
 }
-
 
 function Edit-Genres {
     $c = Get-Col; if (-not $c) { return }
@@ -14083,9 +8145,8 @@ function Check-AllFilesReport {
         $imgExts = @('.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp')
         $vidExts = @('.mp4', '.webm', '.avi', '.mkv')
 
-        # --- ROMs (exact basename set + match-key set) ---
-        $romBases = @{}          # basename -> $true
-        $romKeySet = @{}         # Get-MatchTitleKey(basename) -> $true
+        $romBases = @{}
+        $romKeySet = @{}
         if (Test-Path $romDir) {
             Get-ChildItem -LiteralPath $romDir -File -ErrorAction SilentlyContinue | ForEach-Object {
                 if ($romExts -contains $_.Extension.ToLowerInvariant()) {
@@ -14099,11 +8160,10 @@ function Check-AllFilesReport {
         Log-Message "ROM files: $($romBases.Count)" "White"
         [System.Windows.Forms.Application]::DoEvents()
 
-        # --- Metadata titles / file: basenames ---
         $content = Get-Content $p -Raw -ErrorAction Stop
-        $metaGames = @{}   # title -> $true
-        $metaFiles = @{}   # file basename -> title
-        $metaKeySet = @{}  # match keys of titles
+        $metaGames = @{}
+        $metaFiles = @{}
+        $metaKeySet = @{}
         foreach ($g in ($content -split '(?=game: )' | Where-Object { $_ -match '^game: ' })) {
             if ($g -match 'game: (.+?)(?:\r?\n|$)') { $title = $matches[1].Trim() } else { continue }
             $metaGames[$title] = $true
@@ -14121,7 +8181,6 @@ function Check-AllFilesReport {
         Log-Message "Games in metadata: $($metaGames.Count)" "White"
         [System.Windows.Forms.Application]::DoEvents()
 
-        # ROM with no metadata: not exact title, not exact file base, not fuzzy key match
         $missingMeta = New-Object System.Collections.ArrayList
         foreach ($rb in $romBases.Keys) {
             if ($metaFiles.ContainsKey($rb)) { continue }
@@ -14132,7 +8191,6 @@ function Check-AllFilesReport {
         }
         $missingMeta = @($missingMeta | Sort-Object)
 
-        # Metadata with no ROM: not exact rom base, not fuzzy key
         $extraMeta = New-Object System.Collections.ArrayList
         foreach ($t in $metaGames.Keys) {
             if ($romBases.ContainsKey($t)) { continue }
@@ -14161,7 +8219,6 @@ function Check-AllFilesReport {
         }
         [System.Windows.Forms.Application]::DoEvents()
 
-        # --- Media folders: prebuild key maps, O(n+m) per folder ---
         $mediaRoot = $bp
         if ([string]::IsNullOrWhiteSpace($mediaRoot) -or -not (Test-Path $mediaRoot)) {
             $tryMedia = Join-Path $romDir "media"
@@ -14170,8 +8227,8 @@ function Check-AllFilesReport {
         if ($mediaRoot -and (Test-Path $mediaRoot)) {
             $subdirs = @(Get-ChildItem -LiteralPath $mediaRoot -Directory -ErrorAction SilentlyContinue)
             foreach ($sd in $subdirs) {
-                $mediaFiles = @{}   # base -> filename
-                $mediaKeyToName = @{}  # match key -> filename (first)
+                $mediaFiles = @{}
+                $mediaKeyToName = @{}
                 Get-ChildItem -LiteralPath $sd.FullName -File -ErrorAction SilentlyContinue | ForEach-Object {
                     $e = $_.Extension.ToLowerInvariant()
                     if ($imgExts -contains $e -or $vidExts -contains $e) {
@@ -14395,7 +8452,6 @@ function Import-EmulationStationXml {
                 if ($tag -eq 'releasedate' -and $val -match '^(\d{4})(\d{2})(\d{2})') { $val = "$($matches[1])-$($matches[2])-$($matches[3])" }
                 if ($tag -eq 'path' -and $val.StartsWith('./')) { $val = $val.Substring(2) }
                 if ($tag -eq 'rating') {
-                    # ES stores 0-1 float; Pegasus often uses percent or same float - keep percent if < 1.5
                     $d = 0.0
                     if ([double]::TryParse($val, [ref]$d) -and $d -le 1.0) { $val = [string]([int][Math]::Round($d * 100)) + '%' }
                 }
@@ -14429,7 +8485,6 @@ function Import-EmulationStationXml {
 }
 
 function Backup-OrphanMedia {
-    # Move media files that do not match any ROM / metadata title into media.backup\<type>\
     $c = Get-Col; if (-not $c) { return }
     $r = [System.Windows.Forms.MessageBox]::Show(
         "Move orphan media files (no matching ROM or game title) into media.backup?`n`n" +
@@ -14492,7 +8547,6 @@ function Backup-OrphanMedia {
             return
         }
 
-        # Sibling of media folder: <collection>\media.backup\<type>\
         $backupRoot = Join-Path (Split-Path $bp -Parent) "media.backup"
         $moved = 0
         $subdirs = @(Get-ChildItem -LiteralPath $bp -Directory -ErrorAction SilentlyContinue |
@@ -14533,9 +8587,7 @@ function Backup-OrphanMedia {
     }
 }
 
-
 function Batch-ImportFromLibraryRoot {
-    # Scan a library root for system folders that contain gamelist.xml; import each into matching collection or create one.
     $fd = New-Object System.Windows.Forms.FolderBrowserDialog
     $fd.Description = "Select library root (contains system folders with gamelist.xml)"
     $fd.ShowNewFolderButton = $false
@@ -14563,7 +8615,6 @@ function Batch-ImportFromLibraryRoot {
         $lists = @(Get-ChildItem -LiteralPath $root -Recurse -Filter "gamelist.xml" -File -ErrorAction SilentlyContinue |
             Where-Object { $_.DirectoryName -ne $root })
         if ($lists.Count -eq 0) {
-            # also check one level deep only for speed message
             Log-Message "No gamelist.xml found under: $root" "Yellow"
             return
         }
@@ -14580,14 +8631,12 @@ function Batch-ImportFromLibraryRoot {
             Log-Message "---- $sysName ----" "Cyan"
             Log-Message "  $($gl.FullName)" "White"
 
-            # Resolve or create collection
             $metaPath = $null
             $mediaPath = Join-Path $sysDir "media"
             if (-not (Test-Path $mediaPath)) {
                 try { New-Item -ItemType Directory -Path $mediaPath -Force | Out-Null } catch {}
             }
 
-            # Prefer existing collection whose metadata lives in this folder
             foreach ($key in @($script:collections.Keys)) {
                 $mp = $script:collections[$key].metadataPath
                 if ($mp -and (Test-Path $mp)) {
@@ -14600,7 +8649,6 @@ function Batch-ImportFromLibraryRoot {
                 }
             }
             if (-not $metaPath) {
-                # Common names
                 foreach ($cand in @("$sysName.txt", "metadata.txt", "metadata.pegasus.txt")) {
                     $try = Join-Path $sysDir $cand
                     if (Test-Path $try) { $metaPath = $try; break }
@@ -14623,7 +8671,6 @@ launch:
                 Log-Message "  Added collection: $sysName" "Green"
             }
 
-            # Import XML into this metadata
             try {
                 [xml]$doc = Get-Content $gl.FullName -Raw -ErrorAction Stop
                 $nodes = @($doc.SelectNodes('//game'))
@@ -14713,10 +8760,7 @@ launch:
     }
 }
 
-
 function Sort-GamesAlphabetically {
-    # Reorder game blocks in the collection metadata by title (A-Z).
-    # Uses sort_title / sort-title when present, otherwise the game: title.
     $c = Get-Col
     if (-not $c) { return }
 
@@ -14731,7 +8775,6 @@ function Sort-GamesAlphabetically {
             return
         }
 
-        # Prefer in-memory games when form view is active; otherwise re-parse file
         if (-not $script:rawMode) {
             try {
                 Apply-HeaderFieldsFromUI
@@ -14801,9 +8844,6 @@ function Sort-GamesAlphabetically {
 }
 
 function Remove-GamesWithoutFile {
-    # Remove game: blocks that have no file: path (or an empty one).
-    # Typical cause: importing SNES internal ROM header titles as games
-    # (ALL CAPS names with no ROM path). Clean Bogus Games does not catch these.
     $c = Get-Col
     if (-not $c) { return }
 
@@ -14886,10 +8926,204 @@ function Remove-GamesWithoutFile {
     }
 }
 
+function Separate-GameBlocks {
+    $c = Get-Col
+    if (-not $c) { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "SEPARATE GAME BLOCKS - $($c.name)" "Cyan"
+    Log-Message "========================================" "Cyan"
+
+    try {
+        $p = $c.metadataPath
+        if (-not (Test-Path $p)) {
+            Log-Message "ERROR: Metadata file not found" "Red"
+            return
+        }
+
+        $content = Get-Content $p -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($content)) {
+            Log-Message "Metadata file is empty." "Yellow"
+            return
+        }
+
+        $hadCrlf = ($content -match "`r`n")
+        $norm = $content -replace "`r`n", "`n" -replace "`r", "`n"
+
+        $parts = [regex]::Split($norm, '(?m)(?=^game:\s*)')
+        $header = ""
+        $gameParts = New-Object System.Collections.ArrayList
+        foreach ($part in $parts) {
+            if ([string]::IsNullOrWhiteSpace($part)) { continue }
+            if ($part -match '(?m)^game:\s*') {
+                [void]$gameParts.Add($part.Trim("`n").TrimEnd())
+            } else {
+                $header = $part.TrimEnd()
+            }
+        }
+
+        if ($gameParts.Count -eq 0) {
+            Log-Message "No game: blocks found to separate." "Yellow"
+            return
+        }
+
+        $msg = "Insert a blank line between all $($gameParts.Count) game blocks?`n`n" +
+               "Any blank lines already present are kept as-is (not doubled), so this is " +
+               "safe to run more than once.`n`n" +
+               "A backup of the metadata file will be created first."
+        $result = [System.Windows.Forms.MessageBox]::Show($msg, "Separate Game Blocks", "YesNo", "Question")
+        if ($result -ne "Yes") {
+            Log-Message "Cancelled - no changes made." "Yellow"
+            return
+        }
+
+        CreateBackup
+
+        $sb = New-Object System.Text.StringBuilder
+        if (-not [string]::IsNullOrWhiteSpace($header)) {
+            [void]$sb.AppendLine($header)
+            [void]$sb.AppendLine("")
+        }
+        foreach ($g in $gameParts) {
+            [void]$sb.AppendLine($g)
+            [void]$sb.AppendLine("")
+        }
+
+        $out = $sb.ToString().TrimEnd() + "`n"
+        if ($hadCrlf) { $out = $out -replace "`n", "`r`n" }
+
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $out, $utf8NoBom)
+
+        Log-Message "Separated $($gameParts.Count) game blocks with blank lines." "Green"
+        Log-Message "Done!" "Green"
+
+        UpdateEditor
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+function Indent-DescriptionFields {
+    # Pegasus only accepts a multi-line value when the continuation lines are
+    # indented. This finds "description:" / "summary:" values whose following
+    # text lines start at column 0 and indents them (blank lines inside the
+    # text become an indented "." as Pegasus expects).
+    $c = Get-Col
+    if (-not $c) { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "INDENT DESCRIPTIONS - $($c.name)" "Cyan"
+    Log-Message "========================================" "Cyan"
+
+    try {
+        $p = $c.metadataPath
+        if (-not (Test-Path -LiteralPath $p)) { Log-Message "ERROR: Metadata file not found" "Red"; return }
+        $content = Get-Content -LiteralPath $p -Raw -ErrorAction Stop
+        if ([string]::IsNullOrWhiteSpace($content)) { Log-Message "Metadata file is empty." "Yellow"; return }
+
+        $hadCrlf = ($content -match "`r`n")
+        $lines = @(($content -replace "`r`n", "`n" -replace "`r", "`n") -split "`n")
+
+        $knownKeys = @(
+            'collection', 'shortname', 'launch', 'command', 'workdir', 'cwd', 'directory', 'directories',
+            'extension', 'extensions', 'file', 'files', 'regex', 'ignore-extension', 'ignore-extensions',
+            'ignore-file', 'ignore-files', 'ignore-regex', 'game', 'sort_title', 'sort-title', 'sortby',
+            'sort_by', 'summary', 'description', 'developer', 'developers', 'publisher', 'publishers',
+            'genre', 'genres', 'tag', 'tags', 'players', 'release', 'rating', 'game_id', 'extra'
+        )
+        $isKeyLine = {
+            param([string]$s)
+            if ($s -notmatch '^([A-Za-z0-9_][A-Za-z0-9_.\-]*)\s*:(\s|$)') { return $false }
+            $k = $matches[1].ToLowerInvariant()
+            if ($knownKeys -contains $k) { return $true }
+            if ($k.StartsWith('assets.') -or $k.StartsWith('x-')) { return $true }
+            return $false
+        }
+        $isTextField = {
+            param([string]$s)
+            return ($s -match '^(description|summary)\s*:(\s|$)')
+        }
+
+        $out = New-Object System.Collections.ArrayList
+        $inDesc = $false
+        $linesChanged = 0
+        $fieldsFixed = 0
+        $fieldTouched = $false
+
+        for ($i = 0; $i -lt $lines.Count; $i++) {
+            $line = $lines[$i]
+            if ($inDesc) {
+                if ($line -match '^\s+\S') {
+                    [void]$out.Add($line); continue
+                }
+                if ($line -match '^\s*$') {
+                    $j = $i + 1
+                    while ($j -lt $lines.Count -and $lines[$j] -match '^\s*$') { $j++ }
+                    $nextIsText = $false
+                    if ($j -lt $lines.Count) {
+                        $nx = $lines[$j]
+                        if ($nx -notmatch '^\s*#' -and -not (& $isKeyLine $nx)) { $nextIsText = $true }
+                    }
+                    if ($nextIsText) {
+                        for ($k2 = $i; $k2 -lt $j; $k2++) { [void]$out.Add("  ."); $linesChanged++ }
+                        $fieldTouched = $true
+                        $i = $j - 1
+                    } else {
+                        if ($fieldTouched) { $fieldsFixed++; $fieldTouched = $false }
+                        $inDesc = $false
+                        [void]$out.Add($line)
+                    }
+                    continue
+                }
+                if ($line -match '^\s*#' -or (& $isKeyLine $line)) {
+                    if ($fieldTouched) { $fieldsFixed++; $fieldTouched = $false }
+                    $inDesc = (& $isTextField $line)
+                    [void]$out.Add($line)
+                    continue
+                }
+                [void]$out.Add("  " + $line.TrimEnd())
+                $linesChanged++
+                $fieldTouched = $true
+                continue
+            }
+            if (& $isTextField $line) { $inDesc = $true; $fieldTouched = $false }
+            [void]$out.Add($line)
+        }
+        if ($fieldTouched) { $fieldsFixed++ }
+
+        if ($linesChanged -eq 0) {
+            Log-Message "All description/summary text is already indented - nothing to fix." "Green"
+            return
+        }
+
+        $msg = "Found $fieldsFixed description/summary field(s) whose text is not indented ($linesChanged line(s) to indent).`n`n" +
+               "Pegasus ignores un-indented continuation lines, so these descriptions load empty.`n`n" +
+               "A backup of the metadata file will be created first. Indent them now?"
+        $r = [System.Windows.Forms.MessageBox]::Show($msg, "Indent Descriptions", "YesNo", "Question")
+        if ($r -ne "Yes") { Log-Message "Cancelled - no changes made." "Yellow"; return }
+
+        CreateBackup
+        $text = ($out -join "`n")
+        if ($hadCrlf) { $text = $text -replace "`n", "`r`n" }
+        $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+        [System.IO.File]::WriteAllText($p, $text, $utf8NoBom)
+
+        Log-Message "Indented $linesChanged line(s) in $fieldsFixed description/summary field(s)." "Green"
+        Log-Message "Done!" "Green"
+        UpdateEditor
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
 function Show-BuilderHelp {
     [System.Windows.Forms.MessageBox]::Show(
         "BUILDER / REPAIR TOOLS`n`n" +
         "Scan / Build / Import / Sync / Export lists / DL covers / SNES headers`n`n" +
+        "Unzip All - expand every .zip in a chosen folder into that same folder`n" +
         "Strip All Box Art Paths - box art only`n" +
         "Strip All Assets - every assets.* line`n" +
         "Hide Multi-Disc + M3U - (disc N) -> m3u + ignore-files`n" +
@@ -14903,9 +9137,5276 @@ function Show-BuilderHelp {
         "Clean Bogus Games - remove garbled titles`n" +
         "Sort Games A-Z - reorder game blocks alphabetically by title`n" +
         "Remove Games w/ No File - delete game blocks that have no file: path`n" +
-        "  (common after importing SNES header title lists by mistake)`n`n" +
+        "  (common after importing SNES header title lists by mistake)`n" +
+        "Separate Game Blocks - insert a blank line between every game block`n" +
+        "  (makes the raw view readable; idempotent - safe to run more than once)`n" +
+        "Indent Descriptions - indent un-indented description:/summary: text so Pegasus reads it`n`n" +
         "Open Workflow Guide for step-by-step help on each tool.",
         "Builder Help", "OK", "Information")
+}
+
+# ============================================================================
+# UNZIP ALL (new in 2.5.47)
+# ============================================================================
+function Unzip-AllZipsInFolder {
+    # Ports the simple "Unzip-All.ps1" one-liner into the app.
+    # Pick a folder; every .zip inside it is extracted into that same folder.
+    # Existing files are skipped by Expand-Archive when -Force is off, but we
+    # use -Force only after confirming with the user, because overwriting
+    # silently is a good way to lose curated art.
+    $start = $null
+    try {
+        $c = Get-Col
+        if ($c -and $c.metadataPath) {
+            $start = Split-Path $c.metadataPath -Parent
+        }
+    } catch {}
+
+    $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+    $fd.Description = "Select the folder containing .zip files to extract (each zip is unzipped in place, into this same folder)."
+    $fd.ShowNewFolderButton = $false
+    if ($start -and (Test-Path $start)) { $fd.SelectedPath = $start }
+    if ($fd.ShowDialog() -ne "OK") { return }
+    $folder = $fd.SelectedPath
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "UNZIP ALL - $folder" "Cyan"
+    Log-Message "========================================" "Cyan"
+
+    try {
+        $zips = @(Get-ChildItem -LiteralPath $folder -Filter *.zip -File -ErrorAction SilentlyContinue)
+        if ($zips.Count -eq 0) {
+            Log-Message "No .zip files found in that folder." "Yellow"
+            return
+        }
+        Log-Message "Found $($zips.Count) .zip file(s)" "Cyan"
+
+        $r = [System.Windows.Forms.MessageBox]::Show(
+            "Extract $($zips.Count) .zip file(s) into:`n$folder`n`n" +
+            "YES = overwrite existing files (-Force)`n" +
+            "NO  = skip files that already exist (safer for curated art)`n" +
+            "CANCEL = do nothing",
+            "Unzip All",
+            [System.Windows.Forms.MessageBoxButtons]::YesNoCancel,
+            [System.Windows.Forms.MessageBoxIcon]::Question)
+        if ($r -eq [System.Windows.Forms.DialogResult]::Cancel) {
+            Log-Message "Cancelled." "Yellow"
+            return
+        }
+        $force = ($r -eq [System.Windows.Forms.DialogResult]::Yes)
+
+        $okCount = 0
+        $failCount = 0
+        $n = 0
+        foreach ($z in $zips) {
+            $n++
+            if ($script:statusBar) { $script:statusBar.Text = "Unzipping $n / $($zips.Count): $($z.Name)" }
+            try {
+                [System.Windows.Forms.Application]::DoEvents()
+                if ($force) {
+                    Expand-Archive -Path $z.FullName -DestinationPath $folder -Force -ErrorAction Stop
+                } else {
+                    Expand-Archive -Path $z.FullName -DestinationPath $folder -ErrorAction Stop
+                }
+                $okCount++
+                Log-Message "  OK: $($z.Name)" "Green"
+            } catch {
+                $failCount++
+                Log-Message "  FAIL: $($z.Name) - $($_.Exception.Message)" "Red"
+            }
+        }
+
+        Log-Message "----------------------------------------" "Cyan"
+        Log-Message "Unzipped: $okCount   Failed: $failCount   Total: $($zips.Count)" "Green"
+        Log-Message "Destination: $folder" "Cyan"
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
+# ============================================================================
+# COVER PACK DIALOG (2.5.47 - two checkboxes, manual Count button)
+# ============================================================================
+function Show-GameTDBCoverPackDialog {
+    param([string]$PreselectSource = "gametdb")
+    try {
+        $dlg = New-Object System.Windows.Forms.Form
+        $dlg.Text = "Cover Pack"
+        $dlg.Size = New-Object System.Drawing.Size(500, 720)
+        $dlg.StartPosition = "CenterParent"
+        $dlg.FormBorderStyle = "FixedDialog"
+        $dlg.MaximizeBox = $false
+        $dlg.MinimizeBox = $false
+        $dlg.ShowInTaskbar = $false
+        $dlg.BackColor = $script:theme.background
+        $dlg.ForeColor = $script:theme.text
+        $dlg.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+
+        $secX = 14
+        $secW = 456
+        $btnW = 100
+        $btnH = 26
+        $gap = 6
+
+        # ========== Source ==========
+        $grpSrc = New-Object System.Windows.Forms.GroupBox
+        $grpSrc.Text = " Source "
+        $grpSrc.Location = New-Object System.Drawing.Point($secX, 10)
+        $grpSrc.Size = New-Object System.Drawing.Size($secW, 236)
+        $grpSrc.ForeColor = $script:theme.text
+        $grpSrc.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpSrc.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpSrc)
+
+        $lblFrom = New-Object System.Windows.Forms.Label
+        $lblFrom.Text = "Site"
+        $lblFrom.Location = New-Object System.Drawing.Point(12, 24)
+        $lblFrom.Size = New-Object System.Drawing.Size(28, 16)
+        $lblFrom.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblFrom)
+
+        $cmbSrc = New-Object System.Windows.Forms.ComboBox
+        $cmbSrc.Location = New-Object System.Drawing.Point(42, 20)
+        $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
+        $cmbSrc.DropDownStyle = "DropDownList"
+        $cmbSrc.DropDownWidth = 140
+        $cmbSrc.BackColor = $script:theme.editor
+        $cmbSrc.ForeColor = $script:theme.text
+        [void]$cmbSrc.Items.Add("GameTDB")
+        [void]$cmbSrc.Items.Add("Libretro")
+        [void]$cmbSrc.Items.Add("TheCoverProject")
+        [void]$cmbSrc.Items.Add("SteamGridDB")
+        $grpSrc.Controls.Add($cmbSrc)
+
+        $lblSys = New-Object System.Windows.Forms.Label
+        $lblSys.Text = "System"
+        $lblSys.Location = New-Object System.Drawing.Point(126, 24)
+        $lblSys.Size = New-Object System.Drawing.Size(44, 16)
+        $lblSys.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblSys)
+
+        $cmbSys = New-Object System.Windows.Forms.ComboBox
+        $cmbSys.Location = New-Object System.Drawing.Point(172, 20)
+        $cmbSys.Size = New-Object System.Drawing.Size(158, 24)
+        $cmbSys.DropDownStyle = "DropDownList"
+        $cmbSys.DropDownWidth = 260
+        $cmbSys.BackColor = $script:theme.editor
+        $cmbSys.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($cmbSys)
+
+        $lblReg = New-Object System.Windows.Forms.Label
+        $lblReg.Text = "Region"
+        $lblReg.Location = New-Object System.Drawing.Point(336, 24)
+        $lblReg.Size = New-Object System.Drawing.Size(42, 16)
+        $lblReg.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblReg)
+
+        $cmbReg = New-Object System.Windows.Forms.ComboBox
+        $cmbReg.Location = New-Object System.Drawing.Point(380, 20)
+        $cmbReg.Size = New-Object System.Drawing.Size(52, 24)
+        $cmbReg.DropDownStyle = "DropDownList"
+        $cmbReg.BackColor = $script:theme.editor
+        $cmbReg.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($cmbReg)
+
+        $lblTypes = New-Object System.Windows.Forms.Label
+        $lblTypes.Text = "Cover types (check one or more)"
+        $lblTypes.Location = New-Object System.Drawing.Point(12, 50)
+        $lblTypes.Size = New-Object System.Drawing.Size(300, 16)
+        $lblTypes.ForeColor = $script:theme.text
+        $grpSrc.Controls.Add($lblTypes)
+
+        $clbCover = New-Object System.Windows.Forms.CheckedListBox
+        $clbCover.Location = New-Object System.Drawing.Point(12, 68)
+        $clbCover.Size = New-Object System.Drawing.Size(432, 72)
+        $clbCover.BackColor = $script:theme.editor
+        $clbCover.ForeColor = $script:theme.text
+        $clbCover.CheckOnClick = $true
+        $clbCover.BorderStyle = "FixedSingle"
+        $clbCover.IntegralHeight = $true
+        $grpSrc.Controls.Add($clbCover)
+
+        $lblDesc = New-Object System.Windows.Forms.TextBox
+        $lblDesc.Location = New-Object System.Drawing.Point(12, 144)
+        $lblDesc.Size = New-Object System.Drawing.Size(432, 80)
+        $lblDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblDesc.ForeColor = $script:theme.accent
+        $lblDesc.BackColor = $script:theme.editor
+        $lblDesc.BorderStyle = "FixedSingle"
+        $lblDesc.Multiline = $true
+        $lblDesc.WordWrap = $true
+        $lblDesc.ReadOnly = $true
+        $lblDesc.ScrollBars = "None"
+        $lblDesc.TabStop = $false
+        $lblDesc.Text = "Check one or more cover types above to see what they're for."
+        $grpSrc.Controls.Add($lblDesc)
+
+        $gtdbPlatKeys = @($script:gameTdbPlatforms.Keys | Sort-Object)
+        $libretroPlatKeys = @($script:libretroPlatforms.Keys | Sort-Object { $script:libretroPlatforms[$_].Label })
+        $platKeys = $gtdbPlatKeys
+        foreach ($k in $platKeys) {
+            [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label)
+        }
+        foreach ($r in $script:gameTdbRegions) {
+            [void]$cmbReg.Items.Add($r)
+        }
+        $cmbReg.SelectedItem = "US"
+        $cmbSrc.SelectedIndex = $(switch ($PreselectSource) { "libretro" { 1 } "tcp" { 2 } "steamgriddb" { 3 } default { 0 } })
+
+        $script:__gtdbPackPlatKeys = $platKeys
+        $script:__gtdbPackClb = $clbCover
+        $script:__gtdbPackDesc = $lblDesc
+
+        $fillTypes = {
+            $clb = $script:__gtdbPackClb
+            if ($script:__gtdbPackIsTCP) { $clb.Items.Clear(); return }
+            if ($script:__gtdbPackIsSGDB) {
+                $clb.Items.Clear()
+                $sgdbMap = Get-SteamGridDBAssetTypeMap
+                $i = 0
+                foreach ($label in $sgdbMap.Keys) {
+                    [void]$clb.Items.Add($label)
+                    if ($label -eq "Grids" -or $label -eq "Logos") { $clb.SetItemChecked($i, $true) }
+                    $i++
+                }
+                if ($clb.Items.Count -gt 0) { $clb.SelectedIndex = 0 }
+                $rowH = 18
+                try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
+                $clb.Height = [Math]::Max($rowH + 4, [Math]::Min((4 * $rowH) + 4, 90))
+                return
+            }
+            $keys = $script:__gtdbPackPlatKeys
+            if (-not $clb -or -not $keys) { return }
+            $clb.Items.Clear()
+            $idx = $script:__gtdbPackCmb.SelectedIndex
+            if ($idx -lt 0 -or $idx -ge $keys.Count) { return }
+            if ($script:__gtdbPackIsLibretro) {
+                [void]$clb.Items.Add("Boxart")
+                $clb.SetItemChecked(0, $true)
+                $clb.SelectedIndex = 0
+            } else {
+                $types = $script:gameTdbPlatforms[$keys[$idx]].CoverTypes
+                if (-not $types) { $types = @("cover") }
+                foreach ($t in $types) { [void]$clb.Items.Add([string]$t) }
+                for ($i = 0; $i -lt $clb.Items.Count; $i++) {
+                    $t = [string]$clb.Items[$i]
+                    if ($t -eq "cover" -or $t -eq "coverHQ" -or $t -eq "coverfullHQ") {
+                        $clb.SetItemChecked($i, $true)
+                        $clb.SelectedIndex = $i
+                        break
+                    }
+                }
+                if ($clb.CheckedItems.Count -eq 0 -and $clb.Items.Count -gt 0) {
+                    $clb.SetItemChecked(0, $true)
+                    $clb.SelectedIndex = 0
+                }
+            }
+            $rowH = 18
+            try { $rowH = [Math]::Max(16, $clb.GetItemHeight(0)) } catch {}
+            $rows = [Math]::Min(4, [Math]::Max(3, $clb.Items.Count))
+            $desiredHeight = ($rows * $rowH) + 4
+            $maxHeight = $desiredHeight
+            $descLbl = $script:__gtdbPackDesc
+            if ($descLbl) { $maxHeight = $descLbl.Location.Y - $clb.Location.Y - 6 }
+            $clb.Height = [Math]::Max($rowH + 4, [Math]::Min($desiredHeight, $maxHeight))
+        }
+
+        $relayout = {
+            try {
+                $lbl = $script:__gtdbPackDesc
+                if (-not $lbl -or -not $grpSrc) { return }
+                $width = $lbl.ClientSize.Width
+                if ($width -le 0) { $width = $lbl.Width - 6 }
+                $flags = [System.Windows.Forms.TextFormatFlags]::WordBreak -bor `
+                         [System.Windows.Forms.TextFormatFlags]::TextBoxControl
+                $sz = [System.Windows.Forms.TextRenderer]::MeasureText(
+                    $lbl.Text, $lbl.Font, (New-Object System.Drawing.Size($width, 0)), $flags)
+                $needed = [Math]::Max(20, $sz.Height + 12)
+                $delta = $needed - $lbl.Height
+                if ($delta -eq 0) { return }
+                $lbl.Height = $needed
+                $grpSrc.Height = ($lbl.Location.Y + $needed + 12) - $grpSrc.Location.Y
+                if ($grpOpt) {
+                    $grpOpt.Location = New-Object System.Drawing.Point($grpOpt.Location.X, ($grpSrc.Location.Y + $grpSrc.Height + 8))
+                }
+                if ($grpOpt -and $grpOne) {
+                    $grpOne.Location = New-Object System.Drawing.Point($grpOne.Location.X, ($grpOpt.Location.Y + $grpOpt.Height + 8))
+                }
+                if ($grpOne -and $grpOut) {
+                    $grpOut.Location = New-Object System.Drawing.Point($grpOut.Location.X, ($grpOne.Location.Y + $grpOne.Height + 8))
+                }
+                if ($grpOut -and $btnStart) {
+                    $btnStart.Location = New-Object System.Drawing.Point($btnStart.Location.X, ($grpOut.Location.Y + $grpOut.Height + 10))
+                }
+                if ($btnStart -and $btnCancel) {
+                    $btnCancel.Location = New-Object System.Drawing.Point($btnCancel.Location.X, $btnStart.Location.Y)
+                }
+                if ($btnStart -and $dlg) {
+                    $dlg.ClientSize = New-Object System.Drawing.Size($dlg.ClientSize.Width, ($btnStart.Location.Y + $btnStart.Height + 14))
+                }
+            } catch { }
+        }
+
+        $updateDesc = {
+            $clb = $script:__gtdbPackClb
+            $lbl = $script:__gtdbPackDesc
+            if (-not $clb -or -not $lbl) { return }
+            if ($script:__gtdbPackIsTCP) {
+                $lbl.Text = "TheCoverProject has no API and no region filter. Click Start to scan your collection for games missing box_front art, then get a list of search links."
+                & $relayout
+                return
+            }
+            if ($script:__gtdbPackIsSGDB) {
+                if ($clb.CheckedItems.Count -eq 0) {
+                    $lbl.Text = "Check one or more SteamGridDB asset types above to see what they're for."
+                    & $relayout
+                    return
+                }
+                $sgdbMap = Get-SteamGridDBAssetTypeMap
+                $lines = New-Object System.Collections.ArrayList
+                foreach ($item in $clb.CheckedItems) {
+                    $tn = [string]$item
+                    $d = if ($sgdbMap.Contains($tn)) { $sgdbMap[$tn].Description } else { "" }
+                    [void]$lines.Add("$tn`: $d")
+                }
+                $lbl.Text = ($lines -join "`r`n")
+                & $relayout
+                return
+            }
+            if ($script:__gtdbPackIsLibretro) {
+                $lbl.Text = "Boxart: thumbnail-res cover art (PNG, max ~512px wide). Saved to box2dThumb. Check 'Upscale thumbs -> boxFront' below to auto-upscale these to box2dfront (4x, Digital Art) via Upscayl. Matched by game title, region tags ignored automatically."
+                & $relayout
+                return
+            }
+            if ($clb.CheckedItems.Count -eq 0) {
+                $lbl.Text = "Check one or more cover types above to see what they're for."
+                & $relayout
+                return
+            }
+            $lines = New-Object System.Collections.ArrayList
+            foreach ($item in $clb.CheckedItems) {
+                $tn = [string]$item
+                [void]$lines.Add("$tn`: $(Get-GameTDBCoverTypeDescription $tn)")
+            }
+            $lbl.Text = ($lines -join "`r`n")
+            & $relayout
+        }
+
+        # --- Preview computation (manual, triggered by Count button) ---
+        $computePreview = {
+            try {
+                if (-not $script:__gtdbPackPreviewLbl) { return }
+                $col = Get-Col
+                if (-not $col) {
+                    $script:__gtdbPackPreviewLbl.Text = "Preview: no collection loaded"
+                    return
+                }
+                $isLibretro = [bool]$script:__gtdbPackIsLibretro
+                $isSGDB = [bool]$script:__gtdbPackIsSGDB
+                $isTCP = [bool]$script:__gtdbPackIsTCP
+                if ($isTCP) {
+                    $script:__gtdbPackPreviewLbl.Text = "Preview: TheCoverProject has no API - click Start to build a search list."
+                    return
+                }
+                $keys = $script:__gtdbPackPlatKeys
+                $idx = $script:__gtdbPackCmb.SelectedIndex
+                if (-not $keys -or $idx -lt 0 -or $idx -ge $keys.Count) {
+                    $script:__gtdbPackPreviewLbl.Text = "Preview: pick a system first"
+                    return
+                }
+                $plat = $keys[$idx]
+                $script:__gtdbPackPreviewLbl.Text = "Preview: counting..."
+                [System.Windows.Forms.Application]::DoEvents()
+                $titleMap = Get-CollectionGameTitleMap
+                $gameIdMap = Get-CollectionGameIdMap
+                if ($isLibretro) {
+                    $mapping = Get-LibretroAssetMapping -RepoName $script:libretroPlatforms[$plat].RepoName -Folder "Named_Boxarts"
+                    $avail = $mapping.Count
+                    $inCol = 0
+                    $will = 0
+                    $have = 0
+                    $onlyMissing = [bool]$chkMissing.Checked
+                    foreach ($norm in $titleMap.Keys) {
+                        if (-not $mapping.ContainsKey($norm)) { continue }
+                        $inCol++
+                        $entry = $titleMap[$norm]
+                        if ($onlyMissing -and $entry -and $entry.PresentAssets -and $entry.PresentAssets.ContainsKey("assets.box_front_thumb")) {
+                            $have++
+                            continue
+                        }
+                        $will++
+                    }
+                    $txt = ("Available on this system: {0}  |  In your collection: {1}  |  Will download: {2}" -f $avail, $inCol, $will)
+                    if ($have -gt 0) {
+                        $txt += ("  |  Already downloaded: {0}" -f $have)
+                        if ($chkUpscale -and $chkUpscale.Checked) { $txt += " (will be upscaled)" }
+                    }
+                    $script:__gtdbPackPreviewLbl.Text = $txt
+                    return
+                }
+                if ($isSGDB) {
+                    $types = @()
+                    foreach ($item in $script:__gtdbPackClb.CheckedItems) { $types += [string]$item }
+                    $typeCount = [Math]::Max(1, $types.Count)
+                    $titleCount = $titleMap.Count
+                    $script:__gtdbPackPreviewLbl.Text = ("SteamGridDB: {0} games x {1} type(s) = up to {2} downloads" -f $titleCount, $typeCount, ($titleCount * $typeCount))
+                    return
+                }
+                # GameTDB
+                $info = $script:gameTdbPlatforms[$plat]
+                $titlesCache = $script:gameTdbTitlesCache[$plat]
+                if (-not $titlesCache -or $titlesCache.Count -eq 0) {
+                    try {
+                        $wc = New-Object System.Net.WebClient
+                        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+                        $data = $wc.DownloadString($info.TitlesUrl)
+                        $wc.Dispose()
+                        $titlesCache = @{}
+                        foreach ($line in ($data -split "`r?`n")) {
+                            if ($line -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
+                                $id = $matches[1].Trim().ToUpperInvariant()
+                                if ($info.IdFilter -eq "gamecube") {
+                                    if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
+                                } elseif ($plat -eq "wii") {
+                                    if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
+                                }
+                                $titlesCache[$id] = $matches[2].Trim()
+                            }
+                        }
+                        $script:gameTdbTitlesCache[$plat] = $titlesCache
+                    } catch {
+                        $script:__gtdbPackPreviewLbl.Text = "Could not fetch title list: $($_.Exception.Message)"
+                        return
+                    }
+                }
+                $avail = $titlesCache.Count
+                $inCol = 0
+                $will = 0
+                $onlyMissing = [bool]$chkMissing.Checked
+                foreach ($sid in $gameIdMap.Keys) {
+                    $key = $sid.ToUpperInvariant()
+                    if (-not $titlesCache.ContainsKey($key)) { continue }
+                    $inCol++
+                    $entry = $gameIdMap[$sid]
+                    if ($onlyMissing -and $entry -and $entry.PresentAssets -and $entry.PresentAssets.ContainsKey("assets.box_front")) {
+                        continue
+                    }
+                    $will++
+                }
+                $script:__gtdbPackPreviewLbl.Text = ("Available on this system: {0}  |  In your collection: {1}  |  Will download: {2}" -f $avail, $inCol, $will)
+            } catch {
+                if ($script:__gtdbPackPreviewLbl) {
+                    $script:__gtdbPackPreviewLbl.Text = "Preview error: $($_.Exception.Message)"
+                }
+            }
+        }
+
+        $switchSource = {
+            $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
+            $isTCP = ($cmbSrc.SelectedIndex -eq 2)
+            $isSGDB = ($cmbSrc.SelectedIndex -eq 3)
+            $script:__gtdbPackIsLibretro = $isLibretro
+            $script:__gtdbPackIsTCP = $isTCP
+            $script:__gtdbPackIsSGDB = $isSGDB
+            $cmbSys.Items.Clear()
+            $cmbReg.Items.Clear()
+            if ($isTCP) {
+                $lblSys.Visible = $false
+                $cmbSys.Visible = $false
+                $lblReg.Visible = $false
+                $cmbReg.Visible = $false
+                $cmbSrc.Size = New-Object System.Drawing.Size(390, 24)
+                [void]$cmbSys.Items.Add("(not used for TheCoverProject)")
+                $cmbSys.SelectedIndex = 0
+                $cmbSys.Enabled = $false
+                [void]$cmbReg.Items.Add("(not filterable - see results)")
+                $cmbReg.SelectedIndex = 0
+                $cmbReg.Enabled = $false
+                $clbCover.Enabled = $false
+                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
+                if ($chkUpscale) { $chkUpscale.Visible = $false }
+                if ($chkCollection) { $chkCollection.Visible = $false }
+                if ($chkCollectionTitle) { $chkCollectionTitle.Visible = $false }
+                if ($script:__gtdbPackDesc) {
+                    $script:__gtdbPackDesc.Text = "TheCoverProject has no API and no region filter. Click Start to scan your collection for games missing box_front art, then get a list of search links."
+                    & $relayout
+                }
+            } elseif ($isLibretro) {
+                $lblSys.Visible = $true
+                $cmbSys.Visible = $true
+                $lblReg.Visible = $true
+                $cmbReg.Visible = $true
+                $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
+                $cmbSys.Enabled = $true
+                $script:__gtdbPackPlatKeys = $libretroPlatKeys
+                foreach ($k in $libretroPlatKeys) { [void]$cmbSys.Items.Add($script:libretroPlatforms[$k].Label) }
+                foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
+                $cmbReg.SelectedItem = "US"
+                $cmbReg.Enabled = $false
+                $lblReg.ForeColor = $script:theme.textDim
+                $clbCover.Enabled = $false
+                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
+                if ($chkUpscale) { $chkUpscale.Visible = $true }
+                if ($chkFallback) { $chkFallback.Visible = $true }
+                if ($chkCollection) { $chkCollection.Visible = $false }
+                if ($chkCollectionTitle) { $chkCollectionTitle.Visible = $true }
+            } elseif ($isSGDB) {
+                $lblSys.Visible = $false
+                $cmbSys.Visible = $false
+                $lblReg.Visible = $false
+                $cmbReg.Visible = $false
+                $cmbSrc.Size = New-Object System.Drawing.Size(390, 24)
+                [void]$cmbSys.Items.Add("(not used for SteamGridDB)")
+                $cmbSys.SelectedIndex = 0
+                $cmbSys.Enabled = $false
+                [void]$cmbReg.Items.Add("(not used for SteamGridDB)")
+                $cmbReg.SelectedIndex = 0
+                $cmbReg.Enabled = $false
+                $clbCover.Enabled = $true
+                if ($chkBoxFull) { $chkBoxFull.Visible = $false }
+                if ($chkUpscale) { $chkUpscale.Visible = $false }
+                if ($chkFallback) { $chkFallback.Visible = $false }
+                if ($chkCollection) { $chkCollection.Visible = $false }
+                if ($chkCollectionTitle) { $chkCollectionTitle.Visible = $true }
+                & $fillTypes
+                & $updateDesc
+            } else {
+                $lblSys.Visible = $true
+                $cmbSys.Visible = $true
+                $lblReg.Visible = $true
+                $cmbReg.Visible = $true
+                $cmbSrc.Size = New-Object System.Drawing.Size(78, 24)
+                $cmbSys.Enabled = $true
+                $script:__gtdbPackPlatKeys = $gtdbPlatKeys
+                foreach ($k in $gtdbPlatKeys) { [void]$cmbSys.Items.Add($script:gameTdbPlatforms[$k].Label) }
+                foreach ($r in $script:gameTdbRegions) { [void]$cmbReg.Items.Add($r) }
+                $cmbReg.SelectedItem = "US"
+                $cmbReg.Enabled = $true
+                $lblReg.ForeColor = $script:theme.text
+                $clbCover.Enabled = $true
+                if ($chkBoxFull) { $chkBoxFull.Visible = $true }
+                if ($chkUpscale) { $chkUpscale.Visible = $false }
+                if ($chkFallback) { $chkFallback.Visible = $true }
+                if ($chkCollection) { $chkCollection.Visible = $true }
+                if ($chkCollectionTitle) { $chkCollectionTitle.Visible = $false }
+            }
+            if ($cmbSys.Items.Count -gt 0) { $cmbSys.SelectedIndex = 0 }
+            if ($script:__gtdbPackPreviewLbl) {
+                $script:__gtdbPackPreviewLbl.Text = "Preview: click Count to fetch numbers"
+            }
+        }
+
+        $script:__gtdbPackCmb = $cmbSys
+        $script:__gtdbPackIsLibretro = $false
+        $script:__gtdbPackIsSGDB = $false
+        $script:__gtdbPackIsTCP = $false
+        $cmbSrc.Add_SelectedIndexChanged({
+            try {
+                & $switchSource
+                & $script:__gtdbPackFill
+                & $script:__gtdbPackUpdateDesc
+            } catch {}
+        })
+        $cmbSys.Add_SelectedIndexChanged({
+            try {
+                & $script:__gtdbPackFill
+                & $script:__gtdbPackUpdateDesc
+                if ($script:__gtdbPackPreviewLbl) {
+                    $script:__gtdbPackPreviewLbl.Text = "Preview: click Count to fetch numbers"
+                }
+            } catch {}
+        })
+        $clbCover.Add_SelectedIndexChanged({
+            try { & $script:__gtdbPackUpdateDesc } catch {}
+        })
+        $clbCover.Add_ItemCheck({
+            param($sender, $e)
+            try {
+                $sender.BeginInvoke([System.Action]{
+                    try { & $script:__gtdbPackUpdateDesc } catch {}
+                }) | Out-Null
+            } catch {}
+        })
+        $script:__gtdbPackFill = $fillTypes
+        $script:__gtdbPackUpdateDesc = $updateDesc
+        $script:__gtdbPackPreview = $computePreview
+
+        # ========== Options ==========
+        $grpOpt = New-Object System.Windows.Forms.GroupBox
+        $grpOpt.Text = " Options "
+        $grpOpt.Location = New-Object System.Drawing.Point($secX, 254)
+        $grpOpt.Size = New-Object System.Drawing.Size($secW, 200)
+        $grpOpt.ForeColor = $script:theme.text
+        $grpOpt.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpOpt.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpOpt)
+
+        $colName = "(none selected)"
+        try {
+            $selCol = Get-Col
+            if ($selCol -and $selCol.name) { $colName = [string]$selCol.name }
+            elseif ($script:collectionList -and $script:collectionList.SelectedItem) {
+                $colName = [string]$script:collectionList.SelectedItem
+            }
+        } catch {}
+
+        $lblCol = New-Object System.Windows.Forms.Label
+        $lblCol.Text = "Selected collection: $colName"
+        $lblCol.Location = New-Object System.Drawing.Point(12, 18)
+        $lblCol.Size = New-Object System.Drawing.Size(430, 16)
+        $lblCol.ForeColor = $script:theme.accent
+        $grpOpt.Controls.Add($lblCol)
+
+        $chkCollection = New-Object System.Windows.Forms.CheckBox
+        $chkCollection.Text = "Current collection only (GameTDB: matches by game_id)"
+        $chkCollection.Location = New-Object System.Drawing.Point(12, 36)
+        $chkCollection.Size = New-Object System.Drawing.Size(430, 18)
+        $chkCollection.ForeColor = $script:theme.text
+        $chkCollection.BackColor = $script:theme.background
+        $chkCollection.Checked = $true
+        $chkCollection.Visible = ($PreselectSource -notin @("libretro", "tcp", "steamgriddb"))
+        $grpOpt.Controls.Add($chkCollection)
+
+        $chkCollectionTitle = New-Object System.Windows.Forms.CheckBox
+        $chkCollectionTitle.Text = "Current collection only (matches by game title - no game_id needed)"
+        $chkCollectionTitle.Location = New-Object System.Drawing.Point(12, 36)
+        $chkCollectionTitle.Size = New-Object System.Drawing.Size(430, 18)
+        $chkCollectionTitle.ForeColor = $script:theme.text
+        $chkCollectionTitle.BackColor = $script:theme.background
+        $chkCollectionTitle.Checked = $true
+        $chkCollectionTitle.Visible = ($PreselectSource -in @("libretro", "steamgriddb"))
+        $grpOpt.Controls.Add($chkCollectionTitle)
+
+        $chkMissing = New-Object System.Windows.Forms.CheckBox
+        $chkMissing.Text = "Only missing art"
+        $chkMissing.Location = New-Object System.Drawing.Point(12, 56)
+        $chkMissing.Size = New-Object System.Drawing.Size(200, 18)
+        $chkMissing.ForeColor = $script:theme.text
+        $chkMissing.BackColor = $script:theme.background
+        $chkMissing.Checked = $true
+        $grpOpt.Controls.Add($chkMissing)
+
+        $chkFallback = New-Object System.Windows.Forms.CheckBox
+        $chkFallback.Text = "Region fallback"
+        $chkFallback.Location = New-Object System.Drawing.Point(220, 56)
+        $chkFallback.Size = New-Object System.Drawing.Size(200, 18)
+        $chkFallback.ForeColor = $script:theme.text
+        $chkFallback.BackColor = $script:theme.background
+        $chkFallback.Checked = $true
+        $grpOpt.Controls.Add($chkFallback)
+
+        $chkMedia = New-Object System.Windows.Forms.CheckBox
+        $chkMedia.Text = "Save into media folders"
+        $chkMedia.Location = New-Object System.Drawing.Point(12, 76)
+        $chkMedia.Size = New-Object System.Drawing.Size(200, 18)
+        $chkMedia.ForeColor = $script:theme.text
+        $chkMedia.BackColor = $script:theme.background
+        $chkMedia.Checked = $true
+        $grpOpt.Controls.Add($chkMedia)
+
+        $chkWrite = New-Object System.Windows.Forms.CheckBox
+        $chkWrite.Text = "Write asset paths into metadata"
+        $chkWrite.Location = New-Object System.Drawing.Point(220, 76)
+        $chkWrite.Size = New-Object System.Drawing.Size(220, 18)
+        $chkWrite.ForeColor = $script:theme.text
+        $chkWrite.BackColor = $script:theme.background
+        $chkWrite.Checked = $true
+        $grpOpt.Controls.Add($chkWrite)
+
+        $chkBoxFull = New-Object System.Windows.Forms.CheckBox
+        $chkBoxFull.Text = "Full covers -> boxFull (Unicovers / theme)"
+        $chkBoxFull.Location = New-Object System.Drawing.Point(12, 96)
+        $chkBoxFull.Size = New-Object System.Drawing.Size(430, 18)
+        $chkBoxFull.ForeColor = $script:theme.text
+        $chkBoxFull.BackColor = $script:theme.background
+        $chkBoxFull.Checked = $true
+        $grpOpt.Controls.Add($chkBoxFull)
+
+        $chkUpscale = New-Object System.Windows.Forms.CheckBox
+        $chkUpscale.Text = "Upscale thumbs -> boxFront (Upscayl, 4x Digital Art)"
+        $chkUpscale.Location = New-Object System.Drawing.Point(12, 96)
+        $chkUpscale.Size = New-Object System.Drawing.Size(430, 18)
+        $chkUpscale.ForeColor = $script:theme.text
+        $chkUpscale.BackColor = $script:theme.background
+        $chkUpscale.Checked = $true
+        $chkUpscale.Visible = $false
+        $grpOpt.Controls.Add($chkUpscale)
+
+        $chkRename = New-Object System.Windows.Forms.CheckBox
+        $chkRename.Text = "Rename to game titles"
+        $chkRename.Location = New-Object System.Drawing.Point(12, 116)
+        $chkRename.Size = New-Object System.Drawing.Size(200, 18)
+        $chkRename.ForeColor = $script:theme.text
+        $chkRename.BackColor = $script:theme.background
+        $chkRename.Checked = $true
+        $grpOpt.Controls.Add($chkRename)
+
+        $chkPng = New-Object System.Windows.Forms.CheckBox
+        $chkPng.Text = "Convert to PNG"
+        $chkPng.Location = New-Object System.Drawing.Point(220, 116)
+        $chkPng.Size = New-Object System.Drawing.Size(160, 18)
+        $chkPng.ForeColor = $script:theme.text
+        $chkPng.BackColor = $script:theme.background
+        $chkPng.Checked = $true
+        $grpOpt.Controls.Add($chkPng)
+
+        # === Preview label + Count button ===
+        $lblPreview = New-Object System.Windows.Forms.Label
+        $lblPreview.Text = "Preview: click Count to fetch numbers"
+        $lblPreview.Location = New-Object System.Drawing.Point(12, 140)
+        $lblPreview.Size = New-Object System.Drawing.Size(330, 50)
+        $lblPreview.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+        $lblPreview.ForeColor = $script:theme.warning
+        $grpOpt.Controls.Add($lblPreview)
+        $script:__gtdbPackPreviewLbl = $lblPreview
+
+        $btnCount = Create-Button "Count" 350 140 90 26
+        $btnCount.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+        $btnCount.Add_Click({
+            try { & $script:__gtdbPackPreview } catch {
+                if ($script:__gtdbPackPreviewLbl) {
+                    $script:__gtdbPackPreviewLbl.Text = "Count error: $($_.Exception.Message)"
+                }
+            }
+        })
+        $grpOpt.Controls.Add($btnCount)
+
+        $chkCollection.Add_CheckedChanged({
+            param($sender, $e)
+            if (-not $sender.Checked) {
+                $chkMedia.Checked = $false
+                $chkWrite.Checked = $false
+            }
+        })
+        $chkCollectionTitle.Add_CheckedChanged({
+            param($sender, $e)
+            if (-not $sender.Checked) {
+                $chkMedia.Checked = $false
+                $chkWrite.Checked = $false
+            }
+        })
+
+        # ========== Single game ==========
+        $grpOne = New-Object System.Windows.Forms.GroupBox
+        $grpOne.Text = " Single game "
+        $grpOne.Location = New-Object System.Drawing.Point($secX, 462)
+        $grpOne.Size = New-Object System.Drawing.Size($secW, 96)
+        $grpOne.ForeColor = $script:theme.text
+        $grpOne.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpOne.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpOne)
+
+        $chkOneGame = New-Object System.Windows.Forms.CheckBox
+        $chkOneGame.Text = "One game only"
+        $chkOneGame.Location = New-Object System.Drawing.Point(12, 20)
+        $chkOneGame.Size = New-Object System.Drawing.Size(420, 18)
+        $chkOneGame.ForeColor = $script:theme.text
+        $chkOneGame.BackColor = $script:theme.background
+        $chkOneGame.Checked = $false
+        $grpOne.Controls.Add($chkOneGame)
+
+        $lblGameSearch = New-Object System.Windows.Forms.Label
+        $lblGameSearch.Text = "Search"
+        $lblGameSearch.Location = New-Object System.Drawing.Point(12, 44)
+        $lblGameSearch.Size = New-Object System.Drawing.Size(48, 18)
+        $lblGameSearch.ForeColor = $script:theme.textDim
+        $grpOne.Controls.Add($lblGameSearch)
+
+        $txtGameSearch = New-Object System.Windows.Forms.TextBox
+        $txtGameSearch.Location = New-Object System.Drawing.Point(62, 42)
+        $txtGameSearch.Size = New-Object System.Drawing.Size(380, 22)
+        $txtGameSearch.BackColor = $script:theme.editor
+        $txtGameSearch.ForeColor = $script:theme.text
+        $txtGameSearch.BorderStyle = "FixedSingle"
+        $txtGameSearch.Enabled = $false
+        $grpOne.Controls.Add($txtGameSearch)
+
+        $cmbOneGame = New-Object System.Windows.Forms.ComboBox
+        $cmbOneGame.Location = New-Object System.Drawing.Point(12, 68)
+        $cmbOneGame.Size = New-Object System.Drawing.Size(430, 24)
+        $cmbOneGame.DropDownStyle = "DropDownList"
+        $cmbOneGame.BackColor = $script:theme.editor
+        $cmbOneGame.ForeColor = $script:theme.text
+        $cmbOneGame.Enabled = $false
+        $grpOne.Controls.Add($cmbOneGame)
+
+        $script:__coverPackGameList = New-Object System.Collections.ArrayList
+        $script:__coverPackGameItems = @()
+        try {
+            $colForGames = Get-Col
+            if ($colForGames -and $colForGames.metadataPath -and (Test-Path $colForGames.metadataPath)) {
+                $rawG = Get-Content $colForGames.metadataPath -Raw -ErrorAction SilentlyContinue
+                if ($rawG) {
+                    foreach ($gb in ($rawG -split '(?=game: )' | Where-Object { $_ -match '^game: ' })) {
+                        $gt = $null; $gid = $null
+                        if ($gb -match '(?m)^game:\s*(.+)$') { $gt = $matches[1].Trim() }
+                        if ($gb -match '(?m)^game_id:\s*(.+)$') { $gid = $matches[1].Trim() }
+                        if (-not $gt) { continue }
+                        $disp = if ($gid) { "{0}  [{1}]" -f $gt, $gid } else { $gt }
+                        [void]$script:__coverPackGameList.Add($disp)
+                        $script:__coverPackGameItems += [PSCustomObject]@{ Display = $disp; Title = $gt; GameId = $gid }
+                    }
+                }
+            }
+        } catch {}
+        foreach ($d in $script:__coverPackGameList) { [void]$cmbOneGame.Items.Add([string]$d) }
+        if ($cmbOneGame.Items.Count -gt 0) { $cmbOneGame.SelectedIndex = 0 }
+
+        $filterOneGameList = {
+            $filter = ""
+            try { $filter = $txtGameSearch.Text.Trim().ToLowerInvariant() } catch {}
+            $cmbOneGame.BeginUpdate()
+            $cmbOneGame.Items.Clear()
+            foreach ($item in $script:__coverPackGameItems) {
+                if ([string]::IsNullOrWhiteSpace($filter) -or $item.Display.ToLowerInvariant().Contains($filter)) {
+                    [void]$cmbOneGame.Items.Add([string]$item.Display)
+                }
+            }
+            if ($cmbOneGame.Items.Count -gt 0) { $cmbOneGame.SelectedIndex = 0 }
+            $cmbOneGame.EndUpdate()
+        }
+        $txtGameSearch.Add_TextChanged({ & $filterOneGameList })
+
+        $chkOneGame.Add_CheckedChanged({
+            $on = $chkOneGame.Checked
+            $txtGameSearch.Enabled = $on
+            $cmbOneGame.Enabled = $on
+            if ($on) {
+                $chkCollection.Checked = $true
+                $chkCollectionTitle.Checked = $true
+            }
+        })
+
+        # ========== Output ==========
+        $grpOut = New-Object System.Windows.Forms.GroupBox
+        $grpOut.Text = " Output folder "
+        $grpOut.Location = New-Object System.Drawing.Point($secX, 566)
+        $grpOut.Size = New-Object System.Drawing.Size($secW, 68)
+        $grpOut.ForeColor = $script:theme.text
+        $grpOut.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+        $grpOut.BackColor = $script:theme.background
+        $dlg.Controls.Add($grpOut)
+
+        $lblOutHint = New-Object System.Windows.Forms.Label
+        $lblOutHint.Text = "Used only when not saving into media folders"
+        $lblOutHint.Location = New-Object System.Drawing.Point(12, 20)
+        $lblOutHint.Size = New-Object System.Drawing.Size(420, 14)
+        $lblOutHint.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+        $lblOutHint.ForeColor = $script:theme.textDim
+        $grpOut.Controls.Add($lblOutHint)
+
+        $txtOut = New-Object System.Windows.Forms.TextBox
+        $txtOut.Location = New-Object System.Drawing.Point(12, 38)
+        $txtOut.Size = New-Object System.Drawing.Size(390, 22)
+        $txtOut.BackColor = $script:theme.editor
+        $txtOut.ForeColor = $script:theme.text
+        $txtOut.BorderStyle = "FixedSingle"
+        $c = Get-Col
+        if ($c -and $c.mediaPath) {
+            $txtOut.Text = [string]$c.mediaPath
+        } else {
+            $txtOut.Text = [string](Join-Path $env:USERPROFILE "Downloads\GameTDB_Covers")
+        }
+        $grpOut.Controls.Add($txtOut)
+
+        $btnBrowse = Create-Button "..." 408 36 36 $btnH
+        $btnBrowse.Add_Click({
+            $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+            $fd.Description = "Select output folder"
+            if ($fd.ShowDialog() -eq "OK") { $txtOut.Text = $fd.SelectedPath }
+        })
+        $grpOut.Controls.Add($btnBrowse)
+
+        # ========== Buttons ==========
+        $btnStart = Create-Button "Start" 155 644 100 $btnH
+        $btnStart.Add_Click({
+            try {
+                if ($cmbSrc.SelectedIndex -eq 2) {
+                    $dlg.Tag = @{ Source = "tcp" }
+                    $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                    $dlg.Close()
+                    return
+                }
+                if ($cmbSrc.SelectedIndex -eq 3) {
+                    $types = @()
+                    foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
+                    if ($types.Count -eq 0) {
+                        [System.Windows.Forms.MessageBox]::Show("Select at least one asset type.", "SteamGridDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $outBase = $txtOut.Text.Trim()
+                    $useMedia = [bool]$chkMedia.Checked
+                    $oneGameOnly = [bool]$chkOneGame.Checked
+                    $oneGameTitle = $null
+                    if ($oneGameOnly) {
+                        if ($cmbOneGame.SelectedIndex -lt 0 -or $cmbOneGame.Items.Count -eq 0) {
+                            [System.Windows.Forms.MessageBox]::Show("Select a game.", "SteamGridDB", "OK", "Warning") | Out-Null
+                            return
+                        }
+                        $dispSel = [string]$cmbOneGame.SelectedItem
+                        $found = $script:__coverPackGameItems | Where-Object { $_.Display -eq $dispSel } | Select-Object -First 1
+                        $oneGameTitle = if ($found) { [string]$found.Title } else { $dispSel }
+                    }
+                    $col = Get-Col
+                    if (-not $col) {
+                        [System.Windows.Forms.MessageBox]::Show("Select a collection first.", "SteamGridDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $dlg.Tag = @{
+                        Source        = "steamgriddb"
+                        AssetTypes    = $types
+                        OutBase       = $outBase
+                        OnlyMissing   = [bool]$chkMissing.Checked
+                        SaveIntoMedia = $useMedia
+                        WriteAssets   = [bool]$chkWrite.Checked
+                        RenameToTitle = [bool]$chkRename.Checked
+                        ConvertToPng  = [bool]$chkPng.Checked
+                        OneGameOnly   = $oneGameOnly
+                        OneGameTitle  = $oneGameTitle
+                        MatchByTitle  = [bool]$chkCollectionTitle.Checked
+                    }
+                    $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                    $dlg.Close()
+                    return
+                }
+                $idx = $cmbSys.SelectedIndex
+                $activeKeys = $script:__gtdbPackPlatKeys
+                if (-not $activeKeys -or $idx -lt 0 -or $idx -ge $activeKeys.Count) { return }
+                $isLibretro = ($cmbSrc.SelectedIndex -eq 1)
+                $outBase = $txtOut.Text.Trim()
+                $useMedia = [bool]$chkMedia.Checked
+                $collectionOnly = if ($isLibretro) { [bool]$chkCollectionTitle.Checked } else { [bool]$chkCollection.Checked }
+                $writeAssets = [bool]$chkWrite.Checked
+                $oneGameOnly = [bool]$chkOneGame.Checked
+                $oneGameTitle = $null
+                $oneGameId = $null
+                if ($oneGameOnly) {
+                    if ($cmbOneGame.SelectedIndex -lt 0 -or $cmbOneGame.Items.Count -eq 0) {
+                        [System.Windows.Forms.MessageBox]::Show("Select a game.", "Cover Pack", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $dispSel = [string]$cmbOneGame.SelectedItem
+                    $found = $script:__coverPackGameItems | Where-Object { $_.Display -eq $dispSel } | Select-Object -First 1
+                    if ($found) {
+                        $oneGameTitle = [string]$found.Title
+                        if ($found.GameId) { $oneGameId = [string]$found.GameId }
+                    } else {
+                        $oneGameTitle = $dispSel
+                    }
+                    $collectionOnly = $true
+                }
+                if ($writeAssets -or $useMedia -or $collectionOnly -or $oneGameOnly) {
+                    $col = Get-Col
+                    if (-not $col) {
+                        [System.Windows.Forms.MessageBox]::Show("Select a collection first.", "Cover Pack", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    if ($useMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
+                        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "Cover Pack", "OK", "Warning") | Out-Null
+                        return
+                    }
+                }
+                if ($isLibretro) {
+                    $dlg.Tag = @{
+                        Source         = "libretro"
+                        Platform       = $activeKeys[$idx]
+                        OutBase        = $outBase
+                        CollectionOnly = $collectionOnly
+                        OnlyMissing    = [bool]$chkMissing.Checked
+                        SaveIntoMedia  = $useMedia
+                        WriteAssets    = $writeAssets
+                        UseBoxFull     = [bool]$chkBoxFull.Checked
+                        RenameToTitle  = [bool]$chkRename.Checked
+                        ConvertToPng   = [bool]$chkPng.Checked
+                        OneGameOnly    = $oneGameOnly
+                        OneGameTitle   = $oneGameTitle
+                        OneGameId      = $oneGameId
+                        UpscaleAfter   = [bool]$chkUpscale.Checked
+                    }
+                } else {
+                    $types = @()
+                    foreach ($item in $clbCover.CheckedItems) { $types += [string]$item }
+                    if ($types.Count -eq 0) {
+                        [System.Windows.Forms.MessageBox]::Show("Select at least one cover type.", "GameTDB", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $region = [string]$cmbReg.SelectedItem
+                    if ([string]::IsNullOrWhiteSpace($region)) { $region = "US" }
+                    if ($oneGameOnly -and [string]::IsNullOrWhiteSpace($oneGameId)) {
+                        [System.Windows.Forms.MessageBox]::Show(
+                            "This game has no game_id. GameTDB requires a game_id. Use Libretro (title match) instead.",
+                            "Cover Pack", "OK", "Warning") | Out-Null
+                        return
+                    }
+                    $dlg.Tag = @{
+                        Source         = "gametdb"
+                        Platform       = $activeKeys[$idx]
+                        CoverTypes     = $types
+                        Region         = $region
+                        OutBase        = $outBase
+                        CollectionOnly = $collectionOnly
+                        OnlyMissing    = [bool]$chkMissing.Checked
+                        RegionFallback = [bool]$chkFallback.Checked
+                        SaveIntoMedia  = $useMedia
+                        WriteAssets    = $writeAssets
+                        UseBoxFull     = [bool]$chkBoxFull.Checked
+                        RenameToTitle  = [bool]$chkRename.Checked
+                        ConvertToPng   = [bool]$chkPng.Checked
+                        OneGameOnly    = $oneGameOnly
+                        OneGameTitle   = $oneGameTitle
+                        OneGameId      = $oneGameId
+                    }
+                }
+                $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+                $dlg.Close()
+            } catch {
+                [System.Windows.Forms.MessageBox]::Show("Error: $($_.Exception.Message)", "Cover Pack", "OK", "Error") | Out-Null
+            }
+        })
+        $dlg.Controls.Add($btnStart)
+
+        $btnCancel = Create-Button "Cancel" 267 644 $btnW $btnH
+        $btnCancel.Add_Click({ $dlg.Close() })
+        $dlg.Controls.Add($btnCancel)
+
+        $dlg.ClientSize = New-Object System.Drawing.Size(484, 686)
+
+        # ========== PRESET RUN (2.5.48) ==========
+        # Runs only after EVERY control exists (both collection checkboxes,
+        # Options, Single game, Output, buttons). Before 2.5.48 this ran before
+        # the Options group was built, so $chkCollection / $chkCollectionTitle
+        # were $null and the Libretro visibility toggle silently did nothing.
+        if ($PreselectSource -in @("libretro", "tcp", "steamgriddb")) {
+            & $switchSource
+            & $fillTypes
+            & $updateDesc
+        } else {
+            $selIdx = 0
+            for ($i = 0; $i -lt $platKeys.Count; $i++) {
+                if ($platKeys[$i] -eq $script:lastGameTdbPlatform) { $selIdx = $i; break }
+            }
+            if ($cmbSys.Items.Count -gt 0) {
+                $cmbSys.SelectedIndex = $selIdx
+                if ($clbCover.Items.Count -eq 0) {
+                    & $fillTypes
+                    & $updateDesc
+                }
+            }
+        }
+
+        $result = $dlg.ShowDialog($script:mainForm)
+        if ($result -ne [System.Windows.Forms.DialogResult]::OK) { return }
+        $opts = $dlg.Tag
+        if (-not $opts) { return }
+
+        if ($opts.Source -eq "tcp") {
+            Show-TCPAssistDialog
+        } elseif ($opts.Source -eq "steamgriddb") {
+            Start-SteamGridDBCoverPackDownload `
+                -AssetTypes $opts.AssetTypes `
+                -OutBase $opts.OutBase `
+                -OnlyMissing:$opts.OnlyMissing `
+                -SaveIntoMedia:$opts.SaveIntoMedia `
+                -WriteAssets:$opts.WriteAssets `
+                -RenameToTitle:$opts.RenameToTitle `
+                -ConvertToPng:$opts.ConvertToPng `
+                -OneGameOnly:$opts.OneGameOnly `
+                -OneGameTitle $opts.OneGameTitle `
+                -MatchByTitle:$opts.MatchByTitle
+        } elseif ($opts.Source -eq "libretro") {
+            Start-LibretroCoverPackDownload `
+                -Platform $opts.Platform `
+                -OutBase $opts.OutBase `
+                -CollectionOnly:$opts.CollectionOnly `
+                -OnlyMissing:$opts.OnlyMissing `
+                -SaveIntoMedia:$opts.SaveIntoMedia `
+                -WriteAssets:$opts.WriteAssets `
+                -UseBoxFull:$opts.UseBoxFull `
+                -RenameToTitle:$opts.RenameToTitle `
+                -ConvertToPng:$opts.ConvertToPng `
+                -OneGameOnly:$opts.OneGameOnly `
+                -OneGameTitle $opts.OneGameTitle `
+                -UpscaleAfterDownload:$opts.UpscaleAfter
+        } else {
+            Start-GameTDBCoverPackDownload `
+                -Platform $opts.Platform `
+                -CoverTypes $opts.CoverTypes `
+                -Region $opts.Region `
+                -OutBase $opts.OutBase `
+                -CollectionOnly:$opts.CollectionOnly `
+                -OnlyMissing:$opts.OnlyMissing `
+                -RegionFallback:$opts.RegionFallback `
+                -SaveIntoMedia:$opts.SaveIntoMedia `
+                -WriteAssets:$opts.WriteAssets `
+                -UseBoxFull:$opts.UseBoxFull `
+                -RenameToTitle:$opts.RenameToTitle `
+                -ConvertToPng:$opts.ConvertToPng `
+                -OneGameOnly:$opts.OneGameOnly `
+                -OneGameId $opts.OneGameId `
+                -OneGameTitle $opts.OneGameTitle
+        }
+    } catch {
+        $msg = "Cover Pack dialog error: $($_.Exception.Message)"
+        try { Log-Message $msg "Red" } catch {}
+        try {
+            [System.Windows.Forms.MessageBox]::Show($msg, "Cover Pack", "OK", "Error") | Out-Null
+        } catch {}
+    }
+}
+
+# ============================================================================
+# TCP ASSIST (TheCoverProject)
+# ============================================================================
+function Get-TCPNoCoverStorePath {
+    param($Collection)
+    if (-not $Collection -or -not $Collection.metadataPath) { return $null }
+    $dir = Split-Path $Collection.metadataPath -Parent
+    if (-not $dir) { return $null }
+    return (Join-Path $dir "tcp_no_cover_marks.json")
+}
+
+function Get-TCPNoCoverMap {
+    param($Collection)
+    $map = @{}
+    $path = Get-TCPNoCoverStorePath -Collection $Collection
+    if (-not $path -or -not (Test-Path $path)) { return $map }
+    try {
+        $data = Get-Content $path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($data -is [System.Management.Automation.PSCustomObject]) {
+            foreach ($p in $data.PSObject.Properties) {
+                if ($p.Name) { $map[$p.Name] = [string]$p.Value }
+            }
+        }
+    } catch {}
+    return $map
+}
+
+function Save-TCPNoCoverMap {
+    param($Collection, [hashtable]$Map)
+    $path = Get-TCPNoCoverStorePath -Collection $Collection
+    if (-not $path) { return }
+    try {
+        ($Map | ConvertTo-Json -Depth 2) | Set-Content -Path $path -Encoding UTF8
+    } catch {
+        Log-Message "TheCoverProject: couldn't save no-cover list: $_" "Yellow"
+    }
+}
+
+function Format-TCPNoCoverStamp {
+    param([string]$Iso)
+    if (-not $Iso) { return "unknown" }
+    try {
+        $dt = [datetime]::Parse($Iso, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)
+        return "{0:h:mm tt} {0:M/d/yyyy}" -f $dt
+    } catch {
+        return "unknown"
+    }
+}
+
+function Format-TCPSearchTitle {
+    param([string]$Title)
+    if ([string]::IsNullOrWhiteSpace($Title)) { return $Title }
+    $t = $Title.Trim()
+    while ($t -match '\s*\([^()]*\)\s*$') {
+        $t = [regex]::Replace($t, '\s*\([^()]*\)\s*$', '')
+    }
+    $parts = [regex]::Split($t, '\s*[-:]\s*')
+    $fixedParts = foreach ($p in $parts) {
+        $p = $p.Trim()
+        if ($p -match '^(?<base>.+),\s*(?<article>The|A|An)$') {
+            "$($Matches['article']) $($Matches['base'])".Trim()
+        } else {
+            $p
+        }
+    }
+    $result = ($fixedParts -join ' ').Trim()
+    $result = [regex]::Replace($result, '\s{2,}', ' ')
+    return $result
+}
+
+function Show-TCPFrontBackCropDialog {
+    param([string]$ImagePath, $Collection, [string]$Title, [string]$Norm)
+    if (-not (Test-Path -LiteralPath $ImagePath) -or -not $Collection -or -not $Norm) { return $false }
+
+    $srcBmp = $null
+    try {
+        $fs = [System.IO.File]::Open($ImagePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::Read)
+        try {
+            $img = [System.Drawing.Image]::FromStream($fs)
+            $srcBmp = New-Object System.Drawing.Bitmap $img
+            $img.Dispose()
+        } finally { $fs.Close(); $fs.Dispose() }
+    } catch {
+        Log-Message "Couldn't open '$ImagePath' for cropping: $_" "Red"
+        return $false
+    }
+    if (-not $srcBmp) { return $false }
+
+    $imgW = $srcBmp.Width
+    $imgH = $srcBmp.Height
+
+    $maxW = 860; $maxH = 460
+    $scale = [Math]::Min([double]$maxW / $imgW, [double]$maxH / $imgH)
+    if ($scale -gt 1) { $scale = 1 }
+    $dispW = [Math]::Max(200, [int]([Math]::Round($imgW * $scale)))
+    $dispH = [Math]::Max(120, [int]([Math]::Round($imgH * $scale)))
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Crop Front / Back - $Title"
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.BackColor = $script:theme.panel
+    $dlg.ForeColor = $script:theme.text
+    $dlg.ClientSize = New-Object System.Drawing.Size(($dispW + 40), ($dispH + 132))
+
+    $lblHint = New-Object System.Windows.Forms.Label
+    $lblHint.Text = "Drag the two lines onto the spine edges - shaded band is the spine. Left saves as Box Back, right as Box Front (plus a Box Thumb made from it)."
+    $lblHint.Location = New-Object System.Drawing.Point(20, 8)
+    $lblHint.Size = New-Object System.Drawing.Size($dispW, 32)
+    $lblHint.ForeColor = $script:theme.textDim
+    $dlg.Controls.Add($lblHint)
+
+    $panel = New-Object System.Windows.Forms.Panel
+    $panel.Location = New-Object System.Drawing.Point(20, 44)
+    $panel.Size = New-Object System.Drawing.Size($dispW, $dispH)
+    $panel.BackColor = [System.Drawing.Color]::Black
+    $dlg.Controls.Add($panel)
+    try {
+        $dbProp = [System.Windows.Forms.Control].GetProperty("DoubleBuffered", [System.Reflection.BindingFlags]"Instance,NonPublic")
+        $dbProp.SetValue($panel, $true, $null)
+    } catch {}
+
+    $script:__cropLine1 = [int]([Math]::Round($dispW * 0.45))
+    $script:__cropLine2 = [int]([Math]::Round($dispW * 0.55))
+    $script:__cropDrag = 0
+
+    $panel.Add_Paint({
+        param($s, $e)
+        $g = $e.Graphics
+        $g.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+        $g.DrawImage($srcBmp, 0, 0, $dispW, $dispH)
+
+        $spineBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(90, 255, 200, 0))
+        $g.FillRectangle($spineBrush, $script:__cropLine1, 0, ($script:__cropLine2 - $script:__cropLine1), $dispH)
+        $spineBrush.Dispose()
+
+        $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(255, 255, 60, 60)), 2
+        $g.DrawLine($pen, $script:__cropLine1, 0, $script:__cropLine1, $dispH)
+        $g.DrawLine($pen, $script:__cropLine2, 0, $script:__cropLine2, $dispH)
+        $pen.Dispose()
+
+        $font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+        $textBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::White)
+        $shadowBrush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Black)
+        $labels = @(
+            @{ Text = "BACK";  CenterX = [int]($script:__cropLine1 / 2) },
+            @{ Text = "SPINE"; CenterX = [int](($script:__cropLine1 + $script:__cropLine2) / 2) },
+            @{ Text = "FRONT"; CenterX = [int](($script:__cropLine2 + $dispW) / 2) }
+        )
+        foreach ($lb in $labels) {
+            $sz = $g.MeasureString($lb.Text, $font)
+            $x = $lb.CenterX - ($sz.Width / 2)
+            $g.DrawString($lb.Text, $font, $shadowBrush, ($x + 1), 11)
+            $g.DrawString($lb.Text, $font, $textBrush, $x, 10)
+        }
+        $font.Dispose(); $textBrush.Dispose(); $shadowBrush.Dispose()
+    })
+
+    $hitTest = {
+        param($x)
+        if ([Math]::Abs($x - $script:__cropLine1) -le 6) { return 1 }
+        if ([Math]::Abs($x - $script:__cropLine2) -le 6) { return 2 }
+        return 0
+    }
+    $panel.Add_MouseDown({
+        param($s, $e)
+        $script:__cropDrag = & $hitTest $e.X
+    })
+    $panel.Add_MouseMove({
+        param($s, $e)
+        if ($script:__cropDrag -eq 0) {
+            $panel.Cursor = if ((& $hitTest $e.X) -ne 0) { [System.Windows.Forms.Cursors]::SizeWE } else { [System.Windows.Forms.Cursors]::Default }
+            return
+        }
+        $x = [Math]::Max(2, [Math]::Min($dispW - 2, $e.X))
+        if ($script:__cropDrag -eq 1) {
+            $script:__cropLine1 = [Math]::Min($x, $script:__cropLine2 - 4)
+        } else {
+            $script:__cropLine2 = [Math]::Max($x, $script:__cropLine1 + 4)
+        }
+        $panel.Invalidate()
+    })
+    $panel.Add_MouseUp({ $script:__cropDrag = 0 })
+
+    $btnAutoFit = Create-Button "Auto-Fit" 20 ($dispH + 54) 100 28
+    $btnAutoFit.Add_Click({
+        $script:__cropLine1 = [int]([Math]::Round($dispW * 0.45))
+        $script:__cropLine2 = [int]([Math]::Round($dispW * 0.55))
+        $panel.Invalidate()
+    })
+    $dlg.Controls.Add($btnAutoFit)
+
+    $btnSkip = Create-Button "Skip" ($dispW - 200) ($dispH + 54) 90 28
+    $btnSkip.Add_Click({
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::Cancel
+        $dlg.Close()
+    })
+    $dlg.Controls.Add($btnSkip)
+
+    $btnSave = Create-Button "Save Crops" ($dispW - 100) ($dispH + 54) 140 28
+    $btnSave.Add_Click({
+        $backW  = [int]([Math]::Round($script:__cropLine1 / $scale))
+        $frontX = [int]([Math]::Round($script:__cropLine2 / $scale))
+        $backW  = [Math]::Max(1, [Math]::Min($imgW - 1, $backW))
+        $frontX = [Math]::Max(1, [Math]::Min($imgW - 1, $frontX))
+        $frontW = $imgW - $frontX
+        if ($backW -lt 10 -or $frontW -lt 10) {
+            [System.Windows.Forms.MessageBox]::Show("That crop is too thin to save - drag the lines further apart first.", "Crop Front / Back", "OK", "Warning") | Out-Null
+            return
+        }
+
+        $safeFormat = [System.Drawing.Imaging.PixelFormat]::Format32bppArgb
+        $backRect  = New-Object System.Drawing.Rectangle 0, 0, $backW, $imgH
+        $frontRect = New-Object System.Drawing.Rectangle $frontX, 0, $frontW, $imgH
+        $backBmp  = $null; $frontBmp = $null; $thumbBmp = $null
+        try {
+            $backBmp  = $srcBmp.Clone($backRect, $safeFormat)
+            $frontBmp = $srcBmp.Clone($frontRect, $safeFormat)
+
+            $frontDir = Join-Path $Collection.mediaPath "box2dfront"
+            $backDir  = Join-Path $Collection.mediaPath "box2dback"
+            $thumbDir = Join-Path $Collection.mediaPath "box2dThumb"
+            if (-not (Test-Path $frontDir)) { New-Item -ItemType Directory -Path $frontDir -Force | Out-Null }
+            if (-not (Test-Path $backDir))  { New-Item -ItemType Directory -Path $backDir -Force | Out-Null }
+            if (-not (Test-Path $thumbDir)) { New-Item -ItemType Directory -Path $thumbDir -Force | Out-Null }
+
+            $safeTitle = $Title -replace '[\\/:*?"<>|]', '_'
+            $frontPath = Join-Path $frontDir "$safeTitle.png"
+            $backPath  = Join-Path $backDir "$safeTitle.png"
+            $thumbPath = Join-Path $thumbDir "$safeTitle.png"
+            $frontBmp.Save($frontPath, [System.Drawing.Imaging.ImageFormat]::Png)
+            $backBmp.Save($backPath, [System.Drawing.Imaging.ImageFormat]::Png)
+
+            $thumbMaxW = 512
+            $thumbScale = [Math]::Min(1, [double]$thumbMaxW / $frontBmp.Width)
+            $thumbW = [Math]::Max(1, [int]([Math]::Round($frontBmp.Width * $thumbScale)))
+            $thumbH = [Math]::Max(1, [int]([Math]::Round($frontBmp.Height * $thumbScale)))
+            $thumbBmp = New-Object System.Drawing.Bitmap $thumbW, $thumbH
+            $tg = [System.Drawing.Graphics]::FromImage($thumbBmp)
+            try {
+                $tg.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+                $tg.DrawImage($frontBmp, 0, 0, $thumbW, $thumbH)
+            } finally { $tg.Dispose() }
+            $thumbBmp.Save($thumbPath, [System.Drawing.Imaging.ImageFormat]::Png)
+
+            $updates = @{
+                $Norm = @{
+                    "assets.box_front"       = Get-RelativeAssetPath -Path $frontPath -Collection $Collection
+                    "assets.box_back"        = Get-RelativeAssetPath -Path $backPath -Collection $Collection
+                    "assets.box_front_thumb" = Get-RelativeAssetPath -Path $thumbPath -Collection $Collection
+                }
+            }
+            Apply-TitleKeyedAssetUpdates -Updates $updates
+            Log-Message "TheCoverProject: cropped Front/Back/Thumb for '$Title'" "Green"
+        } catch {
+            [System.Windows.Forms.MessageBox]::Show("Couldn't save the crops: $_", "Crop Front / Back", "OK", "Error") | Out-Null
+            return
+        } finally {
+            if ($backBmp) { $backBmp.Dispose() }
+            if ($frontBmp) { $frontBmp.Dispose() }
+            if ($thumbBmp) { $thumbBmp.Dispose() }
+        }
+
+        $dlg.DialogResult = [System.Windows.Forms.DialogResult]::OK
+        $dlg.Close()
+    })
+    $dlg.Controls.Add($btnSave)
+    $dlg.AcceptButton = $btnSave
+    $dlg.CancelButton = $btnSkip
+
+    $r = $dlg.ShowDialog($script:mainForm)
+    $srcBmp.Dispose()
+    return ($r -eq [System.Windows.Forms.DialogResult]::OK)
+}
+
+function Show-TCPAssistDialog {
+    $col = Get-Col
+    if (-not $col) {
+        [System.Windows.Forms.MessageBox]::Show("Select a collection first.", "TheCoverProject", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $titleMap = Get-CollectionGameTitleMap
+    $noCoverMap = Get-TCPNoCoverMap -Collection $col
+    $missing = @()
+    foreach ($norm in $titleMap.Keys) {
+        $entry = $titleMap[$norm]
+        if (-not $entry.HasBoxFront) {
+            $missing += [pscustomobject]@{
+                Norm         = $norm
+                Title        = $entry.Title
+                Url          = "https://www.thecoverproject.net/view.php?searchstring=" + [Uri]::EscapeDataString((Format-TCPSearchTitle $entry.Title))
+                AssignedFile = $null
+                AssignedKeys = $null
+                AssignedFolders = $null
+                NoCover      = $noCoverMap.ContainsKey($norm)
+                NoCoverStamp = $(if ($noCoverMap.ContainsKey($norm)) { $noCoverMap[$norm] } else { $null })
+            }
+        }
+    }
+    $missing = $missing | Sort-Object Title
+
+    if ($missing.Count -eq 0) {
+        [System.Windows.Forms.MessageBox]::Show("Nothing missing - every game already has box_front art.", "TheCoverProject", "OK", "Information") | Out-Null
+        return
+    }
+
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "TheCoverProject - Missing Covers ($($missing.Count))"
+    $dlg.StartPosition = "CenterParent"
+    $dlg.FormBorderStyle = "FixedDialog"
+    $dlg.MaximizeBox = $false
+    $dlg.MinimizeBox = $false
+    $dlg.BackColor = $script:theme.background
+    $dlg.ClientSize = New-Object System.Drawing.Size(869, 679)
+
+    $lblHint = New-Object System.Windows.Forms.Label
+    $lblHint.Text = "$($missing.Count) game(s) missing box_front art. Double-click a row (or select + Open) to search for it on TheCoverProject. Save whatever you find into the folder below, then click 'Match && Import'. Greyed rows were already marked 'No cover available' - select one and click Retry to check again."
+    $lblHint.Location = New-Object System.Drawing.Point(12, 10)
+    $lblHint.Size = New-Object System.Drawing.Size(845, 40)
+    $lblHint.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $lblHint.ForeColor = $script:theme.text
+    $dlg.Controls.Add($lblHint)
+
+    $lst = New-Object System.Windows.Forms.ListView
+    $lst.Location = New-Object System.Drawing.Point(12, 58)
+    $lst.Size = New-Object System.Drawing.Size(845, 520)
+    $lst.View = "Details"
+    $lst.FullRowSelect = $true
+    $lst.MultiSelect = $true
+    $lst.BackColor = $script:theme.editor
+    $lst.ForeColor = $script:theme.text
+    [void]$lst.Columns.Add("Game", 568)
+    [void]$lst.Columns.Add("Status", 260)
+    foreach ($m in $missing) {
+        $li = New-Object System.Windows.Forms.ListViewItem($m.Title)
+        if ($m.NoCover) {
+            [void]$li.SubItems.Add("Not Available As of " + (Format-TCPNoCoverStamp $m.NoCoverStamp))
+            $li.ForeColor = $script:theme.textDim
+        } else {
+            [void]$li.SubItems.Add("Not opened")
+        }
+        $li.Tag = $m
+        [void]$lst.Items.Add($li)
+    }
+    $lst.Add_MouseDoubleClick({
+        foreach ($item in $lst.SelectedItems) {
+            Start-Process ([string]$item.Tag.Url)
+            $item.SubItems[1].Text = "Opened"
+        }
+    })
+    $dlg.Controls.Add($lst)
+
+    $btnOpen = Create-Button "Open Selected" 12 641 135 26
+    $btnOpen.Add_Click({
+        if ($lst.SelectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Select one or more games first.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        if ($lst.SelectedItems.Count -gt 8) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "That will open $($lst.SelectedItems.Count) browser tabs at once. Continue?",
+                "TheCoverProject", "YesNo", "Warning")
+            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        }
+        foreach ($item in $lst.SelectedItems) {
+            Start-Process ([string]$item.Tag.Url)
+            if ($item.Tag.AssignedFile) {
+                $item.SubItems[1].Text = "Assigned: " + [System.IO.Path]::GetFileName($item.Tag.AssignedFile)
+            } else {
+                $item.SubItems[1].Text = "Opened"
+            }
+        }
+    })
+    $dlg.Controls.Add($btnOpen)
+
+    $btnAssign = Create-Button "Assign Saved Cover" 155 641 175 26
+    $btnAssign.Add_Click({
+        if ($lst.SelectedItems.Count -ne 1) {
+            [System.Windows.Forms.MessageBox]::Show("Select exactly one game to assign a file to.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        $item = $lst.SelectedItems[0]
+        $ofd = New-Object System.Windows.Forms.OpenFileDialog
+        $ofd.Title = "Select the cover you saved for: $($item.Tag.Title)"
+        $ofd.Filter = "Image files|*.png;*.jpg;*.jpeg;*.webp;*.bmp|All files|*.*"
+        $startDir = $txtFolder.Text.Trim()
+        if ($startDir -and (Test-Path $startDir)) { $ofd.InitialDirectory = $startDir }
+        if ($ofd.ShowDialog() -eq "OK") {
+            $typeInfo = @{ Keys = @("assets.box_full", "assets.boxFull"); Folders = @("box2dfull", "boxFull") }
+            $item.Tag.AssignedFile = $ofd.FileName
+            $item.Tag.AssignedKeys = $typeInfo.Keys
+            $item.Tag.AssignedFolders = $typeInfo.Folders
+            if ($item.Tag.NoCover) {
+                $item.Tag.NoCover = $false
+                $item.Tag.NoCoverStamp = $null
+                $noCoverMap.Remove($item.Tag.Norm)
+                Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+            }
+            $item.ForeColor = $lst.ForeColor
+            $label = ($typeInfo.Keys -join " + ") -replace 'assets\.', ''
+            $item.SubItems[1].Text = "Assigned ($label): " + [System.IO.Path]::GetFileName($ofd.FileName)
+
+            $cropped = Show-TCPFrontBackCropDialog -ImagePath $ofd.FileName -Collection $col -Title $item.Tag.Title -Norm $item.Tag.Norm
+            if ($cropped) {
+                $item.SubItems[1].Text += " (+ Front/Back/Thumb cropped)"
+            }
+        }
+    })
+    $dlg.Controls.Add($btnAssign)
+
+    $btnNoCover = Create-Button "Mark No Cover Available" 338 641 210 26
+    $btnNoCover.Add_Click({
+        if ($lst.SelectedItems.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Select one or more games first.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        $now = (Get-Date).ToString("o")
+        foreach ($item in $lst.SelectedItems) {
+            $item.Tag.NoCover = $true
+            $item.Tag.NoCoverStamp = $now
+            $item.Tag.AssignedFile = $null
+            $item.SubItems[1].Text = "Not Available As of " + (Format-TCPNoCoverStamp $now)
+            $item.ForeColor = $script:theme.textDim
+            $noCoverMap[$item.Tag.Norm] = $now
+        }
+        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+    })
+    $dlg.Controls.Add($btnNoCover)
+
+    $btnRetry = Create-Button "Retry" 556 641 70 26
+    $btnRetry.Add_Click({
+        $targets = @($lst.SelectedItems | Where-Object { $_.Tag.NoCover })
+        if ($targets.Count -eq 0) {
+            [System.Windows.Forms.MessageBox]::Show("Select one or more games marked 'No cover available' first.", "TheCoverProject", "OK", "Information") | Out-Null
+            return
+        }
+        if ($targets.Count -gt 8) {
+            $r = [System.Windows.Forms.MessageBox]::Show(
+                "That will open $($targets.Count) browser tabs at once. Continue?",
+                "TheCoverProject", "YesNo", "Warning")
+            if ($r -ne [System.Windows.Forms.DialogResult]::Yes) { return }
+        }
+        foreach ($item in $targets) {
+            $item.Tag.NoCover = $false
+            $item.Tag.NoCoverStamp = $null
+            $noCoverMap.Remove($item.Tag.Norm)
+            $item.ForeColor = $lst.ForeColor
+            $item.SubItems[1].Text = "Opened"
+            Start-Process ([string]$item.Tag.Url)
+        }
+        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+    })
+    $dlg.Controls.Add($btnRetry)
+
+    $lblFolder = New-Object System.Windows.Forms.Label
+    $lblFolder.Text = "Saved covers folder:"
+    $lblFolder.Location = New-Object System.Drawing.Point(12, 586)
+    $lblFolder.Size = New-Object System.Drawing.Size(200, 18)
+    $lblFolder.ForeColor = $script:theme.text
+    $dlg.Controls.Add($lblFolder)
+
+    $txtFolder = New-Object System.Windows.Forms.TextBox
+    $txtFolder.Location = New-Object System.Drawing.Point(12, 606)
+    $txtFolder.Size = New-Object System.Drawing.Size(798, 22)
+    $txtFolder.BackColor = $script:theme.editor
+    $txtFolder.ForeColor = $script:theme.text
+    $txtFolder.Text = [string](Join-Path $env:USERPROFILE "Downloads\TCP_Covers")
+    try {
+        if (-not (Test-Path $txtFolder.Text)) {
+            New-Item -ItemType Directory -Path $txtFolder.Text -Force | Out-Null
+        }
+    } catch {}
+    $dlg.Controls.Add($txtFolder)
+
+    $btnBrowse = Create-Button "..." 822 605 35 25
+    $btnBrowse.Add_Click({
+        $fd = New-Object System.Windows.Forms.FolderBrowserDialog
+        $fd.Description = "Folder where you saved covers from TheCoverProject"
+        if (-not (Test-Path $txtFolder.Text)) { New-Item -ItemType Directory -Path $txtFolder.Text -Force | Out-Null }
+        $fd.SelectedPath = $txtFolder.Text
+        if ($fd.ShowDialog() -eq "OK") { $txtFolder.Text = $fd.SelectedPath }
+    })
+    $dlg.Controls.Add($btnBrowse)
+
+    $btnImport = Create-Button "Match && Import" 634 641 145 26
+    $btnImport.Add_Click({
+        $folder = $txtFolder.Text.Trim()
+        if (-not (Test-Path $folder)) {
+            [System.Windows.Forms.MessageBox]::Show("Folder doesn't exist yet - save some covers into it first.", "TheCoverProject", "OK", "Warning") | Out-Null
+            return
+        }
+        if (-not $col.mediaPath) {
+            [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "TheCoverProject", "OK", "Warning") | Out-Null
+            return
+        }
+        $fullDir = Join-Path $col.mediaPath "boxFull"
+        if (-not (Test-Path $fullDir)) { New-Item -ItemType Directory -Path $fullDir -Force | Out-Null }
+        $fullDirLegacy = Join-Path $col.mediaPath "box2dfull"
+        if (-not (Test-Path $fullDirLegacy)) { New-Item -ItemType Directory -Path $fullDirLegacy -Force | Out-Null }
+
+        $updates = @{}
+        $matched = 0; $unmatched = 0
+        $usedFiles = New-Object 'System.Collections.Generic.HashSet[string]'
+
+        foreach ($m in $missing) {
+            if (-not $m.AssignedFile) { continue }
+            if (-not (Test-Path $m.AssignedFile)) {
+                Log-Message "TheCoverProject: assigned file for '$($m.Title)' no longer exists: $($m.AssignedFile)" "Red"
+                continue
+            }
+            $keys = if ($m.AssignedKeys) { $m.AssignedKeys } else { @("assets.box_full", "assets.boxFull") }
+            $folders = if ($m.AssignedFolders) { $m.AssignedFolders } else { @("box2dfull", "boxFull") }
+
+            $safeTitle = $m.Title -replace '[\\/:*?""<>|]', '_'
+            $srcExt = [System.IO.Path]::GetExtension($m.AssignedFile)
+            $rowUpdates = @{}
+            for ($i = 0; $i -lt $keys.Count; $i++) {
+                $destDir = Join-Path $col.mediaPath $folders[$i]
+                if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+                $dest = Join-Path $destDir "$safeTitle$srcExt"
+                Copy-Item -Path $m.AssignedFile -Destination $dest -Force
+                $dest = Convert-ImageFileToPng -Path $dest
+                $rowUpdates[$keys[$i]] = Get-RelativeAssetPath -Path $dest -Collection $col
+            }
+            $updates[$m.Norm] = $rowUpdates
+            [void]$usedFiles.Add((Resolve-Path $m.AssignedFile).Path)
+            $matched++
+        }
+
+        $missingLookup = @{}
+        foreach ($m in $missing) {
+            if ($m.AssignedFile) { continue }
+            $missingLookup[$m.Norm] = $m
+            $missingLookup[($m.Norm -replace '\s+', '')] = $m
+        }
+        $files = Get-ChildItem -Path $folder -File -Include *.png,*.jpg,*.jpeg,*.webp,*.bmp -ErrorAction SilentlyContinue
+        foreach ($f in $files) {
+            if ($usedFiles.Contains($f.FullName)) { continue }
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            $norm = Get-NormalizedGameTitle $base
+            $normSquashed = $norm -replace '\s+', ''
+            $hit = $null
+            if ($norm -and $missingLookup.ContainsKey($norm)) { $hit = $missingLookup[$norm] }
+            elseif ($normSquashed -and $missingLookup.ContainsKey($normSquashed)) { $hit = $missingLookup[$normSquashed] }
+            if (-not $hit) {
+                $unmatched++
+                continue
+            }
+            $dest = Join-Path $fullDir $f.Name
+            Copy-Item -Path $f.FullName -Destination $dest -Force
+            $dest = Convert-ImageFileToPng -Path $dest
+            $destLegacy = Join-Path $fullDirLegacy ([System.IO.Path]::GetFileName($dest))
+            Copy-Item -Path $dest -Destination $destLegacy -Force
+            $updates[$hit.Norm] = @{
+                "assets.box_full" = Get-RelativeAssetPath -Path $destLegacy -Collection $col
+                "assets.boxFull"  = Get-RelativeAssetPath -Path $dest -Collection $col
+            }
+            if ($hit.NoCover) {
+                $hit.NoCover = $false
+                $hit.NoCoverStamp = $null
+                $noCoverMap.Remove($hit.Norm)
+            }
+            $matched++
+        }
+        Save-TCPNoCoverMap -Collection $col -Map $noCoverMap
+
+        if ($updates.Count -gt 0) {
+            try { Apply-TitleKeyedAssetUpdates -Updates $updates }
+            catch { Log-Message "TheCoverProject import - asset write error: $_" "Red" }
+        }
+        [System.Windows.Forms.MessageBox]::Show(
+            "Matched && imported: $matched`nSaved files that didn't match any missing game: $unmatched`n`nTip: instead of renaming files to match, select a game and click 'Assign Saved Cover' - no matching needed.",
+            "TheCoverProject", "OK", "Information") | Out-Null
+        Log-Message "TheCoverProject: imported $matched cover(s), $unmatched file(s) unmatched." "Green"
+    })
+    $dlg.Controls.Add($btnImport)
+
+    $btnClose = Create-Button "Close" 787 641 70 26
+    $btnClose.Add_Click({ $dlg.Close() })
+    $dlg.Controls.Add($btnClose)
+
+    [void]$dlg.ShowDialog($script:mainForm)
+}
+
+# ============================================================================
+# PROGRESS WINDOW
+# ============================================================================
+function Show-GameTDBProgressWindow {
+    param([string]$Title = "Cover Pack")
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = $Title
+    $form.Size = New-Object System.Drawing.Size(420, 160)
+    $form.StartPosition = "CenterScreen"
+    $form.FormBorderStyle = "FixedDialog"
+    $form.MaximizeBox = $false
+    $form.MinimizeBox = $false
+    $form.TopMost = $true
+    $form.ShowInTaskbar = $true
+    $form.BackColor = $script:theme.background
+    $form.ForeColor = $script:theme.text
+    $form.ControlBox = $false
+
+    $lbl = New-Object System.Windows.Forms.Label
+    $lbl.Name = "statusLabel"
+    $lbl.Text = "Starting..."
+    $lbl.Location = New-Object System.Drawing.Point(16, 16)
+    $lbl.Size = New-Object System.Drawing.Size(370, 36)
+    $lbl.ForeColor = $script:theme.text
+    $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $form.Controls.Add($lbl)
+
+    $bar = New-Object System.Windows.Forms.ProgressBar
+    $bar.Name = "progressBar"
+    $bar.Location = New-Object System.Drawing.Point(16, 60)
+    $bar.Size = New-Object System.Drawing.Size(370, 22)
+    $bar.Minimum = 0
+    $bar.Maximum = 100
+    $bar.Value = 0
+    $bar.Style = "Continuous"
+    $form.Controls.Add($bar)
+
+    $btnAbort = Create-Button "Abort" 150 95 100 26
+    $btnAbort.Name = "abortButton"
+    $btnAbort.Tag = $form
+    $btnAbort.Add_Click({
+        param($sender, $e)
+        try {
+            if ($sender.Text -eq "Close") {
+                # 2.5.63: find the form from the button itself and force it shut.
+                $f = $sender.FindForm()
+                if (-not $f) { $f = $sender.Tag }
+                if ($f -and -not $f.IsDisposed) {
+                    $f.Hide()
+                    $f.Close()
+                    if (-not $f.IsDisposed) { $f.Dispose() }
+                }
+                return
+            }
+            $script:gtdbCoverPackAbort = $true
+            $sender.Enabled = $false
+            $sender.Text = "Aborting..."
+        } catch {}
+    })
+    $form.Controls.Add($btnAbort)
+
+    $script:gtdbCoverPackAbort = $false
+    $form.Show()
+    $form.BringToFront()
+    [System.Windows.Forms.Application]::DoEvents()
+    return $form
+}
+
+function Update-GameTDBProgressWindow {
+    param(
+        $Form,
+        [int]$Percent,
+        [string]$Status,
+        [switch]$Completed,
+        [switch]$Aborted
+    )
+    if (-not $Form -or $Form.IsDisposed) { return }
+    try {
+        $bar = $Form.Controls["progressBar"]
+        $lbl = $Form.Controls["statusLabel"]
+        $btn = $Form.Controls["abortButton"]
+        if ($Percent -lt 0) { $Percent = 0 }
+        if ($Percent -gt 100) { $Percent = 100 }
+        if ($bar) { $bar.Value = $Percent }
+        if ($lbl -and $Status) { $lbl.Text = $Status }
+        if ($Completed) {
+            if ($bar) { $bar.Value = 100 }
+            if ($lbl) {
+                if ($Status) { $lbl.Text = "Completed`r`n$Status" }
+                else { $lbl.Text = "Completed" }
+            }
+            if ($btn) {
+                $btn.Text = "Close"
+                $btn.Enabled = $true
+            }
+            try { $Form.ControlBox = $true; $Form.TopMost = $false } catch {}
+        } elseif ($Aborted) {
+            if ($lbl) { $lbl.Text = $(if ($Status) { $Status } else { "Aborted" }) }
+            if ($btn) {
+                $btn.Text = "Close"
+                $btn.Enabled = $true
+            }
+            try { $Form.ControlBox = $true; $Form.TopMost = $false } catch {}
+        }
+        [System.Windows.Forms.Application]::DoEvents()
+    } catch {}
+}
+
+# ============================================================================
+# GAMETDB COVER PACK DOWNLOAD
+# ============================================================================
+function Start-GameTDBCoverPackDownload {
+    param(
+        [string]$Platform,
+        [string[]]$CoverTypes,
+        [string]$Region,
+        [string]$OutBase,
+        [switch]$CollectionOnly,
+        [switch]$OnlyMissing,
+        [switch]$RegionFallback,
+        [switch]$SaveIntoMedia,
+        [switch]$WriteAssets,
+        [switch]$UseBoxFull,
+        [switch]$RenameToTitle,
+        [switch]$ConvertToPng,
+        [switch]$OneGameOnly,
+        [string]$OneGameId,
+        [string]$OneGameTitle,
+        [int]$RequestDelayMs = 200
+    )
+    if (-not $CoverTypes -or $CoverTypes.Count -eq 0) {
+        Log-Message "No cover types selected." "Red"
+        return
+    }
+
+    $info = $script:gameTdbPlatforms[$Platform]
+    if (-not $info) {
+        Log-Message "Unknown platform: $Platform" "Red"
+        return
+    }
+    $script:lastGameTdbPlatform = $Platform
+    $artPlat = if ($Platform -eq "gamecube") { "wii" } else { $Platform }
+    $artInfo = $script:gameTdbPlatforms[$artPlat]
+
+    $col = $null
+    if ($CollectionOnly -or $SaveIntoMedia -or $WriteAssets) {
+        $col = Get-Col
+        if (-not $col) {
+            Log-Message "No collection selected." "Red"
+            return
+        }
+    }
+
+    $regionsToTry = New-Object System.Collections.ArrayList
+    [void]$regionsToTry.Add($Region)
+    if ($RegionFallback) {
+        $prefer = @("US", "EN", "AU", "JP", "JA", "FR", "DE", "ES", "IT", "NL", "PT", "SE", "DK", "NO", "FI", "RU", "KO", "ZH", "CA")
+        foreach ($r in $prefer) {
+            if ($r -ne $Region -and -not $regionsToTry.Contains($r)) { [void]$regionsToTry.Add($r) }
+        }
+        foreach ($r in $script:gameTdbRegions) {
+            if (-not $regionsToTry.Contains($r)) { [void]$regionsToTry.Add($r) }
+        }
+    }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "GAMETDB COVER PACK - $($info.Label)" "Cyan"
+    Log-Message ("Types: " + ($CoverTypes -join ", ")) "White"
+    Log-Message ("Region: $Region" + $(if ($RegionFallback) { " (+ fallback)" } else { "" })) "White"
+    if ($CollectionOnly) { Log-Message "Scope: current collection only" "Cyan" }
+    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
+    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
+    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
+    if ($UseBoxFull) { Log-Message "Full covers folder: boxFull (assets.boxFull)" "Cyan" }
+    if ($RenameToTitle) { Log-Message "Rename to game titles: on" "Cyan" }
+    if ($ConvertToPng) { Log-Message "Convert to PNG: on" "Cyan" }
+    Log-Message "========================================" "Cyan"
+
+    $prog = $null
+    $assetUpdates = @{}
+    $failRows = New-Object System.Collections.ArrayList
+    $pct = 0
+
+    try {
+        $prog = Show-GameTDBProgressWindow -Title "GameTDB: $($info.Label)"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching titles list..."
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        Log-Message "Fetching titles: $($info.TitlesUrl)" "White"
+        $data = $wc.DownloadString($info.TitlesUrl)
+        $lines = @($data -split "`r?`n" | Where-Object { $_ -match '^\s*[A-Z0-9]+\s*=' })
+        $allIds = New-Object System.Collections.ArrayList
+        $titleById = @{}
+        foreach ($line in $lines) {
+            if ($line -match '^\s*([A-Z0-9]+)\s*=\s*(.+)$') {
+                $id = $matches[1].Trim()
+                $title = $matches[2].Trim()
+                if ($info.IdFilter -eq "gamecube") {
+                    if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
+                } elseif ($Platform -eq "wii") {
+                    if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
+                }
+                [void]$allIds.Add($id)
+                if ($title) { $titleById[$id.ToUpperInvariant()] = $title }
+            } elseif ($line -match '^\s*([A-Z0-9]+)\s*=') {
+                $id = $matches[1].Trim()
+                if ($info.IdFilter -eq "gamecube") {
+                    if ($id.Length -ne 6 -or $id[0] -ne 'G') { continue }
+                } elseif ($Platform -eq "wii") {
+                    if ($id.Length -eq 6 -and $id[0] -eq 'G') { continue }
+                }
+                [void]$allIds.Add($id)
+            }
+        }
+        Log-Message "Titles list IDs: $($allIds.Count) (names: $($titleById.Count))" "Cyan"
+
+        $collectionMap = @{}
+        if ($CollectionOnly -or $OnlyMissing -or $WriteAssets) {
+            $collectionMap = Get-CollectionGameIdMap
+            Log-Message "Collection game_id entries: $($collectionMap.Count)" "Cyan"
+        }
+
+        $ids = New-Object System.Collections.ArrayList
+        if ($CollectionOnly) {
+            if ($collectionMap.Count -eq 0) {
+                Log-Message "No game_id fields in this collection. Add IDs first or uncheck Collection only." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No game_id in collection" -Aborted
+                $wc.Dispose()
+                return
+            }
+            $titleSet = @{}
+            foreach ($id in $allIds) { $titleSet[$id.ToUpperInvariant()] = $true }
+            $matched = 0
+            $skippedPlat = 0
+            foreach ($sid in @($collectionMap.Keys)) {
+                $key = $sid.ToUpperInvariant()
+                if ($titleSet.ContainsKey($key)) {
+                    [void]$ids.Add($key)
+                    $matched++
+                } else {
+                    $skippedPlat++
+                }
+            }
+            $ids = [System.Collections.ArrayList]@($ids | Sort-Object -Unique)
+            Log-Message ("Collection IDs on this platform: {0}  |  skipped (wrong platform / not in titles): {1}" -f $matched, $skippedPlat) "Cyan"
+            if ($ids.Count -eq 0) {
+                Log-Message "No collection game_id values match the selected platform ($Platform). Pick the matching system, or uncheck Collection only." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No matching IDs for platform" -Aborted
+                $wc.Dispose()
+                return
+            }
+        } else {
+            foreach ($id in $allIds) { [void]$ids.Add($id) }
+        }
+
+        if ($OneGameOnly) {
+            $want = if ($OneGameId) { $OneGameId.Trim().ToUpperInvariant() } else { $null }
+            if (-not $want) {
+                Log-Message "One game only: no game_id provided for the selected game." "Red"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No game_id for selected game" -Aborted
+                $wc.Dispose()
+                return
+            }
+            $filtered = New-Object System.Collections.ArrayList
+            foreach ($id in $ids) {
+                if ($id.ToUpperInvariant() -eq $want) { [void]$filtered.Add($id) }
+            }
+            if ($filtered.Count -eq 0) {
+                [void]$filtered.Add($want)
+                Log-Message ("One game only: ID {0} not in filtered list - trying direct download" -f $want) "Yellow"
+            }
+            $ids = $filtered
+            $label = if ($OneGameTitle) { $OneGameTitle } else { $want }
+            Log-Message ("One game only: {0} [{1}]" -f $label, $want) "Cyan"
+        }
+
+        $total = $ids.Count * $CoverTypes.Count
+        if ($total -eq 0) {
+            Log-Message "Nothing to download." "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Nothing to download" -Aborted
+            $wc.Dispose()
+            return
+        }
+        Log-Message "Jobs: $($ids.Count) ID(s) x $($CoverTypes.Count) type(s) = $total" "Cyan"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $total  (starting...)"
+
+        $ok = 0; $skip = 0; $fail = 0; $n = 0
+        $aborted = $false
+        $consecutiveErrors = 0
+        $maxConsecutiveErrors = 8
+        $circuitBroken = $false
+        $skipKnownMissing = 0
+        $noArtMap = if ($col) { Get-GameTDBNoArtMap -Collection $col } else { @{} }
+        $noArtMapDirty = $false
+
+        foreach ($id in $ids) {
+            if ($script:gtdbCoverPackAbort) {
+                $aborted = $true
+                Log-Message "Abort requested - stopping cover pack download." "Yellow"
+                break
+            }
+
+            $idUpper = $id.ToUpperInvariant()
+            $entry = $null
+            if ($collectionMap.ContainsKey($idUpper)) { $entry = $collectionMap[$idUpper] }
+
+            foreach ($coverType in $CoverTypes) {
+                if ($script:gtdbCoverPackAbort) {
+                    $aborted = $true
+                    break
+                }
+                $n++
+                $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
+                if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
+                    Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status (
+                        "{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
+                }
+                if ($n % 50 -eq 0) {
+                    Log-Message "Progress: $n / $total (ok=$ok skip=$skip fail=$fail)" "White"
+                }
+                [System.Windows.Forms.Application]::DoEvents()
+
+                $ext = Get-GameTDBCoverExt $artPlat $coverType
+                $folderName = Get-GameTDBCoverTypeFolder -CoverType $coverType -UseBoxFull:$UseBoxFull
+                $assetKey = Get-GameTDBCoverTypeAssetKey -CoverType $coverType -UseBoxFull:$UseBoxFull
+
+                if ($OnlyMissing -and $entry) {
+                    $alreadyHas = $false
+                    if ($entry.PresentAssets -and $entry.PresentAssets.ContainsKey($assetKey)) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.box_front" -and $entry.HasBoxFront) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.boxFull" -and $entry.HasBoxFull) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.box_full" -and $entry.HasBox_Full) {
+                        $alreadyHas = $true
+                    } elseif ($assetKey -eq "assets.box_back" -and $entry.HasBoxBack) {
+                        $alreadyHas = $true
+                    }
+                    if ($alreadyHas) {
+                        $skip++
+                        continue
+                    }
+                }
+
+                if ($col -and (Test-GameTDBNoArtFresh -Map $noArtMap -AssetKey $assetKey -IdUpper $idUpper)) {
+                    $skip++
+                    $skipKnownMissing++
+                    continue
+                }
+
+                if ($SaveIntoMedia -and $col -and $col.mediaPath) {
+                    $outDir = Join-Path $col.mediaPath $folderName
+                } else {
+                    $outDir = Join-Path $OutBase (Join-Path $info.Label (Join-Path $coverType $Region))
+                }
+                if (-not (Test-Path $outDir)) {
+                    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+                }
+
+                $dest = Join-Path $outDir "$id.$ext"
+                if (Test-Path $dest) {
+                    $skip++
+                    if ($WriteAssets -and $col) {
+                        if (-not $assetUpdates.ContainsKey($idUpper)) { $assetUpdates[$idUpper] = @{} }
+                        $rel = $dest
+                        try {
+                            $metaParent = Split-Path $col.metadataPath -Parent
+                            if ($dest.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
+                                $rel = $dest.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
+                            }
+                        } catch {}
+                        $assetUpdates[$idUpper][$assetKey] = $rel
+                    }
+                    continue
+                }
+
+                $saved = $false
+                $lastUrl = ""
+                $lastFailReason = "Unknown error"
+                $allNotFound = $true
+                foreach ($reg in $regionsToTry) {
+                    $url = "https://art.gametdb.com/$($artInfo.ArtPath)/$coverType/$reg/$id.$ext"
+                    $lastUrl = $url
+                    Start-Sleep -Milliseconds $RequestDelayMs
+                    try {
+                        $wc.DownloadFile($url, $dest)
+                        if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
+                            $ok++
+                            $saved = $true
+                            $consecutiveErrors = 0
+                            if ($col -and $noArtMap.ContainsKey($assetKey) -and $noArtMap[$assetKey].ContainsKey($idUpper)) {
+                                $noArtMap[$assetKey].Remove($idUpper)
+                                $noArtMapDirty = $true
+                            }
+                            $finalPath = $dest
+                            try {
+                                $gameTitle = $null
+                                if ($titleById.ContainsKey($idUpper)) { $gameTitle = $titleById[$idUpper] }
+                                elseif ($entry -and $entry.Title) { $gameTitle = $entry.Title }
+                                if ($RenameToTitle -and $gameTitle) {
+                                    $safe = Get-SafeGameFileName $gameTitle
+                                    if ($safe) {
+                                        $renamed = Join-Path $outDir ($safe + [System.IO.Path]::GetExtension($finalPath))
+                                        if (-not (Test-Path -LiteralPath $renamed)) {
+                                            Move-Item -LiteralPath $finalPath -Destination $renamed -Force
+                                            $finalPath = $renamed
+                                        } elseif ($renamed -ne $finalPath) {
+                                        }
+                                    }
+                                }
+                                if ($ConvertToPng) {
+                                    $finalPath = Convert-ImageFileToPng -Path $finalPath
+                                }
+                                $dest = $finalPath
+                            } catch {
+                                Log-Message ("Post-process failed for {0}: {1}" -f $id, $_.Exception.Message) "Yellow"
+                            }
+                            if ($WriteAssets -and $col) {
+                                if (-not $assetUpdates.ContainsKey($idUpper)) { $assetUpdates[$idUpper] = @{} }
+                                $rel = $dest
+                                try {
+                                    $metaParent = Split-Path $col.metadataPath -Parent
+                                    if ($dest.StartsWith($metaParent, [StringComparison]::OrdinalIgnoreCase)) {
+                                        $rel = $dest.Substring($metaParent.Length).TrimStart('\', '/').Replace('\', '/')
+                                    }
+                                } catch {}
+                                $assetUpdates[$idUpper][$assetKey] = $rel
+                            }
+                            break
+                        } else {
+                            if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        }
+                    } catch {
+                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        $statusCode = $null
+                        if ($_.Exception -is [System.Net.WebException] -and $_.Exception.Response -is [System.Net.HttpWebResponse]) {
+                            $statusCode = [int]$_.Exception.Response.StatusCode
+                        }
+                        if ($statusCode -eq 404) {
+                            $lastFailReason = "Not found (404)"
+                            $consecutiveErrors = 0
+                        } else {
+                            $allNotFound = $false
+                            $lastFailReason = if ($statusCode) { "HTTP $statusCode" } else { $_.Exception.Message }
+                            $consecutiveErrors++
+                        }
+                    }
+                }
+                if (-not $saved) {
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{
+                        Id     = $id
+                        Type   = $coverType
+                        Region = $Region
+                        Url    = $lastUrl
+                        Reason = $lastFailReason
+                    })
+                    if ($col -and $allNotFound) {
+                        if (-not $noArtMap.ContainsKey($assetKey)) { $noArtMap[$assetKey] = @{} }
+                        $noArtMap[$assetKey][$idUpper] = (Get-Date).ToString("o")
+                        $noArtMapDirty = $true
+                    }
+                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                        $circuitBroken = $true
+                        $aborted = $true
+                        $script:gtdbCoverPackAbort = $true
+                        Log-Message ("Stopping: $maxConsecutiveErrors consecutive network/server errors (last: $lastFailReason). This usually means GameTDB is unreachable or rate-limiting right now, not that these games have no art - try again later.") "Red"
+                        break
+                    }
+                }
+            }
+        }
+        $wc.Dispose()
+
+        if ($noArtMapDirty -and $col) {
+            Save-GameTDBNoArtMap -Collection $col -Map $noArtMap
+        }
+
+        $reportDir = $null
+        if ($SaveIntoMedia -and $col -and $col.mediaPath) {
+            $reportDir = Get-ToolsFolder $col.mediaPath
+        } elseif ($OutBase) {
+            $reportDir = $OutBase
+        }
+        if ($failRows.Count -gt 0 -and $reportDir) {
+            try {
+                if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
+                $csvPath = Join-Path $reportDir "failed_covers.csv"
+                $failRows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+                Log-Message "Fail report: $csvPath ($($failRows.Count) rows)" "Yellow"
+            } catch {
+                Log-Message "Could not write fail report: $_" "Yellow"
+            }
+        }
+
+        if ($WriteAssets -and $col -and $assetUpdates.Count -gt 0) {
+            try {
+                Apply-GameTDBAssetUpdates -Updates $assetUpdates
+            } catch {
+                Log-Message "Asset path write error: $_" "Red"
+            }
+        }
+
+        $summary = "Downloaded: $ok   Skipped: $skip (of which $skipKnownMissing already confirmed missing)   Missing: $fail"
+        if ($circuitBroken) {
+            Log-Message "Stopped early due to repeated network errors. $summary" "Red"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Stopped - network errors`n$summary" -Aborted
+        } elseif ($aborted) {
+            Log-Message "Aborted. $summary" "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
+        } else {
+            Log-Message "Done. $summary" "Green"
+            if ($SaveIntoMedia -and $col) {
+                Log-Message "Media: $($col.mediaPath)" "Cyan"
+            } elseif ($OutBase) {
+                Log-Message "Folder: $OutBase" "Cyan"
+            }
+            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
+        }
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+        if ($prog -and -not $prog.IsDisposed) {
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
+        }
+    }
+}
+
+# ============================================================================
+# LIBRETRO COVER PACK DOWNLOAD
+# ============================================================================
+function Start-LibretroCoverPackDownload {
+    param(
+        [string]$Platform,
+        [string]$OutBase,
+        [switch]$CollectionOnly,
+        [switch]$OnlyMissing,
+        [switch]$SaveIntoMedia,
+        [switch]$WriteAssets,
+        [switch]$UseBoxFull,
+        [switch]$RenameToTitle,
+        [switch]$ConvertToPng,
+        [switch]$OneGameOnly,
+        [string]$OneGameTitle,
+        [switch]$UpscaleAfterDownload
+    )
+    $info = $script:libretroPlatforms[$Platform]
+    if (-not $info) {
+        Log-Message "Unknown Libretro-Thumbnails platform: $Platform" "Red"
+        return
+    }
+
+    $col = $null
+    if ($CollectionOnly -or $SaveIntoMedia -or $WriteAssets) {
+        $col = Get-Col
+        if (-not $col) {
+            Log-Message "No collection selected." "Red"
+            return
+        }
+    }
+
+    $assetKey = "assets.box_front_thumb"
+    $folderName = "box2dThumb"
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "LIBRETRO-THUMBNAILS COVER PACK - $($info.Label)" "Cyan"
+    Log-Message "Source: github.com/libretro-thumbnails/$($info.RepoName)" "White"
+    Log-Message "Type: Boxart (matched by title)" "White"
+    if ($CollectionOnly) { Log-Message "Scope: current collection only" "Cyan" }
+    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
+    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
+    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
+    Log-Message "========================================" "Cyan"
+
+    $prog = $null
+    $assetUpdates = @{}
+    $pct = 0
+
+    try {
+        $prog = Show-GameTDBProgressWindow -Title "Libretro-Thumbnails: $($info.Label)"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Fetching repo file list (2 small API calls)..."
+
+        $mapping = Get-LibretroAssetMapping -RepoName $info.RepoName -Folder "Named_Boxarts"
+        Log-Message "Boxart files found in repo: $($mapping.Count)" "Cyan"
+        if ($mapping.Count -eq 0) {
+            Log-Message "No boxart files found (or the GitHub API rate limit was hit - unauthenticated requests are limited to ~60/hour per IP)." "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No files found" -Aborted
+            return
+        }
+
+        $titleMap = @{}
+        if ($CollectionOnly -or $OnlyMissing -or $WriteAssets) {
+            $titleMap = Get-CollectionGameTitleMap
+            Log-Message "Collection titles: $($titleMap.Count)" "Cyan"
+        }
+
+        $keys = New-Object System.Collections.ArrayList
+        if ($CollectionOnly) {
+            if ($titleMap.Count -eq 0) {
+                Log-Message "No games in this collection. Add games first or uncheck Collection only." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No games in collection" -Aborted
+                return
+            }
+            $matched = 0
+            $noArt = 0
+            $noArtTitles = New-Object System.Collections.ArrayList
+            foreach ($tk in @($titleMap.Keys)) {
+                if ($mapping.ContainsKey($tk)) { [void]$keys.Add($tk); $matched++ }
+                else {
+                    $noArt++
+                    $shownTitle = $tk
+                    if ($titleMap[$tk] -and $titleMap[$tk].Title) { $shownTitle = [string]$titleMap[$tk].Title }
+                    [void]$noArtTitles.Add($shownTitle)
+                }
+            }
+            Log-Message ("Collection titles matched to Libretro boxart: {0}  |  no match: {1}" -f $matched, $noArt) "Cyan"
+            if ($noArt -gt 0) {
+                Log-Message "Titles with no matching boxart in this repo (name doesn't line up closely enough - try renaming to match No-Intro style, e.g. 'Game Title (USA)'):" "Yellow"
+                $noArtTitles | Select-Object -First 15 | ForEach-Object { Log-Message "  [$_]" "Yellow" }
+                if ($noArtTitles.Count -gt 15) {
+                    Log-Message "  ... and $($noArtTitles.Count - 15) more" "Yellow"
+                }
+            }
+            if ($keys.Count -eq 0) {
+                Log-Message "No collection titles matched boxart in this repo. Titles must match closely (region tags are ignored automatically)." "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No title matches" -Aborted
+                return
+            }
+        } else {
+            foreach ($k in $mapping.Keys) { [void]$keys.Add($k) }
+        }
+
+        if ($OneGameOnly) {
+            if ([string]::IsNullOrWhiteSpace($OneGameTitle)) {
+                Log-Message "One game only: no title provided." "Red"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No title for selected game" -Aborted
+                return
+            }
+            $wantKey = Get-NormalizedGameTitle $OneGameTitle
+            $filtered = New-Object System.Collections.ArrayList
+            foreach ($k in $keys) {
+                if ($k -eq $wantKey) { [void]$filtered.Add($k) }
+            }
+            if ($filtered.Count -eq 0 -and $mapping.ContainsKey($wantKey)) {
+                [void]$filtered.Add($wantKey)
+            }
+            if ($filtered.Count -eq 0) {
+                Log-Message ("One game only: no Libretro boxart match for '{0}' (key={1})" -f $OneGameTitle, $wantKey) "Yellow"
+                Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "No boxart match for game" -Aborted
+                return
+            }
+            $keys = $filtered
+            Log-Message ("One game only: {0}" -f $OneGameTitle) "Cyan"
+        }
+
+        $total = $keys.Count
+        if ($total -eq 0) {
+            Log-Message "Nothing to download." "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Nothing to download" -Aborted
+            return
+        }
+        Log-Message "Jobs: $total" "Cyan"
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+
+        $ok = 0; $skip = 0; $fail = 0; $n = 0
+        $aborted = $false
+        $thumbList = New-Object System.Collections.ArrayList
+
+        foreach ($tk in $keys) {
+            if ($script:gtdbCoverPackAbort) {
+                $aborted = $true
+                Log-Message "Abort requested - stopping cover pack download." "Yellow"
+                break
+            }
+            $n++
+            $pct = [Math]::Min(100, [int](($n / [double]$total) * 100))
+            if (($n % 5) -eq 0 -or $n -eq $total) {
+                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "$n / $total"
+                [System.Windows.Forms.Application]::DoEvents()
+            }
+
+            $entry = $null
+            if ($titleMap.ContainsKey($tk)) { $entry = $titleMap[$tk] }
+
+            if ($OnlyMissing -and $entry) {
+                $alreadyHas = $false
+                if ($entry.PresentAssets -and $entry.PresentAssets.ContainsKey($assetKey)) { $alreadyHas = $true }
+                elseif ($assetKey -eq "assets.box_front" -and $entry.HasBoxFront) { $alreadyHas = $true }
+                elseif ($assetKey -eq "assets.boxFull" -and $entry.HasBoxFull) { $alreadyHas = $true }
+                if ($alreadyHas) {
+                    $skip++
+                    # 2.5.50: still queue the existing thumb for Upscayl so
+                    # "Upscale thumbs -> boxFront" works on a re-run.
+                    if ($UpscaleAfterDownload -and $SaveIntoMedia -and $col -and $col.mediaPath) {
+                        $dispT = if ($entry.Title) { [string]$entry.Title } else { "" }
+                        $sn = Get-SafeGameFileName $dispT
+                        if (-not $sn) { $sn = [System.IO.Path]::GetFileNameWithoutExtension([string]$mapping[$tk]) }
+                        $thumbDirExisting = Join-Path $col.mediaPath $folderName
+                        foreach ($tryExt in @(".png", ".jpg", ".jpeg", ".webp")) {
+                            $tryThumb = Join-Path $thumbDirExisting "$sn$tryExt"
+                            if (Test-Path -LiteralPath $tryThumb) {
+                                [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $tryThumb })
+                                break
+                            }
+                        }
+                    }
+                    continue
+                }
+            }
+
+            $relPath = $mapping[$tk]
+            $ext = [System.IO.Path]::GetExtension($relPath)
+            if (-not $ext) { $ext = ".png" }
+            $displayTitle = if ($entry -and $entry.Title) { $entry.Title } else { [System.IO.Path]::GetFileNameWithoutExtension($relPath) }
+            $safeName = Get-SafeGameFileName $displayTitle
+            if (-not $safeName) { $safeName = [System.IO.Path]::GetFileNameWithoutExtension($relPath) }
+
+            if ($SaveIntoMedia -and $col -and $col.mediaPath) {
+                $outDir = Join-Path $col.mediaPath $folderName
+            } else {
+                $outDir = Join-Path $OutBase (Join-Path $info.Label "boxart")
+            }
+            if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+
+            $dest = Join-Path $outDir "$safeName$ext"
+            if (Test-Path $dest) {
+                $skip++
+                if ($WriteAssets -and $col) {
+                    if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
+                    $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $dest -Collection $col
+                }
+                if ($UpscaleAfterDownload) { [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $dest }) }
+                continue
+            }
+
+            $escRel = (([string]$relPath -split '/') | ForEach-Object { [Uri]::EscapeDataString($_) }) -join '/'
+            $url = "https://raw.githubusercontent.com/libretro-thumbnails/$($info.RepoName)/master/$escRel"
+            try {
+                $dlOk = $false
+                for ($dlTry = 1; $dlTry -le 2 -and -not $dlOk; $dlTry++) {
+                    try { $wc.DownloadFile($url, $dest); $dlOk = $true } catch {
+                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        if ($dlTry -lt 2) { Start-Sleep -Milliseconds 800 }
+                    }
+                }
+                if (-not $dlOk) { throw "download failed" }
+                if ((Test-Path $dest) -and (Get-Item $dest).Length -gt 200) {
+                    $ok++
+                    $finalPath = $dest
+                    try {
+                        if ($ConvertToPng) { $finalPath = Convert-ImageFileToPng -Path $finalPath }
+                    } catch {
+                        Log-Message ("Post-process failed for {0}: {1}" -f $displayTitle, $_.Exception.Message) "Yellow"
+                    }
+                    if ($WriteAssets -and $col) {
+                        if (-not $assetUpdates.ContainsKey($tk)) { $assetUpdates[$tk] = @{} }
+                        $assetUpdates[$tk][$assetKey] = Get-RelativeAssetPath -Path $finalPath -Collection $col
+                    }
+                    if ($UpscaleAfterDownload) { [void]$thumbList.Add(@{ Tk = $tk; ThumbPath = $finalPath }) }
+                } else {
+                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                    $fail++
+                }
+            } catch {
+                if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                $fail++
+            }
+        }
+        $wc.Dispose()
+
+        if ($WriteAssets -and $col -and $assetUpdates.Count -gt 0) {
+            try {
+                Apply-TitleKeyedAssetUpdates -Updates $assetUpdates
+            } catch {
+                Log-Message "Asset path write error: $_" "Red"
+            }
+        }
+
+        if ($UpscaleAfterDownload -and $thumbList.Count -gt 0 -and $col -and $col.mediaPath) {
+            Log-Message "========================================" "Cyan"
+            Log-Message "UPSCAYL: box2dThumb -> box2dfront (4x, Digital Art)" "Cyan"
+            $thumbDir = Join-Path $col.mediaPath "box2dThumb"
+            $frontDir = Join-Path $col.mediaPath "box2dfront"
+            $upResult = Invoke-UpscaylBatchUpscale -InputFolder $thumbDir -OutputFolder $frontDir -Model "digital-art-4x" -Scale 4 -OnlyFiles @($thumbList | ForEach-Object { $_.ThumbPath })
+
+            # 2.5.64: link EVERY upscaled image found on disk, not only the ones
+            # made in this run - so work from an interrupted/crashed run is not lost.
+            if ($WriteAssets -and $col) {
+                $frontUpdates = @{}
+                $linked = 0
+                foreach ($item in $thumbList) {
+                    $b = [System.IO.Path]::GetFileNameWithoutExtension($item.ThumbPath)
+                    $outPng = Join-Path $frontDir "$b.png"
+                    if ((Test-Path -LiteralPath $outPng) -and ((Get-Item -LiteralPath $outPng).Length -gt 0)) {
+                        $ftk = $item.Tk
+                        if (-not $frontUpdates.ContainsKey($ftk)) { $frontUpdates[$ftk] = @{} }
+                        $frontUpdates[$ftk]["assets.box_front"] = Get-RelativeAssetPath -Path $outPng -Collection $col
+                        $linked++
+                    }
+                }
+                if ($frontUpdates.Count -gt 0) {
+                    Log-Message "Writing assets.box_front for $linked game(s) (every upscaled image found in box2dfront, including earlier/interrupted runs)." "Cyan"
+                    try { Apply-TitleKeyedAssetUpdates -Updates $frontUpdates }
+                    catch { Log-Message "Asset path write error (box_front after upscale): $_" "Red" }
+                }
+            }
+        }
+
+        $summary = "Downloaded: $ok   Skipped (already have): $skip   Failed: $fail"
+        if ($aborted) {
+            Log-Message "Aborted. $summary" "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
+        } else {
+            Log-Message "Done. $summary" "Green"
+            if ($SaveIntoMedia -and $col) { Log-Message "Media: $($col.mediaPath)" "Cyan" }
+            elseif ($OutBase) { Log-Message "Folder: $OutBase" "Cyan" }
+            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
+        }
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+        if ($prog -and -not $prog.IsDisposed) {
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
+        }
+    }
+}
+
+# ============================================================================
+# STEAMGRIDDB COVER PACK DOWNLOAD
+# ============================================================================
+function Start-SteamGridDBCoverPackDownload {
+    param(
+        [string[]]$AssetTypes,
+        [string]$OutBase,
+        [switch]$OnlyMissing,
+        [switch]$SaveIntoMedia,
+        [switch]$WriteAssets,
+        [switch]$RenameToTitle,
+        [switch]$ConvertToPng,
+        [switch]$OneGameOnly,
+        [string]$OneGameTitle,
+        [switch]$MatchByTitle,
+        [int]$RequestDelayMs = 300
+    )
+    if (-not $AssetTypes -or $AssetTypes.Count -eq 0) {
+        Log-Message "No asset types selected." "Red"
+        return
+    }
+    $apiKey = $script:steamGridDbApiKey
+    if ([string]::IsNullOrWhiteSpace($apiKey)) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No SteamGridDB API key set.`n`nGet a free key at steamgriddb.com/profile/preferences/api and add it under Settings -> API Keys.",
+            "SteamGridDB", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $col = Get-Col
+    if (-not $col) {
+        [System.Windows.Forms.MessageBox]::Show("Select a collection first - SteamGridDB matches by game title, which requires a loaded collection.", "SteamGridDB", "OK", "Warning") | Out-Null
+        return
+    }
+    if ($SaveIntoMedia -and [string]::IsNullOrWhiteSpace($col.mediaPath)) {
+        [System.Windows.Forms.MessageBox]::Show("Collection has no media folder set.", "SteamGridDB", "OK", "Warning") | Out-Null
+        return
+    }
+
+    $typeMap = Get-SteamGridDBAssetTypeMap
+    $titleMap = Get-CollectionGameTitleMap
+
+    $games = New-Object System.Collections.ArrayList
+    if ($OneGameOnly) {
+        if ([string]::IsNullOrWhiteSpace($OneGameTitle)) {
+            Log-Message "One game only: no title provided." "Red"
+            return
+        }
+        $norm = Get-NormalizedGameTitle $OneGameTitle
+        $present = @{}
+        if ($norm -and $titleMap.ContainsKey($norm)) { $present = $titleMap[$norm].PresentAssets }
+        [void]$games.Add([PSCustomObject]@{ Title = $OneGameTitle; Norm = $norm; PresentAssets = $present })
+    } else {
+        foreach ($norm in $titleMap.Keys) {
+            $entry = $titleMap[$norm]
+            [void]$games.Add([PSCustomObject]@{ Title = $entry.Title; Norm = $norm; PresentAssets = $entry.PresentAssets })
+        }
+    }
+    $games = @($games | Sort-Object Title)
+
+    if ($games.Count -eq 0) {
+        Log-Message "Nothing to process - no games in the collection." "Yellow"
+        return
+    }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "STEAMGRIDDB COVER PACK" "Cyan"
+    Log-Message ("Types: " + ($AssetTypes -join ", ")) "White"
+    if ($OnlyMissing) { Log-Message "Mode: only missing art" "Cyan" }
+    if ($SaveIntoMedia) { Log-Message "Output: collection media folders" "Cyan" }
+    if ($WriteAssets) { Log-Message "Will write asset paths to metadata" "Cyan" }
+    if ($RenameToTitle) { Log-Message "Rename to game titles: on" "Cyan" }
+    if ($ConvertToPng) { Log-Message "Convert to PNG: on" "Cyan" }
+    Log-Message "========================================" "Cyan"
+
+    $prog = $null
+    $assetUpdates = @{}
+    $failRows = New-Object System.Collections.ArrayList
+    $pct = 0
+
+    try {
+        $prog = Show-GameTDBProgressWindow -Title "SteamGridDB Cover Pack"
+        Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "0 / $($games.Count)  (starting...)"
+
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "MetadataRepairTool/$($script:version)")
+        $wc.Headers.Add("Authorization", "Bearer $apiKey")
+
+        $noArtMap = Get-SteamGridDBNoArtMap -Collection $col
+        $noArtMapDirty = $false
+        $sgdbIdCache = @{}
+
+        $ok = 0; $skip = 0; $fail = 0; $skipKnownMissing = 0; $n = 0
+        $aborted = $false
+        $circuitBroken = $false
+        $consecutiveErrors = 0
+        $maxConsecutiveErrors = 8
+        $total = $games.Count
+
+        foreach ($game in $games) {
+            if ($script:gtdbCoverPackAbort) {
+                $aborted = $true
+                Log-Message "Abort requested - stopping cover pack download." "Yellow"
+                break
+            }
+            $n++
+            $pct = if ($total -gt 0) { [int](($n * 100) / $total) } else { 100 }
+            if ($n -eq 1 -or ($n % 10 -eq 0) -or $n -eq $total) {
+                Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status (
+                    "{0} / {1}   ok={2}  skip={3}  fail={4}" -f $n, $total, $ok, $skip, $fail)
+            }
+            [System.Windows.Forms.Application]::DoEvents()
+
+            $norm = $game.Norm
+            if (-not $norm) { continue }
+
+            $neededTypes = New-Object System.Collections.ArrayList
+            foreach ($typeLabel in $AssetTypes) {
+                $info = $typeMap[$typeLabel]
+                if (-not $info) { continue }
+                if ($OnlyMissing) {
+                    $already = $false
+                    foreach ($k in $info.Keys) {
+                        if ($game.PresentAssets -and $game.PresentAssets.ContainsKey($k)) { $already = $true; break }
+                    }
+                    if ($already) { $skip++; continue }
+                }
+                if (Test-SteamGridDBNoArtFresh -Map $noArtMap -TypeLabel $typeLabel -Norm $norm) {
+                    $skip++; $skipKnownMissing++; continue
+                }
+                [void]$neededTypes.Add($typeLabel)
+            }
+            if ($neededTypes.Count -eq 0) { continue }
+
+            $sgdbId = $null
+            $searchFailed = $false
+            if ($sgdbIdCache.ContainsKey($norm)) {
+                $cached = $sgdbIdCache[$norm]
+                if ($cached -eq $false) { $searchFailed = $true } else { $sgdbId = $cached }
+            } else {
+                Start-Sleep -Milliseconds $RequestDelayMs
+                try {
+                    $sgdbId = Search-SteamGridDBGameId -Title $game.Title -ApiKey $apiKey -WebClient $wc
+                    $consecutiveErrors = 0
+                    $sgdbIdCache[$norm] = $(if ($sgdbId) { $sgdbId } else { $false })
+                } catch {
+                    $consecutiveErrors++
+                    $sgdbIdCache[$norm] = $false
+                    $searchFailed = $true
+                }
+            }
+
+            if (-not $sgdbId) {
+                foreach ($typeLabel in $neededTypes) {
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{
+                        Title  = $game.Title
+                        Type   = $typeLabel
+                        Reason = $(if ($searchFailed) { "Search error" } else { "Not found on SteamGridDB" })
+                    })
+                    if (-not $searchFailed) {
+                        if (-not $noArtMap.ContainsKey($typeLabel)) { $noArtMap[$typeLabel] = @{} }
+                        $noArtMap[$typeLabel][$norm] = (Get-Date).ToString("o")
+                        $noArtMapDirty = $true
+                    }
+                }
+                if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                    $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
+                    Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row - it's likely unreachable or rate-limiting right now, not that these games all lack art. Try again later." "Red"
+                    break
+                }
+                continue
+            }
+
+            foreach ($typeLabel in $neededTypes) {
+                if ($script:gtdbCoverPackAbort) { $aborted = $true; break }
+                $info = $typeMap[$typeLabel]
+                $imgUrl = $null
+                Start-Sleep -Milliseconds $RequestDelayMs
+                try {
+                    $imgUrl = Get-SteamGridDBImageUrl -GameId $sgdbId -Endpoint $info.Endpoint -ApiKey $apiKey -WebClient $wc
+                    $consecutiveErrors = 0
+                } catch {
+                    $consecutiveErrors++
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "Fetch error" })
+                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                        $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
+                        Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row - it's likely unreachable or rate-limiting right now. Try again later." "Red"
+                        break
+                    }
+                    continue
+                }
+                if (-not $imgUrl) {
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "No $typeLabel art on SteamGridDB" })
+                    if (-not $noArtMap.ContainsKey($typeLabel)) { $noArtMap[$typeLabel] = @{} }
+                    $noArtMap[$typeLabel][$norm] = (Get-Date).ToString("o")
+                    $noArtMapDirty = $true
+                    continue
+                }
+
+                $ext = [System.IO.Path]::GetExtension($imgUrl)
+                if (-not $ext -or $ext.Length -gt 5) { $ext = ".png" }
+                $folderName = $info.Folders[0]
+                if ($SaveIntoMedia -and $col.mediaPath) {
+                    $outDir = Join-Path $col.mediaPath $folderName
+                } else {
+                    $outDir = Join-Path $OutBase (Join-Path "SteamGridDB" $folderName)
+                }
+                if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+                $safeTitle = Get-SafeGameFileName $game.Title
+                if (-not $safeTitle) { $safeTitle = $norm }
+                $dest = Join-Path $outDir "$safeTitle$ext"
+
+                if (Test-Path $dest) {
+                    $skip++
+                    if ($WriteAssets) {
+                        if (-not $assetUpdates.ContainsKey($norm)) { $assetUpdates[$norm] = @{} }
+                        $assetUpdates[$norm][$info.Keys[0]] = Get-RelativeAssetPath -Path $dest -Collection $col
+                    }
+                    continue
+                }
+
+                Start-Sleep -Milliseconds $RequestDelayMs
+                try {
+                    $wc.DownloadFile($imgUrl, $dest)
+                    if (-not (Test-Path $dest) -or (Get-Item $dest).Length -le 200) {
+                        if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                        throw "Empty download"
+                    }
+                    $ok++
+                    $consecutiveErrors = 0
+                    if ($noArtMap.ContainsKey($typeLabel) -and $noArtMap[$typeLabel].ContainsKey($norm)) {
+                        $noArtMap[$typeLabel].Remove($norm)
+                        $noArtMapDirty = $true
+                    }
+                    $finalPath = $dest
+                    try {
+                        if ($ConvertToPng) { $finalPath = Convert-ImageFileToPng -Path $finalPath }
+                    } catch {
+                        Log-Message ("Post-process failed for {0}: {1}" -f $game.Title, $_.Exception.Message) "Yellow"
+                    }
+                    if ($WriteAssets) {
+                        if (-not $assetUpdates.ContainsKey($norm)) { $assetUpdates[$norm] = @{} }
+                        $assetUpdates[$norm][$info.Keys[0]] = Get-RelativeAssetPath -Path $finalPath -Collection $col
+                    }
+                } catch {
+                    if (Test-Path $dest) { Remove-Item $dest -Force -ErrorAction SilentlyContinue }
+                    $consecutiveErrors++
+                    $fail++
+                    [void]$failRows.Add([PSCustomObject]@{ Title = $game.Title; Type = $typeLabel; Reason = "Download error" })
+                    if ($consecutiveErrors -ge $maxConsecutiveErrors) {
+                        $circuitBroken = $true; $aborted = $true; $script:gtdbCoverPackAbort = $true
+                        Log-Message "Stopping: $maxConsecutiveErrors consecutive SteamGridDB errors in a row. Try again later." "Red"
+                        break
+                    }
+                }
+            }
+        }
+        $wc.Dispose()
+
+        if ($noArtMapDirty) { Save-SteamGridDBNoArtMap -Collection $col -Map $noArtMap }
+
+        if ($failRows.Count -gt 0) {
+            try {
+                $reportDir = if ($SaveIntoMedia -and $col.mediaPath) { Get-ToolsFolder $col.mediaPath } else { $OutBase }
+                if ($reportDir) {
+                    if (-not (Test-Path $reportDir)) { New-Item -ItemType Directory -Path $reportDir -Force | Out-Null }
+                    $csvPath = Join-Path $reportDir "failed_steamgriddb.csv"
+                    $failRows | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8
+                    Log-Message "Fail report: $csvPath ($($failRows.Count) rows)" "Yellow"
+                }
+            } catch {
+                Log-Message "Could not write fail report: $_" "Yellow"
+            }
+        }
+
+        if ($WriteAssets -and $assetUpdates.Count -gt 0) {
+            try { Apply-TitleKeyedAssetUpdates -Updates $assetUpdates }
+            catch { Log-Message "Asset path write error: $_" "Red" }
+        }
+
+        $summary = "Downloaded: $ok   Skipped: $skip (of which $skipKnownMissing already confirmed missing)   Missing: $fail"
+        if ($circuitBroken) {
+            Log-Message "Stopped early due to repeated errors. $summary" "Red"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Stopped - errors`n$summary" -Aborted
+        } elseif ($aborted) {
+            Log-Message "Aborted. $summary" "Yellow"
+            Update-GameTDBProgressWindow -Form $prog -Percent $pct -Status "Aborted`n$summary" -Aborted
+        } else {
+            Log-Message "Done. $summary" "Green"
+            if ($SaveIntoMedia) {
+                Log-Message "Media: $($col.mediaPath)" "Cyan"
+            } elseif ($OutBase) {
+                Log-Message "Folder: $OutBase" "Cyan"
+            }
+            Update-GameTDBProgressWindow -Form $prog -Percent 100 -Status $summary -Completed
+        }
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+        if ($prog -and -not $prog.IsDisposed) {
+            Update-GameTDBProgressWindow -Form $prog -Percent 0 -Status "Error: $_" -Aborted
+        }
+    }
+}
+
+# ============================================================================
+# UPSCAYL HELPERS
+# ============================================================================
+function Resolve-UpscaylBinaryPath {
+    # Accepts upscayl-bin.exe OR the Upscayl.exe app launcher (or the install
+    # folder) and returns the path to resources\bin\upscayl-bin.exe, or $null.
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    $p = $Path.Trim().Trim('"')
+    if (-not (Test-Path -LiteralPath $p)) { return $null }
+    if ((Get-Item -LiteralPath $p).PSIsContainer) {
+        $dir = $p
+    } else {
+        if ([System.IO.Path]::GetFileName($p) -ieq "upscayl-bin.exe") { return $p }
+        $dir = Split-Path $p -Parent
+    }
+    foreach ($rel in @("resources\bin\upscayl-bin.exe", "bin\upscayl-bin.exe", "upscayl-bin.exe")) {
+        $try = Join-Path $dir $rel
+        if (Test-Path -LiteralPath $try) { return $try }
+    }
+    return $null
+}
+
+function Set-UpscaylPathFromSelection {
+    # Takes whatever the user picked (Upscayl.exe, upscayl-bin.exe or the
+    # install folder), locates upscayl-bin.exe automatically, saves it.
+    # Returns the resolved path or $null.
+    param([string]$Selected)
+    $bin = Resolve-UpscaylBinaryPath $Selected
+    if ($bin) {
+        $script:upscaylPath = $bin
+        try { Save-Config } catch {}
+        Log-Message "Upscayl linked: $bin" "Cyan"
+    }
+    return $bin
+}
+
+function Find-UpscaylBinary {
+    if ($script:upscaylPath) {
+        $resolved = Resolve-UpscaylBinaryPath $script:upscaylPath
+        if ($resolved) { return $resolved }
+    }
+    $candidates = @(
+        "$env:ProgramFiles\Upscayl\resources\bin\upscayl-bin.exe",
+        "${env:ProgramFiles(x86)}\Upscayl\resources\bin\upscayl-bin.exe",
+        "$env:LOCALAPPDATA\Programs\Upscayl\resources\bin\upscayl-bin.exe",
+        "$env:LOCALAPPDATA\Programs\upscayl\resources\bin\upscayl-bin.exe"
+    )
+    foreach ($c in $candidates) {
+        if ($c -and (Test-Path $c)) {
+            $script:upscaylPath = $c
+            Save-Config
+            return $c
+        }
+    }
+    return $null
+}
+
+function Invoke-UpscaylBatchUpscale {
+    param(
+        [Parameter(Mandatory)][string]$InputFolder,
+        [Parameter(Mandatory)][string]$OutputFolder,
+        [string]$Model = "digital-art-4x",
+        [int]$Scale = 4,
+        [string[]]$OnlyFiles = @()
+    )
+    $result = @{ Upscaled = 0; Skipped = 0; Failed = 0; Files = @() }
+
+    $bin = Find-UpscaylBinary
+    if (-not $bin) {
+        Log-Message "Upscayl not found. Install it (upscayl.org) or locate upscayl-bin.exe." "Red"
+        $fd = New-Object System.Windows.Forms.OpenFileDialog
+        $fd.Title = "Locate Upscayl.exe (upscayl-bin.exe is found automatically)"
+        $fd.Filter = "Upscayl (Upscayl.exe;upscayl-bin.exe)|Upscayl.exe;upscayl-bin.exe|All files|*.*"
+        $bin = $null
+        if ($fd.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK -and (Test-Path $fd.FileName)) {
+            $bin = Set-UpscaylPathFromSelection $fd.FileName
+        }
+        if (-not $bin) {
+            Log-Message "Upscayl upscaling skipped - no binary selected." "Yellow"
+            return $result
+        }
+    }
+    $modelsDir = Join-Path (Split-Path (Split-Path $bin -Parent) -Parent) "models"
+    if (-not (Test-Path $modelsDir)) {
+        Log-Message "Upscayl models folder not found at $modelsDir - upscale may fail." "Yellow"
+    }
+
+    if (-not (Test-Path $InputFolder)) {
+        Log-Message "Upscayl input folder not found: $InputFolder" "Red"
+        return $result
+    }
+    if (-not (Test-Path $OutputFolder)) {
+        New-Item -ItemType Directory -Path $OutputFolder -Force | Out-Null
+    }
+
+    # (2.5.60) NOTE: "Get-ChildItem -Path <folder> -Include ..." returns NOTHING
+    # without -Recurse or a wildcard, which is why upscaling never found any
+    # thumbnails. Filter by extension instead.
+    $srcFiles = @(Get-ChildItem -LiteralPath $InputFolder -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -match '^\.(png|jpe?g|webp)$' })
+    if ($OnlyFiles -and $OnlyFiles.Count -gt 0) {
+        $only = @{}
+        foreach ($o in $OnlyFiles) { if ($o) { $only[([string]$o).ToLowerInvariant()] = $true } }
+        $srcFiles = @($srcFiles | Where-Object { $only.ContainsKey($_.FullName.ToLowerInvariant()) })
+    }
+    $outBases = @{}
+    foreach ($of in @(Get-ChildItem -LiteralPath $OutputFolder -File -ErrorAction SilentlyContinue)) {
+        $outBases[[System.IO.Path]::GetFileNameWithoutExtension($of.Name).ToLowerInvariant()] = $true
+    }
+    $todo = @()
+    foreach ($f in $srcFiles) {
+        $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+        if ($outBases.ContainsKey($base.ToLowerInvariant())) {
+            $result.Skipped++
+        } else {
+            $todo += $f
+        }
+    }
+    Log-Message "Upscayl: $($srcFiles.Count) thumbnail(s) found, $($result.Skipped) already upscaled, $($todo.Count) to do." "Cyan"
+    if ($todo.Count -eq 0) {
+        Log-Message "Upscayl: nothing to do, all $($srcFiles.Count) already present in output." "Cyan"
+        return $result
+    }
+
+    $stage = Join-Path ([System.IO.Path]::GetTempPath()) ("upscayl_stage_" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $stage -Force | Out-Null
+    try {
+        foreach ($f in $todo) { Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stage $f.Name) -Force }
+
+        Log-Message "Upscayl: upscaling $($todo.Count) image(s) with $Model at ${Scale}x..." "Cyan"
+        # Quote every path: Start-Process does NOT quote array arguments, and paths
+        # such as "H:\Console Games\..." contain spaces (2.5.61 fix).
+        $outArg = $OutputFolder.TrimEnd('\', '/')
+        $argList = @(
+            "-i", ('"' + $stage + '"'),
+            "-o", ('"' + $outArg + '"'),
+            "-s", "$Scale",
+            "-m", ('"' + $modelsDir + '"'),
+            "-n", $Model,
+            "-f", "png"
+        )
+        $errLog = Join-Path ([System.IO.Path]::GetTempPath()) ("upscayl_err_" + [Guid]::NewGuid().ToString("N") + ".txt")
+        $outLog = Join-Path ([System.IO.Path]::GetTempPath()) ("upscayl_out_" + [Guid]::NewGuid().ToString("N") + ".txt")
+        $proc = Start-Process -FilePath $bin -ArgumentList $argList -NoNewWindow -PassThru `
+            -RedirectStandardError $errLog -RedirectStandardOutput $outLog
+        # Touching .Handle makes PowerShell keep the exit code (otherwise it is blank).
+        $null = $proc.Handle
+        # Keep the window responsive and report progress while Upscayl works.
+        $lastReport = Get-Date
+        $lastCount = -1
+        while (-not $proc.HasExited) {
+            try { [System.Windows.Forms.Application]::DoEvents() } catch {}
+            Start-Sleep -Milliseconds 300
+            if (((Get-Date) - $lastReport).TotalSeconds -ge 5) {
+                $lastReport = Get-Date
+                $doneNow = 0
+                foreach ($f in $todo) {
+                    if (Test-Path -LiteralPath (Join-Path $OutputFolder ([System.IO.Path]::GetFileNameWithoutExtension($f.Name) + ".png"))) { $doneNow++ }
+                }
+                if ($script:statusBar) { $script:statusBar.Text = "Upscayl: $doneNow / $($todo.Count) done..." }
+                if ($doneNow -ne $lastCount -and (($doneNow % 10) -eq 0 -or $doneNow -eq $todo.Count)) {
+                    Log-Message "  Upscayl progress: $doneNow / $($todo.Count)" "White"
+                }
+                $lastCount = $doneNow
+            }
+        }
+        $proc.WaitForExit()
+        $exitCode = $proc.ExitCode
+        if ($null -eq $exitCode) { $exitCode = "unknown" }
+        $errText = ""
+        try { if (Test-Path -LiteralPath $errLog) { $errText = (Get-Content -LiteralPath $errLog -Raw -ErrorAction SilentlyContinue) } } catch {}
+        if ($exitCode -ne 0) {
+            Log-Message "Upscayl exited with code $exitCode." "Red"
+            if (-not [string]::IsNullOrWhiteSpace($errText)) {
+                Log-Message "Upscayl said:" "Yellow"
+                foreach ($el in @(($errText -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 8))) { Log-Message "  $el" "Yellow" }
+            } else {
+                Log-Message "Upscayl printed no error text - check GPU/Vulkan drivers." "Yellow"
+            }
+            Log-Message "Full Upscayl output: $errLog" "Yellow"
+        } else {
+            Remove-Item -LiteralPath $errLog, $outLog -Force -ErrorAction SilentlyContinue
+        }
+
+        foreach ($f in $todo) {
+            $base = [System.IO.Path]::GetFileNameWithoutExtension($f.Name)
+            $outFile = Join-Path $OutputFolder "$base.png"
+            if (Test-Path -LiteralPath $outFile) {
+                $result.Upscaled++
+                $result.Files += @{ SourceName = $f.Name; OutputPath = $outFile }
+            } else {
+                $result.Failed++
+            }
+        }
+    } finally {
+        Remove-Item -Path $stage -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Log-Message "Upscayl done: Upscaled $($result.Upscaled)  Skipped(existing) $($result.Skipped)  Failed $($result.Failed)" "Green"
+    return $result
+}
+
+# ============================================================================
+# INPUT BOX / WORKFLOW GUIDE
+# ============================================================================
+try {
+    Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction SilentlyContinue
+} catch {}
+
+function Show-InputBox {
+    param([string]$Prompt, [string]$Title, [string]$Default = "")
+    try {
+        $r = [Microsoft.VisualBasic.Interaction]::InputBox($Prompt, $Title, $Default)
+        return $r
+    } catch {
+        $dlg = New-Object System.Windows.Forms.Form
+        $dlg.Text = $Title
+        $dlg.Size = New-Object System.Drawing.Size(420, 160)
+        $dlg.StartPosition = "CenterParent"
+        $dlg.FormBorderStyle = "FixedDialog"
+        $dlg.MaximizeBox = $false
+        $dlg.BackColor = $script:theme.background
+        $dlg.ForeColor = $script:theme.text
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = $Prompt
+        $lbl.Location = New-Object System.Drawing.Point(15, 15)
+        $lbl.Size = New-Object System.Drawing.Size(380, 30)
+        $dlg.Controls.Add($lbl)
+        $tb = New-Object System.Windows.Forms.TextBox
+        $tb.Location = New-Object System.Drawing.Point(15, 50)
+        $tb.Size = New-Object System.Drawing.Size(375, 25)
+        $tb.Text = $Default
+        $tb.BackColor = $script:theme.editor
+        $tb.ForeColor = $script:theme.text
+        $dlg.Controls.Add($tb)
+        $script:__inputResult = ""
+        $ok = Create-Button "OK" 120 90 80 28
+        $ok.Add_Click({ $script:__inputResult = $tb.Text; $dlg.Close() })
+        $dlg.Controls.Add($ok)
+        $cn = Create-Button "Cancel" 220 90 80 28
+        $cn.Add_Click({ $script:__inputResult = ""; $dlg.Close() })
+        $dlg.Controls.Add($cn)
+        $dlg.ShowDialog() | Out-Null
+        return $script:__inputResult
+    }
+}
+
+function ShowWorkflowDialog {
+    $dlg = New-Object System.Windows.Forms.Form
+    $dlg.Text = "Workflow Guide"
+    $dlg.Size = New-Object System.Drawing.Size(980, 720)
+    $dlg.MinimumSize = New-Object System.Drawing.Size(800, 500)
+    $dlg.StartPosition = "CenterParent"
+    $dlg.BackColor = $script:theme.background
+    $dlg.ForeColor = $script:theme.text
+
+    $root = New-Object System.Windows.Forms.TableLayoutPanel
+    $root.Dock = "Fill"
+    $root.ColumnCount = 2
+    $root.RowCount = 2
+    $root.BackColor = $script:theme.background
+    [void]$root.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 280)))
+    [void]$root.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    [void]$root.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Absolute, 56)))
+    $dlg.Controls.Add($root)
+
+    $tree = New-Object System.Windows.Forms.TreeView
+    $tree.Dock = "Fill"
+    $tree.BackColor = $script:theme.editor
+    $tree.ForeColor = $script:theme.text
+    $tree.BorderStyle = "FixedSingle"
+    $tree.Font = New-Object System.Drawing.Font("Segoe UI", 9.5)
+    $tree.HideSelection = $false
+    $tree.FullRowSelect = $true
+    $tree.ShowLines = $true
+    $tree.ShowPlusMinus = $true
+    $tree.ShowRootLines = $true
+    $root.Controls.Add($tree, 0, 0)
+
+    $detail = New-Object System.Windows.Forms.RichTextBox
+    $detail.Dock = "Fill"
+    $detail.ReadOnly = $true
+    $detail.Font = New-Object System.Drawing.Font("Segoe UI", 10)
+    $detail.BackColor = $script:theme.editor
+    $detail.ForeColor = $script:theme.text
+    $detail.BorderStyle = "FixedSingle"
+    $detail.DetectUrls = $false
+    $detail.ScrollBars = "Vertical"
+    $root.Controls.Add($detail, 1, 0)
+
+    $script:__wfContent = @{}
+
+    $nIntro = $tree.Nodes.Add("Introduction")
+    [void]$tree.Nodes.Add("About")
+    $script:__wfContent["Introduction"] = @"
+WORKFLOW GUIDE
+
+Use the expandable list on the left. Click a topic to read steps on the right.
+
+This tool repairs and builds Pegasus frontend metadata: collections, game entries, box art paths, SNS/Game IDs, and GameTDB helpers.
+
+Version $($script:version)
+
+ASSET FOLDER REFERENCE:
+- box2dfront/  -> assets.box_front (fallback)
+- box2dfull/   -> assets.box_full (standard)
+- boxFull/     -> assets.boxFull (YOUR THEME USES THIS)
+- box2dback/   -> assets.box_back
+- screenshot/  -> assets.screenshot
+- videos/      -> assets.video
+- wheel/       -> assets.logo
+- titlescreen/ -> assets.titlescreen
+- fanart/      -> assets.fanart
+- cartridge/   -> assets.cartridge
+- steamgrid/   -> assets.steamgrid
+- hero/        -> assets.background (SteamGridDB "Heroes")
+- tile/        -> assets.tile (SteamGridDB "Icons" - loose fit, check your theme)
+- marquee/     -> assets.marquee
+- banner/      -> assets.banner
+
+NEW IN 2.5.47:
+- Unzip All button in Build & Repair Tools: pick a folder, expand every
+  .zip in it into that same folder. Overwrite or skip existing files.
+- 7 new themes: Midnight Blue, Graphite Lime, Obsidian Gold, Violet Night,
+  Arctic Blue, Sage & Cream, Rose Quartz.
+- Cover Pack dialog: two separate checkboxes (game_id vs title) and a
+  manual Count button for the preview line.
+"@
+
+    $nScen = $tree.Nodes.Add("Scenarios")
+
+    $script:__wfContent["About"] = @"
+ABOUT - Metadata Repair Tool
+
+Version: $($script:version)
+
+Application developed by jacktrabblt72380
+
+Complete metadata management tool for Pegasus Frontend.
+
+Features
+  Add / Remove / Edit Pegasus collections
+  View and edit metadata files (Form + Raw modes)
+  Auto-load collections on selection
+  Workflow Guide for common scenarios
+  Metadata health checks and statistics
+  Find missing cover art
+  Add box art and all media types automatically
+  Rename images to match game names
+  Update metadata names to match images
+  Fix duplicate game entries
+  SNS Code Tools (product codes, titles, box art mapping)
+  Game ID Tools (Extract, Create Mapping, Apply)
+  GameTDB Tools (Titles, Covers by ID, Covers from Game List)
+  Build & Repair Tools (scan, build, import, sync, unzip, ES XML)
+  Import EmulationStation / Skraper gamelist.xml
+  Batch Import Library and Backup Orphan Media
+  PNG <-> JPG conversion
+  Backup / Restore (.bkup.txt)
+  Collapsible tool sections
+
+Sections
+  Collections - Create / Add / Remove / Load
+  Metadata Tools - Health, Stats, Missing, Duplicates, Backup
+  Image Tools - Rename, Box Art, All Media Types, Conversion
+  SNS Code Tools - Extract, Map, Add Box Art
+  Game ID Tools - Extract, Map, Apply, Console Reference
+  GameTDB / Libretro / SteamGridDB - Cover Pack dialog
+  Build & Repair Tools - Scan, Build, Import, Sync, Unzip, ES XML
+
+Developed by jacktrabblt72380
+"@
+
+    $script:__wfContent["Unzip All"] = @"
+SCENARIO: You downloaded a pack of .zip files (covers, ROMs, etc.)
+
+1. Build & Repair Tools -> Unzip All
+
+2. Pick the folder that contains the .zip files.
+
+3. Choose:
+     YES    = extract and overwrite any existing files
+     NO     = extract but skip files that already exist
+              (recommended for curated art)
+     CANCEL = do nothing
+
+4. Each .zip is expanded into the SAME folder the .zip lives in.
+   Example: C:\Games\Wii\covers.zip
+   becomes C:\Games\Wii\covers\<files inside>
+
+Note: This uses PowerShell's built-in Expand-Archive, so it works on
+Windows PowerShell 5.1 and PowerShell 7+ without any extra modules.
+"@
+    [void]$nScen.Nodes.Add("Unzip All")
+
+    $script:__wfContent["SNS covers already on disk"] = @"
+SCENARIO: SNS / product-code cover images on disk (e.g. SNS-XXXX-USA.png)
+
+1. SNS Code Tools -> From Images
+   - Pick the folder with cover images
+   - Builds SNS list + sns_codes_from_images.txt
+
+2. Choose a mapping method:
+   - Map by Product Code
+   - Map by Titles File (needs sns_titles.txt)
+   - Create SNS Mapping (Auto)
+
+3. SNS Code Tools -> Add Box Art (Mapping)
+   - Writes assets.box_front from sns_mappings.txt
+
+4. Save Changes
+"@
+    [void]$nScen.Nodes.Add("SNS covers already on disk")
+
+    $script:__wfContent["Covers named like game titles"] = @"
+SCENARIO: Images already named like the game (Super_Mario_World.png)
+
+1. SNS Code Tools -> Add Box Art (Game Name)
+   OR Image Tools -> Add Box Art to Metadata
+
+2. Save Changes
+"@
+    [void]$nScen.Nodes.Add("Covers named like game titles")
+
+    $script:__wfContent["Build collection from ROM folder"] = @"
+SCENARIO: Build or expand a collection from a ROM folder
+
+1. Collections -> Create (or Add existing metadata)
+
+2. Build & Repair Tools -> Scan Folder for Games
+
+3. Build & Repair Tools -> Build Meta from Folder
+
+4. Optional: Sync File Paths if ROMs moved
+
+5. Add box art using SNS or GameTDB flows
+
+6. Save Changes
+"@
+    [void]$nScen.Nodes.Add("Build collection from ROM folder")
+
+    $script:__wfContent["SNES ROM headers explained"] = @"
+SCENARIO: How Read SNES ROM Headers works (and what not to do)
+
+What the tool does
+  Build & Repair -> Read SNES ROM Headers scans .sfc/.smc (and similar)
+  files and reads the internal title stored in the ROM header.
+
+  Those internal names are usually SHORT and ALL CAPS, e.g.:
+    SUPER MARIOWORLD
+    ACCELEBRID
+    ARKANOID DOH IT AGAIN
+
+  That is normal for SNES dumps - it is NOT the pretty display title
+  from the box or No-Intro filename.
+
+What it writes (under media\Tools\ when possible)
+  snes_rom_headers.txt
+    filename_title|internal_header|status|full_path
+  titles_from_rom_headers.txt
+    unique internal titles only (for reference / mapping)
+  bad_rom_headers.txt
+    ROMs with BAD or EMPTY headers (consider clean dumps)
+
+What it does NOT do
+  It does not add game: blocks to your metadata by itself.
+  It does not set file: paths on existing games.
+
+Common mistake
+  Importing titles_from_rom_headers.txt (or similar) via
+  Import Games from List creates game entries that are ALL CAPS
+  and have NO file: path. In the Games list they appear after your
+  real titles (or mixed in after Sort A-Z). Clicking them shows an
+  empty File field.
+
+  Clean Bogus Games will NOT remove them - those titles look like
+  valid words, just uppercase.
+
+How to fix it
+  1. Metadata Tools -> Backup (optional; the next step also backs up)
+  2. Build & Repair -> Remove Games w/ No File
+  3. Confirm the list of titles to delete, then Yes
+  4. Save / reload and confirm File paths on remaining games
+
+Correct uses for header data
+  - Cross-check which ROMs have valid vs bad headers
+  - Build mappings (filename <-> internal name) for other tools
+  - Do NOT treat the internal title list as a full game list
+
+Build Meta from Folder uses ROM filenames for game: and file: -
+prefer that when creating a collection from a ROM directory.
+"@
+    [void]$nScen.Nodes.Add("SNES ROM headers explained")
+
+    $script:__wfContent["Add all media types"] = @"
+SCENARIO: Add all asset types (boxFull, logo, fanart, etc.)
+
+1. Image Tools -> Add All Media Types (boxFull, logo, etc.)
+
+2. This scans all asset folders and adds paths for:
+   - assets.box_front (box2dfront/)
+   - assets.box_full (box2dfull/)
+   - assets.boxFull (boxFull/) <- YOUR THEME
+   - assets.box_back (box2dback/)
+   - assets.screenshot (screenshot/)
+   - assets.video (videos/)
+   - assets.logo (wheel/)
+   - assets.titlescreen (titlescreen/)
+   - assets.fanart (fanart/)
+   - assets.cartridge (cartridge/)
+   - assets.steamgrid (steamgrid/)
+   - assets.marquee (marquee/)
+   - assets.banner (banner/)
+
+3. Apply Changes -> Save Changes
+"@
+    [void]$nScen.Nodes.Add("Add all media types")
+
+    $nTools = $tree.Nodes.Add("Tool reference")
+
+    $script:__wfContent["Collections"] = @"
+COLLECTIONS
+
+Create  - New folder + metadata .txt + media subfolders
+Add     - Attach an existing Pegasus metadata file
+Remove  - Drop collection from the list (does not delete files)
+Refresh - Reload list
+Load    - Open selected collection into the editor
+"@
+    [void]$nTools.Nodes.Add("Collections")
+
+    $script:__wfContent["Metadata Tools"] = @"
+METADATA TOOLS
+
+Check Health         - Counts games, box art, missing images
+Statistics           - Collection stats
+Find Missing Covers  - missing_covers.txt report
+Fix Duplicates       - Clean duplicate game blocks
+Backup / Restore     - .bkup.txt safety copies
+Refresh              - Reload collection list
+"@
+    [void]$nTools.Nodes.Add("Metadata Tools")
+
+    $script:__wfContent["Image Tools"] = @"
+IMAGE TOOLS
+
+Rename Images to Match Game Names
+Update Metadata Names from Images
+Add Box Art to Metadata
+Add All Media Types (boxFull, logo, etc.)
+Convert PNG/JPG (all or selected)
+Convert JPG to PNG (Pick Any Folder)
+Convert Illustrator (.ai) to PNG
+Update Metadata Extensions to PNG/JPG
+"@
+    [void]$nTools.Nodes.Add("Image Tools")
+
+    $script:__wfContent["SNS Code Tools"] = @"
+SNS CODE TOOLS
+
+From XML / From Images  - Build SNS code list
+Map by Product Code     - Match 4-letter code inside title
+Map by Titles File      - sns_titles.txt: SNS-XXXX-USA=Game Title
+Create SNS Mapping      - Auto (titles then product code)
+View SNS Mapping
+DL SNS Titles DB        - Downloads GameDB-SNES checksum database
+Match ROMs by Checksum  - Matches ROMs to real titles by CRC32
+Add Box Art (Mapping)   - Paths from mapping
+Add Box Art (Game Name) - Paths from game-named images
+Load SNS File / Clear List / SNS Stats
+"@
+    [void]$nTools.Nodes.Add("SNS Code Tools")
+
+    $script:__wfContent["Game ID Tools"] = @"
+GAME ID TOOLS
+
+Extract Game IDs from image filenames
+Create Game ID Mapping
+Apply Game IDs into metadata
+Console ID Reference
+"@
+    [void]$nTools.Nodes.Add("Game ID Tools")
+
+    $script:__wfContent["GameTDB Tools"] = @"
+GAMETDB / LIBRETRO / STEAMGRIDDB
+
+The Cover Pack dialog has a Site dropdown with four sources:
+
+GameTDB
+  - Matches by game_id (e.g. RMGE01)
+  - Region fallback, cover types, disc art, back covers
+  - Set "Current collection only (GameTDB: matches by game_id)"
+    to only fetch art for games in your loaded collection
+
+Libretro-Thumbnails
+  - No IDs - matches by normalized game title
+  - Boxart only, region tags in filenames are ignored
+  - Set "Current collection only (matches by game title - no game_id needed)"
+
+TheCoverProject
+  - No API; opens a browser-assisted helper window
+  - Assign saved covers, crop full wraps, mark "no cover"
+
+SteamGridDB
+  - Requires a free API key (Settings -> API Keys)
+  - Matches by title
+  - Asset types: Grids, Heroes, Logos, Icons
+
+NEW IN 2.5.47:
+  The preview line under Options is MANUAL. Click the "Count" button to
+  fetch Available-on-system / In-collection / Will-download numbers.
+  Nothing hits the network on its own just by opening the dialog.
+"@
+    [void]$nTools.Nodes.Add("GameTDB Tools")
+
+    $script:__wfContent["Build & Repair Tools"] = @"
+BUILD & REPAIR TOOLS
+
+Scan Folder for Games - list ROM filenames from a folder
+Titles from Covers - build a title list from box art names
+Build Meta from Folder - create game: entries from ROMs on disk
+Import Games from List - import titles from a text list
+Sync File Paths - match file: paths to ROMs in the folder
+Export Game List / Export Missing List
+DL Covers from Mapping - download covers using a mapping file
+Read SNES ROM Headers - scan SNES ROM internal titles into Tools files
+Unzip All - expand every .zip in a chosen folder into that same folder
+
+Strip All Box Art Paths / Strip All Assets
+Hide Multi-Disc + M3U
+Backup All Meta (Zip)
+Edit Genres
+Full File Check Report
+Clean Bogus Games / Sort Games A-Z
+Remove Games w/ No File / Separate Game Blocks
+Import / Export EmulationStation XML
+Backup Orphan Media / Batch Import Library
+"@
+    [void]$nTools.Nodes.Add("Build & Repair Tools")
+
+    $script:__wfContent["Files created"] = @"
+FILES WRITTEN NEXT TO YOUR METADATA
+
+sns_codes_from_images.txt
+sns_codes_from_xml.txt
+sns_mappings.txt
+sns_titles.txt
+game_ids_from_images.txt
+game_id_mappings.txt
+missing_covers.txt
+games_list_export.txt
+games_from_folder.txt
+games_from_folder_paths.txt
+unresolved_cover_names.txt
+titles_from_covers.txt
+titles_from_rom_headers.txt
+filename.bkup.txt
+media.backup\ (orphan media moved by Backup Orphan Media)
+full_file_check_report.txt
+"@
+
+    if ($nIntro) { $tree.SelectedNode = $nIntro }
+    $tree.ExpandAll()
+
+    if ($script:__wfContent.ContainsKey("Introduction")) {
+        $detail.Clear()
+        $detail.AppendText([string]$script:__wfContent["Introduction"])
+    }
+
+    $tree.Add_AfterSelect({
+        $node = $this.SelectedNode
+        if ($null -eq $node) { return }
+        $title = $node.Text
+        $d = $script:__wfDetail
+        if ($null -eq $d) { return }
+        $d.Clear()
+        if ($script:__wfContent -and $script:__wfContent.ContainsKey($title)) {
+            $d.SelectionColor = $script:theme.text
+            $d.AppendText([string]$script:__wfContent[$title])
+        } else {
+            $d.SelectionColor = $script:theme.textDim
+            $d.AppendText("Select a topic on the left.")
+        }
+        $d.SelectionStart = 0
+        $d.ScrollToCaret()
+    })
+    $script:__wfDetail = $detail
+
+    $footer = New-Object System.Windows.Forms.Panel
+    $footer.Dock = "Fill"
+    $footer.BackColor = $script:theme.background
+    $root.Controls.Add($footer, 0, 1)
+    $root.SetColumnSpan($footer, 2)
+
+    $lblDev = New-Object System.Windows.Forms.Label
+    $lblDev.Text = "Developed by jacktrabblt72380  |  v$($script:version)"
+    $lblDev.Location = New-Object System.Drawing.Point(12, 16)
+    $lblDev.Size = New-Object System.Drawing.Size(500, 24)
+    $lblDev.ForeColor = $script:theme.textDim
+    $lblDev.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $footer.Controls.Add($lblDev)
+
+    $btnExpand = Create-Button "Expand All" 520 12 100 30
+    $btnExpand.Add_Click({ $tree.ExpandAll() })
+    $footer.Controls.Add($btnExpand)
+
+    $btnCollapse = Create-Button "Collapse All" 630 12 100 30
+    $btnCollapse.Add_Click({ $tree.CollapseAll() })
+    $footer.Controls.Add($btnCollapse)
+
+    $btnOK = Create-Button "Close" 850 12 100 30
+    $btnOK.Add_Click({ $dlg.Close() })
+    $footer.Controls.Add($btnOK)
+
+    $dlg.ShowDialog()
+}
+
+# ============================================================================
+# MAIN WINDOW
+# ============================================================================
+function Show-MainWindow {
+    try { Load-Config } catch { $script:collections = @{} }
+    try { Initialize-SystemTheme } catch {}
+
+    $form = New-Object System.Windows.Forms.Form
+    $form.Text = "Metadata Repair Tool v$($script:version)"
+    $wa = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $initW = [Math]::Min(1600, [Math]::Max(1100, $wa.Width - 40))
+    $initH = [Math]::Min(980, [Math]::Max(700, $wa.Height - 20))
+    $form.Size = New-Object System.Drawing.Size($initW, $initH)
+    $form.MinimumSize = New-Object System.Drawing.Size(1100, 420)
+    $form.MaximizeBox = $true
+    $form.StartPosition = "Manual"
+    $form.Location = New-Object System.Drawing.Point(
+        [Math]::Max(0, $wa.Left + (($wa.Width - $initW) / 2)),
+        [Math]::Max(0, $wa.Top + (($wa.Height - $initH) / 2))
+    )
+    $script:mainForm = $form
+    $form.BackColor = $script:theme.background
+
+    # ============================================================
+    # TABLE LAYOUT PANEL - left tools | right editor + terminal
+    # ============================================================
+    $tableLayout = New-Object System.Windows.Forms.TableLayoutPanel
+    $tableLayout.Dock = "Fill"
+    $tableLayout.ColumnCount = 2
+    $tableLayout.RowCount = 1
+    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Absolute, 410)))
+    $tableLayout.ColumnStyles.Add((New-Object System.Windows.Forms.ColumnStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $tableLayout.RowStyles.Add((New-Object System.Windows.Forms.RowStyle([System.Windows.Forms.SizeType]::Percent, 100)))
+    $tableLayout.BackColor = $script:theme.background
+    $form.Controls.Add($tableLayout)
+
+    # ============================================================
+    # LEFT PANEL
+    # ============================================================
+    $leftPanel = New-Object System.Windows.Forms.Panel
+    $leftPanel.Dock = "Fill"
+    $leftPanel.AutoScroll = $true
+    $leftPanel.AutoScrollMargin = New-Object System.Drawing.Size(12, 20)
+    $leftPanel.BackColor = $script:theme.background
+    $leftPanel.Padding = New-Object System.Windows.Forms.Padding(6, 4, 18, 8)
+    $tableLayout.Controls.Add($leftPanel, 0, 0)
+    $script:leftPanelRef = $leftPanel
+    $script:leftSections = New-Object System.Collections.ArrayList
+    $leftW = 378
+
+    # Title (single clean header row - same height/border as top action bar)
+    $titleLabel = New-Object System.Windows.Forms.Label
+    $titleLabel.Text = "Metadata Repair Tool"
+    $titleLabel.Location = New-Object System.Drawing.Point(5, 2)
+    $titleLabel.Size = New-Object System.Drawing.Size($leftW, 36)
+    $titleLabel.Font = New-Object System.Drawing.Font("Segoe UI", 13, [System.Drawing.FontStyle]::Bold)
+    $titleLabel.ForeColor = $script:theme.accent
+    $titleLabel.Tag = "accent"
+    $titleLabel.BackColor = $script:theme.background
+    $titleLabel.BorderStyle = "FixedSingle"
+    $titleLabel.TextAlign = "MiddleCenter"
+    $leftPanel.Controls.Add($titleLabel)
+
+    # ============================================================
+    # COLLECTIONS GROUP
+    # ============================================================
+    $colGroup = New-Object System.Windows.Forms.GroupBox
+    $colGroup.Text = " Collections "
+    $colGroup.Location = New-Object System.Drawing.Point(5, 40)
+    $colGroup.Size = New-Object System.Drawing.Size($leftW, 230)
+    $colGroup.ForeColor = $script:theme.text
+    $colGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($colGroup)
+
+    $collectionList = New-Object System.Windows.Forms.ListBox
+    $collectionList.Location = New-Object System.Drawing.Point(8, 22)
+    $collectionList.Size = New-Object System.Drawing.Size(($leftW - 16), 155)
+    $collectionList.BackColor = $script:theme.editor
+    $collectionList.ForeColor = $script:theme.text
+    $collectionList.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $collectionList.BorderStyle = "FixedSingle"
+    $colGroup.Controls.Add($collectionList)
+    $script:collectionList = $collectionList
+
+    $colBtnY = 182
+    $colBtnH = 26
+    $colBtnGap = 5
+    $colBtnW = [Math]::Floor(($leftW - 16 - 4 * $colBtnGap) / 5)
+    $cx = 8
+
+    $btnCreate = Create-Button "Create" $cx $colBtnY $colBtnW $colBtnH
+    $btnCreate.Add_Click({ Show-CreateCollectionDialog })
+    $colGroup.Controls.Add($btnCreate)
+    $cx += $colBtnW + $colBtnGap
+
+    $btnAdd = Create-Button "Add" $cx $colBtnY $colBtnW $colBtnH
+    $btnAdd.Add_Click({ Show-AddCollectionDialog })
+    $colGroup.Controls.Add($btnAdd)
+    $cx += $colBtnW + $colBtnGap
+
+    $btnRemove = Create-Button "Remove" $cx $colBtnY $colBtnW $colBtnH
+    $btnRemove.Add_Click({
+        if ($collectionList.SelectedItem) {
+            $name = $collectionList.SelectedItem.ToString()
+            if (Remove-Collection $name) {
+                RefreshCollectionList
+                Log-Message "Removed: $name" "Yellow"
+                if ($collectionList.Items.Count -gt 0) {
+                    $collectionList.SelectedIndex = 0
+                    UpdateEditor
+                } else {
+                    $script:editorBox.Text = "No collections. Click 'Create' or 'Add' to add one."
+                    $script:statusBar.Text = "No collections loaded"
+                    $script:currentCollection = $null
+                }
+            }
+        }
+    })
+    $colGroup.Controls.Add($btnRemove)
+    $cx += $colBtnW + $colBtnGap
+
+    $btnRefresh = Create-Button "Refresh" $cx $colBtnY $colBtnW $colBtnH
+    $btnRefresh.Add_Click({
+        RefreshCollectionList
+        Log-Message "Refreshed" "Cyan"
+    })
+    $colGroup.Controls.Add($btnRefresh)
+    $cx += $colBtnW + $colBtnGap
+
+    $btnLoad = Create-Button "Load" $cx $colBtnY $colBtnW $colBtnH
+
+    $btnLoad.Add_Click({
+        if ($collectionList.SelectedItem) {
+            UpdateEditor
+            UpdateStats
+            Log-Message "Loaded: $($collectionList.SelectedItem)" "Green"
+        }
+    })
+    $colGroup.Controls.Add($btnLoad)
+
+    $collectionList.Add_SelectedIndexChanged({
+        if ($collectionList.SelectedItem) {
+            $name = $collectionList.SelectedItem.ToString()
+            $script:currentCollection = $script:collections[$name]
+            UpdateEditor
+            UpdateStats
+        }
+    })
+
+    # ============================================================
+    # SECTION 1: METADATA TOOLS
+    # ============================================================
+    $toolsGroup = New-Object System.Windows.Forms.GroupBox
+    $toolsGroup.Text = " Metadata Tools "
+    $toolsGroup.Location = New-Object System.Drawing.Point(5, 294)
+    $toolsGroup.Size = New-Object System.Drawing.Size($leftW, 120)
+    $toolsGroup.ForeColor = $script:theme.text
+    $toolsGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($toolsGroup)
+
+    $ty = 22
+    $ts = 30
+    $bw = [Math]::Floor(($leftW - 24) / 2)
+    $col2X = 8 + $bw + 6
+    $row4W = [Math]::Floor(($leftW - 16 - 18) / 4)
+    $row4Gap = 6
+
+    $btn1 = Create-Button "Check Health" 8 $ty $bw 26
+    $btn1.Add_Click({ CheckHealth })
+    $toolsGroup.Controls.Add($btn1)
+
+    $btn2 = Create-Button "Statistics" $col2X $ty $bw 26
+    $btn2.Add_Click({ ShowStats })
+    $toolsGroup.Controls.Add($btn2)
+
+    $ty += $ts
+    $btn3 = Create-Button "Find Missing Covers" 8 $ty $bw 26
+    $btn3.Add_Click({ FindMissing })
+    $toolsGroup.Controls.Add($btn3)
+
+    $btn4 = Create-Button "Fix Duplicates" $col2X $ty $bw 26
+    $btn4.Add_Click({ FixDup })
+    $toolsGroup.Controls.Add($btn4)
+
+    $ty += $ts
+    $row3W = [Math]::Floor(($leftW - 16 - 12) / 3)
+    $row3Gap = 6
+    $btn5 = Create-Button "Backup" 8 $ty $row3W 26
+    $btn5.Add_Click({ CreateBackup })
+    $toolsGroup.Controls.Add($btn5)
+
+    $btn6 = Create-Button "Restore" (8 + $row3W + $row3Gap) $ty $row3W 26
+    $btn6.Add_Click({ RestoreBackup })
+    $toolsGroup.Controls.Add($btn6)
+
+    $btn7 = Create-Button "Refresh" (8 + 2 * ($row3W + $row3Gap)) $ty $row3W 26
+    $btn7.Add_Click({
+        RefreshCollectionList
+        Log-Message "Refreshed" "Cyan"
+    })
+    $toolsGroup.Controls.Add($btn7)
+
+    # ============================================================
+    # SECTION 2: IMAGE TOOLS
+    # ============================================================
+    $imageGroup = New-Object System.Windows.Forms.GroupBox
+    $imageGroup.Text = " Image Tools "
+    $imageGroup.Location = New-Object System.Drawing.Point(5, 422)
+    $imageGroup.Size = New-Object System.Drawing.Size($leftW, 480)
+    $imageGroup.ForeColor = $script:theme.text
+    $imageGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($imageGroup)
+
+    $iy = 22
+    $is = 28
+    $fullW = $leftW - 16
+
+    $script:chkImgSubfolders = New-Object System.Windows.Forms.CheckBox
+    $script:chkImgSubfolders.Text = "Include subfolders (image converters)"
+    $script:chkImgSubfolders.Location = New-Object System.Drawing.Point(10, $iy)
+    $script:chkImgSubfolders.Size = New-Object System.Drawing.Size(($fullW - 4), 22)
+    $script:chkImgSubfolders.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $script:chkImgSubfolders.ForeColor = $script:theme.text
+    $script:chkImgSubfolders.BackColor = [System.Drawing.Color]::Transparent
+    $script:chkImgSubfolders.Checked = $false
+    $imageGroup.Controls.Add($script:chkImgSubfolders)
+    $iy += $is
+
+    $btnImg3 = Create-Button "Add Box Art to Metadata" 8 $iy $fullW 26
+    $btnImg3.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg3.Add_Click({ AddBoxArt })
+    $imageGroup.Controls.Add($btnImg3)
+
+    $iy += $is
+    $btnImgAll = Create-Button "Add All Media Types (boxFull, logo, etc.)" 8 $iy $fullW 26
+    $btnImgAll.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImgAll.Add_Click({ Add-AllMediaTypes })
+    $imageGroup.Controls.Add($btnImgAll)
+
+    $iy += $is
+    $btnImg1 = Create-Button "Rename Images to Game Titles (strip USA/EUR/JPN)" 8 $iy $fullW 26
+    $btnImg1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg1.Add_Click({ RenameImages })
+    $imageGroup.Controls.Add($btnImg1)
+
+    $iy += $is
+    $btnImgSns = Create-Button "Rename SNS-Coded Images to Titles" 8 $iy $fullW 26
+    $btnImgSns.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImgSns.Add_Click({ Rename-ImagesFromSnsCodes })
+    $imageGroup.Controls.Add($btnImgSns)
+
+    $iy += $is
+    $btnImg2 = Create-Button "Update Metadata Names from Images" 8 $iy $fullW 26
+    $btnImg2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg2.Add_Click({ UpdateMetadataNames })
+    $imageGroup.Controls.Add($btnImg2)
+
+    $iy += $is
+    $btnImg4 = Create-Button "Convert All PNG Images to JPG" 8 $iy $fullW 26
+    $btnImg4.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg4.Add_Click({ ConvertImagesPNGtoJPG $true })
+    $imageGroup.Controls.Add($btnImg4)
+
+    $iy += $is
+    $btnImg5 = Create-Button "Convert All JPG Images to PNG" 8 $iy $fullW 26
+    $btnImg5.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg5.Add_Click({ ConvertImagesJPGtoPNG $true })
+    $imageGroup.Controls.Add($btnImg5)
+
+    $iy += $is
+    $btnImg6 = Create-Button "Convert Selected PNG Images to JPG" 8 $iy $fullW 26
+    $btnImg6.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg6.Add_Click({ ConvertImagesPNGtoJPG $false })
+    $imageGroup.Controls.Add($btnImg6)
+
+    $iy += $is
+    $btnImg7 = Create-Button "Convert Selected JPG Images to PNG" 8 $iy $fullW 26
+    $btnImg7.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg7.Add_Click({ ConvertImagesJPGtoPNG $false })
+    $imageGroup.Controls.Add($btnImg7)
+
+    $iy += $is
+    $btnImg8 = Create-Button "Update Metadata Extensions to JPG" 8 $iy $fullW 26
+    $btnImg8.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg8.Add_Click({ UpdateMetadataExtensions "jpg" })
+    $imageGroup.Controls.Add($btnImg8)
+
+    $iy += $is
+    $btnImg9 = Create-Button "Update Metadata Extensions to PNG" 8 $iy $fullW 26
+    $btnImg9.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg9.Add_Click({ UpdateMetadataExtensions "png" })
+    $imageGroup.Controls.Add($btnImg9)
+
+    $iy += $is
+    $btnImg10 = Create-Button "Convert JPG to PNG (Pick Any Folder)" 8 $iy $fullW 26
+    $btnImg10.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg10.Add_Click({ ConvertJpgToPng })
+    $imageGroup.Controls.Add($btnImg10)
+
+    $iy += $is
+    $btnImg11 = Create-Button "Convert Illustrator (.ai) to PNG" 8 $iy $fullW 26
+    $btnImg11.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg11.Add_Click({ ConvertAiToPng })
+    $imageGroup.Controls.Add($btnImg11)
+
+    $iy += $is
+    $btnImg12 = Create-Button "Convert WebP to PNG (Pick Any Folder)" 8 $iy $fullW 26
+    $btnImg12.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg12.Add_Click({ Convert-WebPImages -Direction "ToPng" })
+    $imageGroup.Controls.Add($btnImg12)
+
+    $iy += $is
+    $btnImg13 = Create-Button "Convert PNG to WebP (Pick Any Folder)" 8 $iy $fullW 26
+    $btnImg13.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnImg13.Add_Click({ Convert-WebPImages -Direction "ToWebP" })
+    $imageGroup.Controls.Add($btnImg13)
+
+    # ============================================================
+    # SECTION 3: SNS CODE TOOLS
+    # ============================================================
+    $snsExpandedH = 396
+    $snsGroup = New-Object System.Windows.Forms.GroupBox
+    $snsGroup.Text = " SNS Code Tools "
+    $snsGroup.Location = New-Object System.Drawing.Point(5, 720)
+    $snsGroup.Size = New-Object System.Drawing.Size($leftW, $snsExpandedH)
+    $snsGroup.ForeColor = $script:theme.text
+    $snsGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($snsGroup)
+
+    $snsCodeList = New-Object System.Windows.Forms.ListBox
+    $snsCodeList.Location = New-Object System.Drawing.Point(8, 20)
+    $snsCodeList.Size = New-Object System.Drawing.Size(($leftW - 16), 130)
+    $snsCodeList.BackColor = $script:theme.editor
+    $snsCodeList.ForeColor = $script:theme.text
+    $snsCodeList.Font = New-Object System.Drawing.Font("Consolas", 8)
+    $snsCodeList.BorderStyle = "FixedSingle"
+    $snsGroup.Controls.Add($snsCodeList)
+    $script:snsCodeList = $snsCodeList
+
+    $snsInfo = New-Object System.Windows.Forms.Label
+    $snsInfo.Text = "0 codes loaded"
+    $snsInfo.Location = New-Object System.Drawing.Point(8, 152)
+    $snsInfo.Size = New-Object System.Drawing.Size(($leftW - 16), 16)
+    $snsInfo.ForeColor = $script:theme.textDim
+    $snsInfo.Font = New-Object System.Drawing.Font("Segoe UI", 8)
+    $snsGroup.Controls.Add($snsInfo)
+    $script:snsInfoLabel = $snsInfo
+
+    $sy = 172
+    $btnH = 26
+    $gap = 5
+    $snsBtnW = [Math]::Floor(($leftW - 16 - $gap) / 2)
+    $snsCol2X = 8 + $snsBtnW + $gap
+
+    $btnX = Create-Button "From XML" 8 $sy $snsBtnW $btnH
+    $btnX.Add_Click({ ExtractXML })
+    $snsGroup.Controls.Add($btnX)
+
+    $btnI = Create-Button "From Images" $snsCol2X $sy $snsBtnW $btnH
+    $btnI.Add_Click({ ExtractImages })
+    $snsGroup.Controls.Add($btnI)
+
+    $sy += $btnH + $gap
+    $btnMapCode = Create-Button "Map by Product Code" 8 $sy $snsBtnW $btnH
+    $btnMapCode.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnMapCode.Add_Click({ CreateIDMapping -OutputFileName "sns_mappings.txt" -MatchMode ProductCode })
+    $snsGroup.Controls.Add($btnMapCode)
+
+    $btnMapTitles = Create-Button "Map by Titles File" $snsCol2X $sy $snsBtnW $btnH
+    $btnMapTitles.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnMapTitles.Add_Click({ CreateIDMapping -OutputFileName "sns_mappings.txt" -MatchMode Titles })
+    $snsGroup.Controls.Add($btnMapTitles)
+
+    $sy += $btnH + $gap
+    $btnSnsMap = Create-Button "Create SNS Mapping" 8 $sy $snsBtnW $btnH
+    $btnSnsMap.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnSnsMap.Add_Click({ CreateIDMapping -OutputFileName "sns_mappings.txt" -MatchMode Auto })
+    $snsGroup.Controls.Add($btnSnsMap)
+
+    $btnViewMapping = Create-Button "View SNS Mapping" $snsCol2X $sy $snsBtnW $btnH
+    $btnViewMapping.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnViewMapping.Add_Click({
+        $c = Get-Col
+        if (-not $c) { return }
+        $mapFile = Join-Path (Split-Path $c.metadataPath -Parent) "sns_mappings.txt"
+        if (Test-Path $mapFile) {
+            $content = Get-Content $mapFile -Raw
+            if (-not [string]::IsNullOrWhiteSpace($content)) {
+                [System.Windows.Forms.MessageBox]::Show($content, "SNS Mappings", "OK", "Information")
+            } else {
+                [System.Windows.Forms.MessageBox]::Show("Mapping file is empty.", "SNS Mappings", "OK", "Information")
+            }
+        } else {
+            [System.Windows.Forms.MessageBox]::Show("No mapping file found. Run a Map / Create SNS Mapping first.", "SNS Mappings", "OK", "Information")
+        }
+    })
+    $snsGroup.Controls.Add($btnViewMapping)
+
+    $sy += $btnH + $gap
+    $btnDlSnsTitles = Create-Button "DL SNS Titles DB" 8 $sy $snsBtnW $btnH
+    $btnDlSnsTitles.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnDlSnsTitles.Add_Click({ Download-SnsTitlesDatabase })
+    $snsGroup.Controls.Add($btnDlSnsTitles)
+
+    $btnChecksumMatch = Create-Button "Match ROMs by Checksum" $snsCol2X $sy $snsBtnW $btnH
+    $btnChecksumMatch.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnChecksumMatch.Add_Click({ Match-RomsByChecksum })
+    $snsGroup.Controls.Add($btnChecksumMatch)
+
+    $sy += $btnH + $gap
+    $btnSnsBox = Create-Button "Add Box Art (Mapping)" 8 $sy $snsBtnW $btnH
+    $btnSnsBox.Add_Click({ AddBoxArt -Mode Mapping })
+    $snsGroup.Controls.Add($btnSnsBox)
+
+    $btnSnsBoxName = Create-Button "Add Box Art (Game Name)" $snsCol2X $sy $snsBtnW $btnH
+    $btnSnsBoxName.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnSnsBoxName.Add_Click({ AddBoxArt -Mode GameName })
+    $snsGroup.Controls.Add($btnSnsBoxName)
+
+    $sy += $btnH + $gap
+    $btnLoadSns = Create-Button "Load SNS File" 8 $sy $snsBtnW $btnH
+    $btnLoadSns.Add_Click({
+        $of = New-Object System.Windows.Forms.OpenFileDialog
+        $of.Title = "Load SNS Codes from File"
+        $of.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+        if ($of.ShowDialog() -eq "OK") {
+            $codes = @(Get-Content $of.FileName | Where-Object { $_ -match '^SNS-' } | ForEach-Object { $_.Trim() })
+            if ($codes.Count -gt 0) {
+                Update-SnsCodeList $codes $of.FileName
+                Log-Message "Loaded $($codes.Count) SNS codes from: $($of.FileName)" "Green"
+            } else {
+                Log-Message "No SNS codes found in file" "Yellow"
+            }
+        }
+    })
+    $snsGroup.Controls.Add($btnLoadSns)
+
+    $btnClearSns = Create-Button "Clear List" $snsCol2X $sy $snsBtnW $btnH
+    $btnClearSns.Add_Click({
+        $script:lastSnsCodes = @()
+        $script:lastSnsCodesFile = $null
+        if ($null -ne $script:snsCodeList) {
+            $script:snsCodeList.Items.Clear()
+            if ($null -ne $script:snsInfoLabel) {
+                $script:snsInfoLabel.Text = "0 codes loaded"
+            }
+        }
+        Log-Message "SNS list cleared" "Yellow"
+    })
+    $snsGroup.Controls.Add($btnClearSns)
+
+    $sy += $btnH + $gap
+    $btnSnsStats = Create-Button "SNS Stats" 8 $sy ($leftW - 16) $btnH
+    $btnSnsStats.Add_Click({
+        $count = $script:lastSnsCodes.Count
+        $file = if ($script:lastSnsCodesFile) { $script:lastSnsCodesFile } else { "None" }
+        [System.Windows.Forms.MessageBox]::Show("SNS Codes Loaded: $count`nSource File: $file", "SNS Statistics", "OK", "Information")
+    })
+    $snsGroup.Controls.Add($btnSnsStats)
+
+    # ============================================================
+    # SECTION 4: GAME ID TOOLS
+    # ============================================================
+    $gameIDGroup = New-Object System.Windows.Forms.GroupBox
+    $gameIDGroup.Text = " Game ID Tools "
+    $gameIDGroup.Location = New-Object System.Drawing.Point(5, 1098)
+    $gameIDGroup.Size = New-Object System.Drawing.Size($leftW, 90)
+    $gameIDGroup.ForeColor = $script:theme.text
+    $gameIDGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($gameIDGroup)
+
+    $gy = 22
+    $idBw = [Math]::Floor(($leftW - 24) / 2)
+    $btnID1 = Create-Button "Extract Game IDs" 8 $gy $idBw 26
+    $btnID1.Add_Click({ ExtractGameIDsFromImages })
+    $gameIDGroup.Controls.Add($btnID1)
+
+    $btnID2 = Create-Button "Create Game ID Mapping" (8 + $idBw + 6) $gy $idBw 26
+    $btnID2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnID2.Add_Click({ CreateIDMapping -OutputFileName "game_id_mappings.txt" })
+    $gameIDGroup.Controls.Add($btnID2)
+
+    $gy += 28
+    $btnID3 = Create-Button "Apply Game IDs" 8 $gy $idBw 26
+    $btnID3.Add_Click({ ApplyGameIDsToMetadata })
+    $gameIDGroup.Controls.Add($btnID3)
+
+    $btnID4 = Create-Button "Console ID Reference" (8 + $idBw + 6) $gy $idBw 26
+    $btnID4.Add_Click({ ShowConsoleIDList })
+    $gameIDGroup.Controls.Add($btnID4)
+
+    # ============================================================
+    # SECTION 5: GAMETDB TOOLS
+    # ============================================================
+    $gtdbExpandedH = 148
+    $gtdbGroup = New-Object System.Windows.Forms.GroupBox
+    $gtdbGroup.Text = " GameTDB Tools "
+    $gtdbGroup.Location = New-Object System.Drawing.Point(5, 1196)
+    $gtdbGroup.Size = New-Object System.Drawing.Size($leftW, $gtdbExpandedH)
+    $gtdbGroup.ForeColor = $script:theme.text
+    $gtdbGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($gtdbGroup)
+
+    $gty = 22
+    $gtBw = [Math]::Floor(($leftW - 24) / 2)
+    $gtCol2 = 8 + $gtBw + 6
+    $btnGt1 = Create-Button "Download Titles DB" 8 $gty $gtBw 26
+    $btnGt1.Add_Click({ Download-GameTDBTitles })
+    $gtdbGroup.Controls.Add($btnGt1)
+
+    $btnGt2 = Create-Button "Download Covers by ID" $gtCol2 $gty $gtBw 26
+    $btnGt2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnGt2.Add_Click({ Download-GameTDBCovers })
+    $gtdbGroup.Controls.Add($btnGt2)
+
+    $gty += 30
+    $btnGtPack = Create-Button "Download Cover Pack..." 8 $gty $gtBw 26
+    $btnGtPack.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnGtPack.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "gametdb" })
+    $gtdbGroup.Controls.Add($btnGtPack)
+
+    $btnGt3 = Create-Button "Lookup Title by ID" $gtCol2 $gty $gtBw 26
+    $btnGt3.Add_Click({ Lookup-GameTDBTitle })
+    $gtdbGroup.Controls.Add($btnGt3)
+
+    $gty += 30
+    $btnGt4 = Create-Button "Open GameTDB Page" 8 $gty $gtBw 26
+    $btnGt4.Add_Click({ Open-GameTDBPage })
+    $gtdbGroup.Controls.Add($btnGt4)
+
+    $btnGt5 = Create-Button "Apply Titles from GameTDB" $gtCol2 $gty $gtBw 26
+    $btnGt5.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnGt5.Add_Click({ Apply-GameTDBTitles })
+    $gtdbGroup.Controls.Add($btnGt5)
+
+    $gty += 30
+    $btnGt7 = Create-Button "Fill Missing Box Art Paths" 8 $gty $gtBw 26
+    $btnGt7.Add_Click({ Fill-GameTDBBoxArtPaths })
+    $gtdbGroup.Controls.Add($btnGt7)
+
+    $btnGt8 = Create-Button "DL Covers from Game List" $gtCol2 $gty $gtBw 26
+    $btnGt8.Add_Click({ Download-CoversFromGameList })
+    $gtdbGroup.Controls.Add($btnGt8)
+
+    # ============================================================
+    # SECTION 5b: LIBRETRO-THUMBNAILS TOOLS
+    # ============================================================
+    $libretroExpandedH = 88
+    $libretroGroup = New-Object System.Windows.Forms.GroupBox
+    $libretroGroup.Text = " Libretro Tools "
+    $libretroGroup.Location = New-Object System.Drawing.Point(5, 1350)
+    $libretroGroup.Size = New-Object System.Drawing.Size($leftW, $libretroExpandedH)
+    $libretroGroup.ForeColor = $script:theme.text
+    $libretroGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($libretroGroup)
+
+    $lry = 22
+    $btnLr1 = Create-Button "Cover Downloader (Libretro)..." 8 $lry ($leftW - 16) 26
+    $btnLr1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnLr1.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "libretro" })
+    $libretroGroup.Controls.Add($btnLr1)
+
+    $btnLr2 = Create-Button "Open Libretro Thumbnails (GitHub)" 8 ($lry + 30) ($leftW - 16) 26
+    $btnLr2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnLr2.Add_Click({ try { Start-Process "https://github.com/libretro-thumbnails/libretro-thumbnails" } catch { Log-Message "Could not open browser: $_" "Red" } })
+    $libretroGroup.Controls.Add($btnLr2)
+
+    # ============================================================
+    # SECTION 5c: HASH MATCH TOOLS
+    # ============================================================
+    $hashExpandedH = 86
+    $hashGroup = New-Object System.Windows.Forms.GroupBox
+    $hashGroup.Text = " Hash Match Tools "
+    $hashGroup.Location = New-Object System.Drawing.Point(5, 1360)
+    $hashGroup.Size = New-Object System.Drawing.Size($leftW, $hashExpandedH)
+    $hashGroup.ForeColor = $script:theme.text
+    $hashGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($hashGroup)
+
+    $hashBtnW = [Math]::Floor(($leftW - 16 - $gap) / 2)
+    $btnHashImport = Create-Button "Import DAT File..." 8 22 $hashBtnW 26
+    $btnHashImport.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnHashImport.Add_Click({ Import-DatFileDatabase })
+    $hashGroup.Controls.Add($btnHashImport)
+
+    $btnHashMatch = Create-Button "Match by Checksum" (8 + $hashBtnW + $gap) 22 $hashBtnW 26
+    $btnHashMatch.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnHashMatch.Add_Click({ Match-RomsByChecksumGeneric })
+    $hashGroup.Controls.Add($btnHashMatch)
+
+    $btnHashRa = Create-Button "Check RetroAchievements..." 8 52 ($leftW - 16) 26
+    $btnHashRa.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnHashRa.Add_Click({ Start-RetroAchievementsCheck })
+    $hashGroup.Controls.Add($btnHashRa)
+
+    # ============================================================
+    # SECTION 6: BUILDER / REPAIR TOOLS
+    # ============================================================
+    # 11 button rows: y=22, step 30, btn h=26 -> last bottom 22+10*30+26=348 -> height 386 (extra row for Sort)
+    $builderExpandedH = 446
+    $builderGroup = New-Object System.Windows.Forms.GroupBox
+    $builderGroup.Text = " Build & Repair Tools "
+    $builderGroup.Location = New-Object System.Drawing.Point(5, 1384)
+    $builderGroup.Size = New-Object System.Drawing.Size($leftW, $builderExpandedH)
+    $builderGroup.ForeColor = $script:theme.text
+    $builderGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($builderGroup)
+
+    $by = 22
+    $bBw = [Math]::Floor(($leftW - 24) / 2)
+    $bCol2 = 8 + $bBw + 6
+
+    $btnB1 = Create-Button "Scan Folder for Games" 8 $by $bBw 26
+    $btnB1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB1.Add_Click({ Scan-GamesFromFolder })
+    $builderGroup.Controls.Add($btnB1)
+
+    $btnB2 = Create-Button "Titles from Covers" $bCol2 $by $bBw 26
+    $btnB2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB2.Add_Click({ Scan-TitlesFromCoverImages })
+    $builderGroup.Controls.Add($btnB2)
+
+    $by += 30
+    $btnB3 = Create-Button "Build Meta from Folder" 8 $by $bBw 26
+    $btnB3.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB3.Add_Click({ Build-MetadataFromFolder })
+    $builderGroup.Controls.Add($btnB3)
+
+    $btnB4 = Create-Button "Import Games from List" $bCol2 $by $bBw 26
+    $btnB4.Add_Click({ Import-GamesFromList })
+    $builderGroup.Controls.Add($btnB4)
+
+    $by += 30
+    $btnB5 = Create-Button "Sync File Paths" 8 $by $bBw 26
+    $btnB5.Add_Click({ Sync-FilePathsFromFolder })
+    $builderGroup.Controls.Add($btnB5)
+
+    $btnB6 = Create-Button "Export Game List" $bCol2 $by $bBw 26
+    $btnB6.Add_Click({ Export-GameList })
+    $builderGroup.Controls.Add($btnB6)
+
+    $by += 30
+    $btnB7 = Create-Button "DL Covers from Mapping" 8 $by $bBw 26
+    $btnB7.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB7.Add_Click({ Download-CoversFromMapping })
+    $builderGroup.Controls.Add($btnB7)
+
+    $btnB8 = Create-Button "Export Missing List" $bCol2 $by $bBw 26
+    $btnB8.Add_Click({ Export-MissingCoversList })
+    $builderGroup.Controls.Add($btnB8)
+
+    $by += 30
+    $btnB9 = Create-Button "Read SNES ROM Headers" 8 $by $bBw 26
+    $btnB9.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB9.Add_Click({ Read-SnesRomHeaders })
+    $builderGroup.Controls.Add($btnB9)
+
+    $btnB11 = Create-Button "Strip All Box Art Paths" $bCol2 $by $bBw 26
+    $btnB11.Add_Click({ Strip-BoxArtPaths })
+    $builderGroup.Controls.Add($btnB11)
+
+    $by += 30
+    $btnB12 = Create-Button "Clean Bogus Games" 8 $by $bBw 26
+    $btnB12.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB12.Add_Click({ CleanBogusGames })
+    $builderGroup.Controls.Add($btnB12)
+
+    $btnB13 = Create-Button "Hide Multi-Disc + M3U" $bCol2 $by $bBw 26
+    $btnB13.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB13.Add_Click({ Hide-MultiDiscAndBuildM3U })
+    $builderGroup.Controls.Add($btnB13)
+
+    $by += 30
+    $btnB14 = Create-Button "Strip All Assets" 8 $by $bBw 26
+    $btnB14.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB14.Add_Click({ Strip-AllAssetPaths })
+    $builderGroup.Controls.Add($btnB14)
+
+    $btnB15 = Create-Button "Backup All Meta (Zip)" $bCol2 $by $bBw 26
+    $btnB15.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB15.Add_Click({ Backup-AllMetadataZip })
+    $builderGroup.Controls.Add($btnB15)
+
+    $by += 30
+    $btnB16 = Create-Button "Edit Genres" 8 $by $bBw 26
+    $btnB16.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB16.Add_Click({ Edit-Genres })
+    $builderGroup.Controls.Add($btnB16)
+
+    $btnB17 = Create-Button "Full File Check Report" $bCol2 $by $bBw 26
+    $btnB17.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB17.Add_Click({ Check-AllFilesReport })
+    $builderGroup.Controls.Add($btnB17)
+
+    $by += 30
+    $btnB18 = Create-Button "Export EmulationStation XML" 8 $by $bBw 26
+    $btnB18.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB18.Add_Click({ Export-EmulationStationXml })
+    $builderGroup.Controls.Add($btnB18)
+
+    $btnB19 = Create-Button "Import EmulationStation XML" $bCol2 $by $bBw 26
+    $btnB19.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB19.Add_Click({ Import-EmulationStationXml })
+    $builderGroup.Controls.Add($btnB19)
+
+    $by += 30
+    $btnB20 = Create-Button "Backup Orphan Media" 8 $by $bBw 26
+    $btnB20.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB20.Add_Click({ Backup-OrphanMedia })
+    $builderGroup.Controls.Add($btnB20)
+
+    $btnB21 = Create-Button "Batch Import Library" $bCol2 $by $bBw 26
+    $btnB21.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB21.Add_Click({ Batch-ImportFromLibraryRoot })
+    $builderGroup.Controls.Add($btnB21)
+
+    $by += 30
+    $btnB22 = Create-Button "Sort Games A-Z" 8 $by $bBw 26
+    $btnB22.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB22.Add_Click({ Sort-GamesAlphabetically })
+    $builderGroup.Controls.Add($btnB22)
+
+    $btnB23 = Create-Button "Remove Games w/ No File" $bCol2 $by $bBw 26
+    $btnB23.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB23.Add_Click({ Remove-GamesWithoutFile })
+    $builderGroup.Controls.Add($btnB23)
+
+    $by += 30
+    $btnB24 = Create-Button "Separate Game Blocks" 8 $by $bBw 26
+    $btnB24.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnB24.Add_Click({ Separate-GameBlocks })
+    $builderGroup.Controls.Add($btnB24)
+
+    # === Unzip All button: right column, same row as "Separate Game Blocks" ===
+    $btnUnzip = Create-Button "Unzip All" $bCol2 $by $bBw 26
+    $btnUnzip.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnUnzip.Add_Click({ Unzip-AllZipsInFolder })
+    $builderGroup.Controls.Add($btnUnzip)
+
+    $by += 30
+    $btnIndentDesc = Create-Button "Indent Descriptions" 8 $by $bBw 26
+    $btnIndentDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnIndentDesc.Add_Click({ Indent-DescriptionFields })
+    $builderGroup.Controls.Add($btnIndentDesc)
+
+
+    # ============================================================
+    # SECTION 7: THECOVERPROJECT TOOLS
+    # ============================================================
+    $tcpExpandedH = 88
+    $tcpGroup = New-Object System.Windows.Forms.GroupBox
+    $tcpGroup.Text = " TheCoverProject Tools "
+    $tcpGroup.Location = New-Object System.Drawing.Point(5, 1810)
+    $tcpGroup.Size = New-Object System.Drawing.Size($leftW, $tcpExpandedH)
+    $tcpGroup.ForeColor = $script:theme.text
+    $tcpGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($tcpGroup)
+
+    $btnTcp1 = Create-Button "Cover Downloader (TheCoverProject)..." 8 22 ($leftW - 16) 26
+    $btnTcp1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnTcp1.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "tcp" })
+    $tcpGroup.Controls.Add($btnTcp1)
+
+    $btnTcp2 = Create-Button "Open thecoverproject.net" 8 52 ($leftW - 16) 26
+    $btnTcp2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnTcp2.Add_Click({ try { Start-Process "https://www.thecoverproject.net/" } catch { Log-Message "Could not open browser: $_" "Red" } })
+    $tcpGroup.Controls.Add($btnTcp2)
+
+    # ============================================================
+    # SECTION 8: STEAMGRIDDB TOOLS
+    # ============================================================
+    $sgdbExpandedH = 88
+    $sgdbGroup = New-Object System.Windows.Forms.GroupBox
+    $sgdbGroup.Text = " SteamGridDB Tools "
+    $sgdbGroup.Location = New-Object System.Drawing.Point(5, 1900)
+    $sgdbGroup.Size = New-Object System.Drawing.Size($leftW, $sgdbExpandedH)
+    $sgdbGroup.ForeColor = $script:theme.text
+    $sgdbGroup.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $leftPanel.Controls.Add($sgdbGroup)
+
+    $btnSg1 = Create-Button "Cover Downloader (SteamGridDB)..." 8 22 ($leftW - 16) 26
+    $btnSg1.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnSg1.Add_Click({ Show-GameTDBCoverPackDialog -PreselectSource "steamgriddb" })
+    $sgdbGroup.Controls.Add($btnSg1)
+
+    $btnSg2 = Create-Button "Open steamgriddb.com" 8 52 ($leftW - 16) 26
+    $btnSg2.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnSg2.Add_Click({ try { Start-Process "https://www.steamgriddb.com/" } catch { Log-Message "Could not open browser: $_" "Red" } })
+    $sgdbGroup.Controls.Add($btnSg2)
+
+    # Register left sections
+    Register-LeftSection -Group $colGroup -ExpandedHeight 230 -Collapsible $true -StartExpanded $true -Title "Collections"
+    Register-LeftSection -Group $toolsGroup -ExpandedHeight 120 -Collapsible $true -StartExpanded $true -Title "Metadata Tools"
+    Register-LeftSection -Group $imageGroup -ExpandedHeight 480 -Collapsible $true -StartExpanded $false -Title "Image Tools"
+    Register-LeftSection -Group $snsGroup -ExpandedHeight $snsExpandedH -Collapsible $true -StartExpanded $false -Title "SNS Code Tools"
+    Register-LeftSection -Group $gameIDGroup -ExpandedHeight 90 -Collapsible $true -StartExpanded $false -Title "Game ID Tools"
+    Register-LeftSection -Group $gtdbGroup -ExpandedHeight $gtdbExpandedH -Collapsible $true -StartExpanded $false -Title "GameTDB Tools"
+    Register-LeftSection -Group $libretroGroup -ExpandedHeight $libretroExpandedH -Collapsible $true -StartExpanded $false -Title "Libretro Tools"
+    Register-LeftSection -Group $hashGroup -ExpandedHeight $hashExpandedH -Collapsible $true -StartExpanded $false -Title "Hash Match Tools"
+    Register-LeftSection -Group $builderGroup -ExpandedHeight $builderExpandedH -Collapsible $true -StartExpanded $true -Title "Build & Repair Tools"
+    Register-LeftSection -Group $tcpGroup -ExpandedHeight $tcpExpandedH -Collapsible $true -StartExpanded $false -Title "TheCoverProject Tools"
+    Register-LeftSection -Group $sgdbGroup -ExpandedHeight $sgdbExpandedH -Collapsible $true -StartExpanded $false -Title "SteamGridDB Tools"
+
+    # Delay relayout until after form is shown to avoid layout issues
+    $form.Add_Shown({
+        Relayout-LeftSections
+        try {
+            Apply-MetaAndGamesCollapseState
+            Relayout-TerminalPosition
+        } catch {}
+    })
+
+    # ============================================================
+    # RIGHT PANEL - Fields (left) + Game list (right)
+    # ============================================================
+    $rightPanel = New-Object System.Windows.Forms.Panel
+    $rightPanel.Dock = "Fill"
+    $rightPanel.BackColor = $script:theme.background
+    $rightPanel.Padding = New-Object System.Windows.Forms.Padding(6, 6, 22, 8)
+    $rightPanel.AutoScroll = $true
+    $tableLayout.Controls.Add($rightPanel, 1, 0)
+    $script:rightPanelRef = $rightPanel
+    $rightPanel.Add_Resize({
+        if ($script:rawMode) { Apply-RawEditorLayout }
+        else { Relayout-TerminalPosition }
+    })
+
+    # ---- Item Metadata (GroupBox includes fields + action buttons) ----
+    $script:metaExpandedH = 640
+    $script:metaCollapsedH = 28
+    $script:metaExpanded = $true
+    $script:metaNarrowW = 800
+    $script:contentFullW = 1132
+    $metaOuter = New-Object System.Windows.Forms.GroupBox
+    $metaOuter.Text = "      Item Metadata "
+    $metaOuter.Location = New-Object System.Drawing.Point(5, 48)
+    $metaOuter.Size = New-Object System.Drawing.Size($script:metaNarrowW, $script:metaExpandedH)
+    $metaOuter.ForeColor = $script:theme.text
+    $metaOuter.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $metaOuter.BackColor = $script:theme.background
+    $rightPanel.Controls.Add($metaOuter)
+
+    $btnMetaToggle = New-Object System.Windows.Forms.Button
+    $btnMetaToggle.Size = New-Object System.Drawing.Size(22, 18)
+    $btnMetaToggle.Location = New-Object System.Drawing.Point(6, 1)
+    $btnMetaToggle.FlatStyle = "Flat"
+    $btnMetaToggle.FlatAppearance.BorderSize = 1
+    $btnMetaToggle.FlatAppearance.BorderColor = $script:theme.textDim
+    $btnMetaToggle.BackColor = $script:theme.button
+    $btnMetaToggle.ForeColor = $script:theme.accent
+    $btnMetaToggle.Tag = "accent"
+    $btnMetaToggle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnMetaToggle.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $btnMetaToggle.TabStop = $false
+    $btnMetaToggle.Text = "-"
+    $btnMetaToggle.Add_Click({
+        $script:metaExpanded = -not $script:metaExpanded
+        Apply-MetaAndGamesCollapseState
+    })
+    $metaOuter.Controls.Add($btnMetaToggle)
+    $btnMetaToggle.BringToFront()
+    $script:btnMetaToggle = $btnMetaToggle
+
+    # Bottom edge drag grip - resize Item Metadata (and Games) height
+    $script:metaDragging = $false
+    $script:metaDragStartY = 0
+    $script:metaDragStartH = 0
+    $metaGrip = New-Object System.Windows.Forms.Panel
+    $metaGrip.Size = New-Object System.Drawing.Size(696, 8)
+    $metaGrip.Location = New-Object System.Drawing.Point(2, 916)
+    $metaGrip.BackColor = [System.Drawing.Color]::FromArgb(45, 50, 75)
+    $metaGrip.Cursor = [System.Windows.Forms.Cursors]::SizeNS
+    $metaOuter.Controls.Add($metaGrip)
+    $script:metaGrip = $metaGrip
+    $metaGrip.BringToFront()
+
+    $metaGrip.Add_MouseDown({
+        param($sender, $e)
+        if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
+        if (-not $script:metaExpanded) {
+            $script:metaExpanded = $true
+            Apply-MetaAndGamesCollapseState
+        }
+        $script:metaDragging = $true
+        $script:metaDragStartY = [System.Windows.Forms.Cursor]::Position.Y
+        $script:metaDragStartH = $script:metaOuter.Height
+        $sender.Capture = $true
+    })
+    $metaGrip.Add_MouseMove({
+        param($sender, $e)
+        if (-not $script:metaDragging) { return }
+        $dy = [System.Windows.Forms.Cursor]::Position.Y - $script:metaDragStartY
+        $newH = $script:metaDragStartH + $dy
+        if ($newH -lt 160) { $newH = 160 }
+        if ($newH -gt 1200) { $newH = 1200 }
+        $script:metaExpandedH = $newH
+        $script:metaOuter.Height = $newH
+        $script:gamesExpandedH = $newH
+        if ($script:gamesOuter -and $script:gamesOuter.Visible) {
+            $script:gamesOuter.Height = $newH
+        }
+        Apply-MetaInnerLayout
+        Relayout-TerminalPosition
+        try {
+            $f = $script:mainForm
+            if ($f -and $f.WindowState -eq "Normal") {
+                $bottom = $script:termOuter.Bottom + 58
+                $needed = [Math]::Max($f.MinimumSize.Height, $bottom)
+                if ($f.Height -lt $needed) { $f.Height = $needed }
+            }
+        } catch {}
+    })
+    $metaGrip.Add_MouseUp({
+        param($sender, $e)
+        $script:metaDragging = $false
+        $sender.Capture = $false
+        if ($script:metaOuter) {
+            $script:metaExpandedH = $script:metaOuter.Height
+            $script:gamesExpandedH = $script:metaOuter.Height
+        }
+        Relayout-TerminalPosition
+    })
+
+    # ---- Detail panel (collection header + game fields) ----
+    $detailPanel = New-Object System.Windows.Forms.Panel
+    $detailPanel.Location = New-Object System.Drawing.Point(8, 18)
+    $detailPanel.Size = New-Object System.Drawing.Size(784, 612)
+    $detailPanel.BackColor = $script:theme.editor
+    $detailPanel.BorderStyle = "FixedSingle"
+    $detailPanel.AutoScroll = $true
+    $detailPanel.Padding = New-Object System.Windows.Forms.Padding(0, 0, 28, 4)
+    $metaOuter.Controls.Add($detailPanel)
+    $script:detailPanel = $detailPanel
+    $script:metaOuter = $metaOuter
+    $btnMetaToggle.BringToFront()
+
+    $script:fieldControls = @{}
+    $script:headerControls = @{}
+    $fy = 6
+
+    # Collection header section
+    $hdrTitle = New-Object System.Windows.Forms.Label
+    $hdrTitle.Text = "Collection Metadata"
+    $hdrTitle.Location = New-Object System.Drawing.Point(6, $fy)
+    $hdrTitle.Size = New-Object System.Drawing.Size(520, 20)
+    $hdrTitle.ForeColor = $script:theme.success
+    $hdrTitle.Tag = "success"
+    $hdrTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $detailPanel.Controls.Add($hdrTitle)
+    $fy += 24
+
+    $headerDefs = @(
+        @{ Label = "Collection"; FieldName = "collection"; IsMulti = $false; Hint = "collection" },
+        @{ Label = "Shortname"; FieldName = "shortname"; IsMulti = $false; Hint = "shortname" },
+        @{ Label = "Launch"; FieldName = "launch"; IsMulti = $false; Hint = "launch" },
+        @{ Label = "Box Front"; FieldName = "assets.box_front"; IsMulti = $false; Hint = "box2dfront" },
+        @{ Label = "Logo"; FieldName = "assets.logo"; IsMulti = $false; Hint = "wheel" },
+        @{ Label = "Description"; FieldName = "description"; IsMulti = $true; Hint = "description" }
+    )
+
+    $labelW = 102
+    $hintW  = 90
+    $hintX  = 6 + $labelW
+    $fieldX = 200
+    $fieldW = 559
+    $hintColor = [System.Drawing.Color]::FromArgb(150, 155, 175)
+
+    foreach ($fd in $headerDefs) {
+        $fLabel = $fd["Label"]
+        $fName  = $fd["FieldName"]
+        $fMulti = $fd["IsMulti"]
+        $fHint  = $fd["Hint"]
+
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = $fLabel
+        $lbl.Location = New-Object System.Drawing.Point(6, $fy)
+        $lbl.Size = New-Object System.Drawing.Size($labelW, 20)
+        $lbl.ForeColor = $script:theme.accent
+        $lbl.Tag = "accent"
+        $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+        $lbl.AutoSize = $false
+        $lbl.AutoEllipsis = $false
+        $detailPanel.Controls.Add($lbl)
+
+        if ($fHint) {
+            $hintLbl = New-Object System.Windows.Forms.Label
+            $hintLbl.Text = $fHint
+            $hintLbl.Location = New-Object System.Drawing.Point($hintX, ($fy + 1))
+            $hintLbl.Size = New-Object System.Drawing.Size($hintW, 18)
+            $hintLbl.ForeColor = $hintColor
+            $hintLbl.Tag = "hint"
+            $hintLbl.Font = New-Object System.Drawing.Font("Consolas", 8)
+            $hintLbl.AutoSize = $false
+            $hintLbl.AutoEllipsis = $false
+            $detailPanel.Controls.Add($hintLbl)
+        }
+
+        $tb = New-Object System.Windows.Forms.TextBox
+        $tb.Location = New-Object System.Drawing.Point($fieldX, $fy)
+        $tb.BackColor = $script:theme.panel
+        $tb.ForeColor = $script:theme.text
+        $tb.BorderStyle = "FixedSingle"
+        $tb.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $tb.Tag = "header:$fName"
+
+        if ($fMulti) {
+            $tb.Size = New-Object System.Drawing.Size($fieldW, 48)
+            $tb.Multiline = $true
+            $tb.ScrollBars = "Vertical"
+            $tb.AcceptsReturn = $true
+            $fy += 52
+        } else {
+            $tb.Size = New-Object System.Drawing.Size($fieldW, 22)
+            $fy += 24
+        }
+        $detailPanel.Controls.Add($tb)
+        $script:headerControls[$fName] = $tb
+        $tb.Add_TextChanged({ if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true } })
+    }
+
+    $fy += 6
+    $gameTitle = New-Object System.Windows.Forms.Label
+    $gameTitle.Text = "Game Metadata"
+    $gameTitle.Location = New-Object System.Drawing.Point(6, $fy)
+    $gameTitle.Size = New-Object System.Drawing.Size(520, 20)
+    $gameTitle.ForeColor = $script:theme.success
+    $gameTitle.Tag = "success"
+    $gameTitle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $detailPanel.Controls.Add($gameTitle)
+    $fy += 24
+
+    $fieldDefs = @(
+        @{ Label = "Title"; FieldName = "game"; IsMulti = $false; Hint = "game" },
+        @{ Label = "Sort Title"; FieldName = "sort_title"; IsMulti = $false; Hint = "sort-title" },
+        @{ Label = "File"; FieldName = "file"; IsMulti = $false; Hint = "file" },
+        @{ Label = "Developer"; FieldName = "developer"; IsMulti = $false; Hint = "developer" },
+        @{ Label = "Publisher"; FieldName = "publisher"; IsMulti = $false; Hint = "publisher" },
+        @{ Label = "Genre"; FieldName = "genre"; IsMulti = $false; Hint = "genre" },
+        @{ Label = "Players"; FieldName = "players"; IsMulti = $false; Hint = "players" },
+        @{ Label = "Release"; FieldName = "release"; IsMulti = $false; Hint = "release" },
+        @{ Label = "Rating"; FieldName = "rating"; IsMulti = $false; Hint = "rating" },
+        @{ Label = "Game ID"; FieldName = "game_id"; IsMulti = $false; Hint = "game_id" },
+        @{ Label = "Box Front"; FieldName = "assets.box_front"; IsMulti = $false; Hint = "box2dfront" },
+        @{ Label = "Box Full"; FieldName = "assets.box_full"; IsMulti = $false; Hint = "box2dfull" },
+        @{ Label = "boxFull"; FieldName = "assets.boxFull"; IsMulti = $false; Hint = "boxFull" },
+        @{ Label = "Box Back"; FieldName = "assets.box_back"; IsMulti = $false; Hint = "box2dback" },
+        @{ Label = "Screenshot"; FieldName = "assets.screenshot"; IsMulti = $false; Hint = "screenshot" },
+        @{ Label = "Video"; FieldName = "assets.video"; IsMulti = $false; Hint = "videos" },
+        @{ Label = "Logo"; FieldName = "assets.logo"; IsMulti = $false; Hint = "wheel" },
+        @{ Label = "Title Screen"; FieldName = "assets.titlescreen"; IsMulti = $false; Hint = "titlescreen" },
+        @{ Label = "Fanart"; FieldName = "assets.fanart"; IsMulti = $false; Hint = "fanart" },
+        @{ Label = "Cartridge"; FieldName = "assets.cartridge"; IsMulti = $false; Hint = "cartridge" },
+        @{ Label = "Steam Grid"; FieldName = "assets.steamgrid"; IsMulti = $false; Hint = "steamgrid" },
+        @{ Label = "Marquee"; FieldName = "assets.marquee"; IsMulti = $false; Hint = "marquee" },
+        @{ Label = "Banner"; FieldName = "assets.banner"; IsMulti = $false; Hint = "banner" },
+        @{ Label = "Box Thumb"; FieldName = "assets.box_front_thumb"; IsMulti = $false; Hint = "box2dThumb" },
+        @{ Label = "Description"; FieldName = "description"; IsMulti = $true; Hint = "description" }
+    )
+
+    foreach ($fd in $fieldDefs) {
+        $fLabel = $fd["Label"]
+        $fName  = $fd["FieldName"]
+        $fMulti = $fd["IsMulti"]
+        $fHint  = $fd["Hint"]
+
+        $lbl = New-Object System.Windows.Forms.Label
+        $lbl.Text = $fLabel
+        $lbl.Location = New-Object System.Drawing.Point(6, $fy)
+        $lbl.Size = New-Object System.Drawing.Size($labelW, 20)
+        $lbl.ForeColor = $script:theme.accent
+        $lbl.Tag = "accent"
+        $lbl.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+        $lbl.AutoSize = $false
+        $lbl.AutoEllipsis = $false
+        $detailPanel.Controls.Add($lbl)
+
+        if ($fHint) {
+            $hintLbl = New-Object System.Windows.Forms.Label
+            $hintLbl.Text = $fHint
+            $hintLbl.Location = New-Object System.Drawing.Point($hintX, ($fy + 1))
+            $hintLbl.Size = New-Object System.Drawing.Size($hintW, 18)
+            $hintLbl.ForeColor = $hintColor
+            $hintLbl.Tag = "hint"
+            $hintLbl.Font = New-Object System.Drawing.Font("Consolas", 8)
+            $hintLbl.AutoSize = $false
+            $hintLbl.AutoEllipsis = $false
+            $detailPanel.Controls.Add($hintLbl)
+        }
+
+        $tb = New-Object System.Windows.Forms.TextBox
+        $tb.Location = New-Object System.Drawing.Point($fieldX, $fy)
+        $tb.BackColor = $script:theme.panel
+        $tb.ForeColor = $script:theme.text
+        $tb.BorderStyle = "FixedSingle"
+        $tb.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+        $tb.Tag = $fName
+
+        if ($fMulti) {
+            $tb.Size = New-Object System.Drawing.Size($fieldW, 80)
+            $tb.Multiline = $true
+            $tb.ScrollBars = "Vertical"
+            $tb.AcceptsReturn = $true
+            $fy += 84
+        } else {
+            $tb.Size = New-Object System.Drawing.Size($fieldW, 22)
+            $fy += 24
+        }
+        $detailPanel.Controls.Add($tb)
+        $script:fieldControls[$fName] = $tb
+        $tb.Add_TextChanged({ if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true } })
+    }
+
+    try {
+        $detailPanel.HorizontalScroll.Maximum = 0
+        $detailPanel.AutoScroll = $false
+        $detailPanel.HorizontalScroll.Visible = $false
+        $detailPanel.AutoScroll = $true
+        $detailPanel.HorizontalScroll.Enabled = $false
+    } catch {}
+
+    # ---- Games list (GroupBox border) ----
+    $script:gamesExpandedH = 640
+    $script:gamesCollapsedH = 28
+    $gamesOuter = New-Object System.Windows.Forms.GroupBox
+    $gamesOuter.Text = " Games "
+    $gamesOuter.Location = New-Object System.Drawing.Point(812, 48)
+    $gamesOuter.Size = New-Object System.Drawing.Size(320, $script:gamesExpandedH)
+    $gamesOuter.ForeColor = $script:theme.text
+    $gamesOuter.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $gamesOuter.BackColor = $script:theme.background
+    $rightPanel.Controls.Add($gamesOuter)
+    $script:gamesOuter = $gamesOuter
+
+    $searchLabel = New-Object System.Windows.Forms.Label
+    $searchLabel.Text = "Search:"
+    $searchLabel.Location = New-Object System.Drawing.Point(8, 18)
+    $searchLabel.Size = New-Object System.Drawing.Size(50, 20)
+    $searchLabel.ForeColor = $script:theme.textDim
+    $gamesOuter.Controls.Add($searchLabel)
+    $script:searchLabel = $searchLabel
+
+    $gameSearchBox = New-Object System.Windows.Forms.TextBox
+    $gameSearchBox.Location = New-Object System.Drawing.Point(58, 16)
+    $gameSearchBox.Size = New-Object System.Drawing.Size(252, 22)
+    $gameSearchBox.BackColor = $script:theme.editor
+    $gameSearchBox.ForeColor = $script:theme.text
+    $gameSearchBox.BorderStyle = "FixedSingle"
+    $gameSearchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $gamesOuter.Controls.Add($gameSearchBox)
+    $script:gameSearchBox = $gameSearchBox
+    $gameSearchBox.Add_TextChanged({ FilterGameList })
+
+    $gameListBox = New-Object System.Windows.Forms.ListBox
+    $gameListBox.Location = New-Object System.Drawing.Point(8, 44)
+    $gameListBox.Size = New-Object System.Drawing.Size(304, 590)
+    $gameListBox.BackColor = $script:theme.editor
+    $gameListBox.ForeColor = $script:theme.text
+    $gameListBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $gameListBox.BorderStyle = "FixedSingle"
+    $gameListBox.IntegralHeight = $false
+    $gamesOuter.Controls.Add($gameListBox)
+    $script:gameListBox = $gameListBox
+    $gameListBox.Add_SelectedIndexChanged({
+        if (-not $script:suppressGameSelect) { LoadSelectedGameFields }
+    })
+
+    # Raw editor (hidden by default) - RichTextBox for per-line color
+    $editorBox = New-Object System.Windows.Forms.RichTextBox
+    $editorBox.Location = New-Object System.Drawing.Point(5, 80)
+    $editorBox.Size = New-Object System.Drawing.Size(1132, 598)
+    $editorBox.Multiline = $true
+    $editorBox.ScrollBars = "Both"
+    $editorBox.WordWrap = $false
+    $editorBox.AcceptsTab = $true
+    $editorBox.ShortcutsEnabled = $true
+    $editorBox.DetectUrls = $false
+    $editorBox.HideSelection = $false
+    $editorBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+    $editorBox.BackColor = $script:theme.editor
+    $editorBox.ForeColor = $script:theme.text
+    $editorBox.BorderStyle = "FixedSingle"
+    $editorBox.Visible = $false
+    $editorBox.Text = "Select a collection to view metadata..."
+
+    $rawEditorMenu = New-Object System.Windows.Forms.ContextMenuStrip
+
+    $rawMenuCut = New-Object System.Windows.Forms.ToolStripMenuItem("Cut")
+    $rawMenuCut.Add_Click({
+        try {
+            if (-not [string]::IsNullOrEmpty($editorBox.SelectedText)) {
+                [System.Windows.Forms.Clipboard]::SetText($editorBox.SelectedText)
+                $editorBox.SelectedText = ""
+            }
+        } catch {}
+    })
+    [void]$rawEditorMenu.Items.Add($rawMenuCut)
+
+    $rawMenuCopy = New-Object System.Windows.Forms.ToolStripMenuItem("Copy")
+    $rawMenuCopy.Add_Click({
+        try {
+            if (-not [string]::IsNullOrEmpty($editorBox.SelectedText)) {
+                [System.Windows.Forms.Clipboard]::SetText($editorBox.SelectedText)
+            }
+        } catch {}
+    })
+    [void]$rawEditorMenu.Items.Add($rawMenuCopy)
+
+    $rawMenuPaste = New-Object System.Windows.Forms.ToolStripMenuItem("Paste")
+    $rawMenuPaste.Add_Click({
+        try {
+            if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+                $editorBox.SelectedText = [System.Windows.Forms.Clipboard]::GetText()
+            }
+        } catch {}
+    })
+    [void]$rawEditorMenu.Items.Add($rawMenuPaste)
+
+    [void]$rawEditorMenu.Items.Add((New-Object System.Windows.Forms.ToolStripSeparator))
+
+    $rawMenuSelectAll = New-Object System.Windows.Forms.ToolStripMenuItem("Select All")
+    $rawMenuSelectAll.Add_Click({ $editorBox.SelectAll() })
+    [void]$rawEditorMenu.Items.Add($rawMenuSelectAll)
+
+    $editorBox.ContextMenuStrip = $rawEditorMenu
+    $rawEditorMenu.Add_Opening({
+        $hasSelection = -not [string]::IsNullOrEmpty($editorBox.SelectedText)
+        $rawMenuCut.Enabled = $hasSelection
+        $rawMenuCopy.Enabled = $hasSelection
+        try { $rawMenuPaste.Enabled = [System.Windows.Forms.Clipboard]::ContainsText() }
+        catch { $rawMenuPaste.Enabled = $false }
+    })
+
+    $editorBox.Add_KeyDown({
+        param($sender, $e)
+        if ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::C) {
+            try {
+                if (-not [string]::IsNullOrEmpty($sender.SelectedText)) {
+                    [System.Windows.Forms.Clipboard]::SetText($sender.SelectedText)
+                }
+            } catch {}
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::X) {
+            try {
+                if (-not [string]::IsNullOrEmpty($sender.SelectedText)) {
+                    [System.Windows.Forms.Clipboard]::SetText($sender.SelectedText)
+                    $sender.SelectedText = ""
+                }
+            } catch {}
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::V) {
+            try {
+                if ([System.Windows.Forms.Clipboard]::ContainsText()) {
+                    $sender.SelectedText = [System.Windows.Forms.Clipboard]::GetText()
+                }
+            } catch {}
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::Y) {
+            try { if ($sender.CanRedo) { $sender.Redo() } } catch {}
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::F) {
+            Show-RawReplaceBar -Focus "Find"
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::H) {
+            Show-RawReplaceBar -Focus "Replace"
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        } elseif ($e.Control -and $e.KeyCode -eq [System.Windows.Forms.Keys]::S) {
+            SaveMeta
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        }
+    })
+    $editorBox.Add_TextChanged({
+        if (-not $script:suppressDirtyTracking) { Set-UnsavedChanges $true }
+    })
+    $rightPanel.Controls.Add($editorBox)
+    $script:editorBox = $editorBox
+
+    # ---- Raw editor search bar ----
+    $rawSearchBar = New-Object System.Windows.Forms.Panel
+    $rawSearchBar.Location = New-Object System.Drawing.Point(5, 48)
+    $rawSearchBar.Size = New-Object System.Drawing.Size(1132, 30)
+    $rawSearchBar.BackColor = $script:theme.background
+    $rawSearchBar.Visible = $false
+    $rightPanel.Controls.Add($rawSearchBar)
+    $script:rawSearchBar = $rawSearchBar
+
+    $rawSearchLbl = New-Object System.Windows.Forms.Label
+    $rawSearchLbl.Text = "Find:"
+    $rawSearchLbl.Location = New-Object System.Drawing.Point(4, 5)
+    $rawSearchLbl.Size = New-Object System.Drawing.Size(40, 20)
+    $rawSearchLbl.ForeColor = $script:theme.textDim
+    $rawSearchBar.Controls.Add($rawSearchLbl)
+
+    $rawSearchBox = New-Object System.Windows.Forms.TextBox
+    $rawSearchBox.Location = New-Object System.Drawing.Point(48, 3)
+    $rawSearchBox.Size = New-Object System.Drawing.Size(420, 24)
+    $rawSearchBox.BackColor = $script:theme.editor
+    $rawSearchBox.ForeColor = $script:theme.text
+    $rawSearchBox.BorderStyle = "FixedSingle"
+    $rawSearchBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $rawSearchBar.Controls.Add($rawSearchBox)
+    $script:rawSearchBox = $rawSearchBox
+    $rawSearchBox.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+            Find-InRawEditor -Forward $true
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        }
+    })
+
+    $btnRawFindNext = Create-Button "Find Next" 478 2 90 24
+    $btnRawFindNext.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawFindNext.Add_Click({ Find-InRawEditor -Forward $true })
+    $rawSearchBar.Controls.Add($btnRawFindNext)
+
+    $btnRawFindPrev = Create-Button "Find Prev" 574 2 90 24
+    $btnRawFindPrev.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawFindPrev.Add_Click({ Find-InRawEditor -Forward $false })
+    $rawSearchBar.Controls.Add($btnRawFindPrev)
+
+    $btnRawReplaceToggle = Create-Button "Replace" 670 2 90 24
+    $btnRawReplaceToggle.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceToggle.Add_Click({
+        if ($script:rawReplaceVisible) {
+            $script:rawReplaceVisible = $false
+            if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $false }
+            Apply-RawEditorLayout
+        } else {
+            Show-RawReplaceBar -Focus "Replace"
+        }
+    })
+    $rawSearchBar.Controls.Add($btnRawReplaceToggle)
+
+    $rawSearchStatus = New-Object System.Windows.Forms.Label
+    $rawSearchStatus.Text = ""
+    $rawSearchStatus.Location = New-Object System.Drawing.Point(766, 5)
+    $rawSearchStatus.Size = New-Object System.Drawing.Size(360, 20)
+    $rawSearchStatus.ForeColor = $script:theme.textDim
+    $rawSearchBar.Controls.Add($rawSearchStatus)
+    $script:rawSearchStatus = $rawSearchStatus
+
+    $rawReplaceRow = New-Object System.Windows.Forms.Panel
+    $rawReplaceRow.Location = New-Object System.Drawing.Point(0, 32)
+    $rawReplaceRow.Size = New-Object System.Drawing.Size(1132, 30)
+    $rawReplaceRow.BackColor = $script:theme.background
+    $rawReplaceRow.Visible = $false
+    $rawSearchBar.Controls.Add($rawReplaceRow)
+    $script:rawReplaceRow = $rawReplaceRow
+
+    $rawReplaceLbl = New-Object System.Windows.Forms.Label
+    $rawReplaceLbl.Text = "Replace:"
+    $rawReplaceLbl.Location = New-Object System.Drawing.Point(4, 5)
+    $rawReplaceLbl.Size = New-Object System.Drawing.Size(60, 20)
+    $rawReplaceLbl.ForeColor = $script:theme.textDim
+    $rawReplaceRow.Controls.Add($rawReplaceLbl)
+
+    $rawReplaceBox = New-Object System.Windows.Forms.TextBox
+    $rawReplaceBox.Location = New-Object System.Drawing.Point(68, 3)
+    $rawReplaceBox.Size = New-Object System.Drawing.Size(400, 24)
+    $rawReplaceBox.BackColor = $script:theme.editor
+    $rawReplaceBox.ForeColor = $script:theme.text
+    $rawReplaceBox.BorderStyle = "FixedSingle"
+    $rawReplaceBox.Font = New-Object System.Drawing.Font("Segoe UI", 9)
+    $rawReplaceRow.Controls.Add($rawReplaceBox)
+    $script:rawReplaceBox = $rawReplaceBox
+    $rawReplaceBox.Add_KeyDown({
+        param($sender, $e)
+        if ($e.KeyCode -eq [System.Windows.Forms.Keys]::Enter) {
+            Replace-InRawEditor
+            $e.SuppressKeyPress = $true
+            $e.Handled = $true
+        }
+    })
+
+    $btnRawReplaceOne = Create-Button "Replace" 478 2 90 24
+    $btnRawReplaceOne.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceOne.Add_Click({ Replace-InRawEditor })
+    $rawReplaceRow.Controls.Add($btnRawReplaceOne)
+
+    $btnRawReplaceAll = Create-Button "Replace All" 574 2 90 24
+    $btnRawReplaceAll.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceAll.Add_Click({ Replace-InRawEditor -All })
+    $rawReplaceRow.Controls.Add($btnRawReplaceAll)
+
+    $btnRawReplaceClose = Create-Button "Close" 670 2 90 24
+    $btnRawReplaceClose.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnRawReplaceClose.Add_Click({
+        $script:rawReplaceVisible = $false
+        if ($script:rawReplaceRow) { $script:rawReplaceRow.Visible = $false }
+        Apply-RawEditorLayout
+    })
+    $rawReplaceRow.Controls.Add($btnRawReplaceClose)
+
+    # ---- Top header row: action buttons (left) + stats (right) ----
+    $actionBarLabels = @("Apply", "Refresh", "Form", "Raw", "Save", "Guide")
+    $actionFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnW = 0
+    foreach ($lab in $actionBarLabels) {
+        $m = [System.Windows.Forms.TextRenderer]::MeasureText($lab, $actionFont)
+        $need = $m.Width + 14
+        if ($need -gt $btnW) { $btnW = $need }
+    }
+    if ($btnW -lt 56) { $btnW = 56 }
+    $btnY = 5
+    $bg = 6
+    $pad = 6
+    $actionBarW = if ($script:contentFullW) { $script:contentFullW } else { 1132 }
+    $actionBar = New-Object System.Windows.Forms.Panel
+    $actionBar.Location = New-Object System.Drawing.Point(5, 2)
+    $actionBar.Size = New-Object System.Drawing.Size($actionBarW, 36)
+    $actionBar.BackColor = $script:theme.background
+    $actionBar.BorderStyle = "FixedSingle"
+    $rightPanel.Controls.Add($actionBar)
+    $script:actionBar = $actionBar
+    $actionBar.BringToFront()
+
+    $bx = $pad
+    $btnApplyFields = Create-Button "Apply" $bx $btnY $btnW 26
+    $btnApplyFields.Add_Click({ ApplyGameFields })
+    $actionBar.Controls.Add($btnApplyFields)
+    $bx += $btnW + $bg
+    $btnRef = Create-Button "Refresh" $bx $btnY $btnW 26
+    $btnRef.Add_Click({ UpdateEditor })
+    $actionBar.Controls.Add($btnRef)
+    $bx += $btnW + $bg
+    $btnFormView = Create-Button "Form" $bx $btnY $btnW 26
+    $btnFormView.Add_Click({ Set-EditorMode $false })
+    $actionBar.Controls.Add($btnFormView)
+    $bx += $btnW + $bg
+    $btnRaw = Create-Button "Raw" $bx $btnY $btnW 26
+    $btnRaw.Add_Click({ Set-EditorMode $true })
+    $actionBar.Controls.Add($btnRaw)
+    $script:btnRaw = $btnRaw
+    $bx += $btnW + $bg
+    $btnSave = Create-Button "Save" $bx $btnY $btnW 26
+    $btnSave.Add_Click({ SaveMeta })
+    $actionBar.Controls.Add($btnSave)
+    $script:btnSave = $btnSave
+    Update-SaveButtonAppearance
+
+    $bx += $btnW + $bg
+    $btnLaunch = Create-Button "Launch" $bx $btnY $btnW 26
+    $btnLaunch.Add_Click({ Launch-Pegasus })
+    $ttLaunch = New-Object System.Windows.Forms.ToolTip
+    $ttLaunch.SetToolTip($btnLaunch, "Launch Pegasus Frontend (set path in Settings)")
+    $actionBar.Controls.Add($btnLaunch)
+    $script:btnLaunch = $btnLaunch
+
+    $logFont = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $logLabels = @("Clear Log", "Copy Log", "Export Log")
+    $logWidths = @{}
+    foreach ($lab in $logLabels) {
+        $m = [System.Windows.Forms.TextRenderer]::MeasureText($lab, $logFont)
+        $logWidths[$lab] = [Math]::Max(52, $m.Width + 12)
+    }
+    $bx += $btnW + $bg
+    $btnClear = Create-Button "Clear Log" $bx $btnY $logWidths["Clear Log"] 26
+    $btnClear.Add_Click({ if ($script:logBox) { $script:logBox.Clear() } })
+    $actionBar.Controls.Add($btnClear)
+    $script:btnClearLog = $btnClear
+    $bx += $logWidths["Clear Log"] + $bg
+    $btnCopyLog = Create-Button "Copy Log" $bx $btnY $logWidths["Copy Log"] 26
+    $btnCopyLog.Add_Click({
+        if ($script:logBox -and -not [string]::IsNullOrEmpty($script:logBox.Text)) {
+            [System.Windows.Forms.Clipboard]::SetText($script:logBox.Text)
+            Log-Message "Log copied to clipboard" "Green"
+        } else {
+            Log-Message "Log is empty" "Yellow"
+        }
+    })
+    $actionBar.Controls.Add($btnCopyLog)
+    $script:btnCopyLog = $btnCopyLog
+    $bx += $logWidths["Copy Log"] + $bg
+    $btnExport = Create-Button "Export Log" $bx $btnY $logWidths["Export Log"] 26
+    $btnExport.Add_Click({
+        $save = New-Object System.Windows.Forms.SaveFileDialog
+        $save.Title = "Export Log"
+        $save.Filter = "Text Files (*.txt)|*.txt|All Files (*.*)|*.*"
+        $save.FileName = "metadata_repair_log.txt"
+        if ($save.ShowDialog() -eq "OK") {
+            if ($script:logBox) {
+                $script:logBox.Text | Out-File $save.FileName -Encoding UTF8
+                Log-Message "Log exported to: $($save.FileName)" "Green"
+            }
+        }
+    })
+    $actionBar.Controls.Add($btnExport)
+    $script:btnExportLog = $btnExport
+
+    $bx += $logWidths["Export Log"] + $bg
+    $btnSettings = Create-Button "Settings" $bx $btnY 72 26
+    $btnSettings.Add_Click({ Show-SettingsDialog })
+    $actionBar.Controls.Add($btnSettings)
+    $script:btnSettings = $btnSettings
+
+    $countLabel = New-Object System.Windows.Forms.Label
+    $countLabel.Text = "Ready  |  Collections: 0"
+    $countLabel.Size = New-Object System.Drawing.Size(420, 26)
+    $countLabel.Location = New-Object System.Drawing.Point(($actionBarW - 426), 5)
+    $countLabel.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $countLabel.ForeColor = $script:theme.success
+    $countLabel.TextAlign = "MiddleRight"
+    $countLabel.Name = "countLabel"
+    $actionBar.Controls.Add($countLabel)
+    $script:countLabel = $countLabel
+
+    # ============================================================
+    # TERMINAL
+    # ============================================================
+    $script:termExpandedH = 220
+    $script:termCollapsedH = 28
+    $script:termExpanded = $true
+    $termOuter = New-Object System.Windows.Forms.GroupBox
+    $termOuter.Text = "      Terminal Output "
+    $termOuter.Location = New-Object System.Drawing.Point(5, 978)
+    $termOuter.Size = New-Object System.Drawing.Size(1132, $script:termExpandedH)
+    $termOuter.ForeColor = $script:theme.text
+    $termOuter.Font = New-Object System.Drawing.Font("Segoe UI", 10, [System.Drawing.FontStyle]::Bold)
+    $termOuter.BackColor = $script:theme.background
+    $rightPanel.Controls.Add($termOuter)
+    $script:termOuter = $termOuter
+
+    $btnTermToggle = New-Object System.Windows.Forms.Button
+    $btnTermToggle.Size = New-Object System.Drawing.Size(22, 18)
+    $btnTermToggle.Location = New-Object System.Drawing.Point(6, 1)
+    $btnTermToggle.FlatStyle = "Flat"
+    $btnTermToggle.FlatAppearance.BorderSize = 1
+    $btnTermToggle.FlatAppearance.BorderColor = $script:theme.textDim
+    $btnTermToggle.BackColor = $script:theme.button
+    $btnTermToggle.ForeColor = $script:theme.accent
+    $btnTermToggle.Tag = "accent"
+    $btnTermToggle.Font = New-Object System.Drawing.Font("Segoe UI", 9, [System.Drawing.FontStyle]::Bold)
+    $btnTermToggle.Cursor = [System.Windows.Forms.Cursors]::Hand
+    $btnTermToggle.TabStop = $false
+    $btnTermToggle.Text = "-"
+    $btnTermToggle.Add_Click({
+        $script:termExpanded = -not $script:termExpanded
+        $tb = $script:btnTermToggle
+        if ($script:termExpanded) {
+            if (-not $script:termExpandedH -or $script:termExpandedH -lt 120) { $script:termExpandedH = 360 }
+            $script:termOuter.Height = $script:termExpandedH
+            $script:termOuter.Text = "      Terminal Output "
+            if ($tb) { $tb.Text = "-" }
+            foreach ($ctrl in @($script:termOuter.Controls)) {
+                if ($null -eq $tb -or $ctrl -ne $tb) { $ctrl.Visible = $true }
+            }
+            if ($tb) { $tb.Visible = $true; $tb.BringToFront() }
+            if ($script:termGrip) { $script:termGrip.Visible = $true; $script:termGrip.BringToFront() }
+        } else {
+            foreach ($ctrl in @($script:termOuter.Controls)) {
+                if ($null -eq $tb -or $ctrl -ne $tb) { $ctrl.Visible = $false }
+            }
+            $script:termOuter.Height = $script:termCollapsedH
+            $script:termOuter.Text = "      Terminal Output "
+            if ($tb) {
+                $tb.Text = "+"
+                $tb.Visible = $true
+                $tb.BringToFront()
+            }
+            if ($script:termGrip) { $script:termGrip.Visible = $true; $script:termGrip.BringToFront() }
+        }
+        Relayout-TerminalPosition
+    })
+    $termOuter.Controls.Add($btnTermToggle)
+    $btnTermToggle.BringToFront()
+    $script:btnTermToggle = $btnTermToggle
+
+    $script:termDragging = $false
+    $script:termDragStartY = 0
+    $script:termDragStartH = 0
+    $termGrip = New-Object System.Windows.Forms.Panel
+    $termGrip.Size = New-Object System.Drawing.Size(963, 8)
+    $termGrip.Location = New-Object System.Drawing.Point(2, 20)
+    $termGrip.BackColor = [System.Drawing.Color]::FromArgb(45, 50, 75)
+    $termGrip.Cursor = [System.Windows.Forms.Cursors]::SizeNS
+    $termGrip.Anchor = [System.Windows.Forms.AnchorStyles]::Left -bor [System.Windows.Forms.AnchorStyles]::Right -bor [System.Windows.Forms.AnchorStyles]::Bottom
+    $termOuter.Controls.Add($termGrip)
+    $script:termGrip = $termGrip
+    $termGrip.BringToFront()
+
+    $termGrip.Add_MouseDown({
+        param($sender, $e)
+        if ($e.Button -ne [System.Windows.Forms.MouseButtons]::Left) { return }
+        if (-not $script:termExpanded) {
+            $script:termExpanded = $true
+            $tb = $script:btnTermToggle
+            if ($tb) { $tb.Text = "-" }
+            if ($script:termOuter.Height -lt 100) {
+                $script:termExpandedH = 360
+                $script:termOuter.Height = 360
+            }
+            foreach ($ctrl in @($script:termOuter.Controls)) {
+                if ($script:btnTermToggle -and $ctrl -eq $script:btnTermToggle) { continue }
+                $ctrl.Visible = $true
+            }
+        }
+        $script:termDragging = $true
+        $script:termDragStartY = [System.Windows.Forms.Cursor]::Position.Y
+        $script:termDragStartH = $script:termOuter.Height
+        $sender.Capture = $true
+    })
+    $termGrip.Add_MouseMove({
+        param($sender, $e)
+        if (-not $script:termDragging) { return }
+        $dy = [System.Windows.Forms.Cursor]::Position.Y - $script:termDragStartY
+        $newH = $script:termDragStartH + $dy
+        if ($newH -lt 120) { $newH = 120 }
+        if ($newH -gt 900) { $newH = 900 }
+        $script:termExpandedH = $newH
+        if ($script:rawMode) {
+            Apply-RawEditorLayout
+        } else {
+            $script:termOuter.Height = $newH
+            Apply-TerminalInnerLayout
+            try {
+                $f = $script:mainForm
+                if ($f -and $f.WindowState -eq "Normal") {
+                    $bottom = $script:termOuter.Bottom + 58
+                    $needed = [Math]::Max($f.MinimumSize.Height, $bottom)
+                    if ($f.Height -lt $needed) { $f.Height = $needed }
+                }
+            } catch {}
+        }
+    })
+    $termGrip.Add_MouseUp({
+        param($sender, $e)
+        $script:termDragging = $false
+        $sender.Capture = $false
+        if ($script:termOuter) {
+            $script:termExpandedH = $script:termOuter.Height
+        }
+        Relayout-TerminalPosition
+    })
+
+    $logBox = New-Object System.Windows.Forms.TextBox
+    $logBox.Location = New-Object System.Drawing.Point(8, 20)
+    $logBox.Size = New-Object System.Drawing.Size(951, 300)
+    $logBox.Multiline = $true
+    $logBox.ScrollBars = "Vertical"
+    $logBox.ReadOnly = $true
+    $logBox.Font = New-Object System.Drawing.Font("Consolas", 9)
+    $logBox.BackColor = $script:theme.terminal
+    $logBox.ForeColor = $script:theme.text
+    $logBox.BorderStyle = "FixedSingle"
+    $logBox.Text = "Ready. Select a collection to begin..."
+    $termOuter.Controls.Add($logBox)
+    $script:logBox = $logBox
+
+    if ($btnTermToggle) {
+        $btnTermToggle.Visible = $true
+        $btnTermToggle.BringToFront()
+    }
+
+    # ============================================================
+    # STATUS BAR
+    # ============================================================
+    $statusStrip = New-Object System.Windows.Forms.StatusStrip
+    $statusStrip.BackColor = $script:theme.panel
+    $statusStrip.ForeColor = $script:theme.text
+    $statusStrip.SizingGrip = $false
+    $form.Controls.Add($statusStrip)
+
+    $statusLabel = New-Object System.Windows.Forms.ToolStripStatusLabel
+    $statusLabel.Text = "Ready"
+    $statusLabel.ForeColor = $script:theme.text
+    $statusLabel.Spring = $true
+    $statusStrip.Items.Add($statusLabel)
+    $script:statusBar = $statusLabel
+
+    $statusCount = New-Object System.Windows.Forms.ToolStripStatusLabel
+    $statusCount.Text = "Collections: $($script:collections.Count)"
+    $statusCount.ForeColor = $script:theme.textDim
+    $statusStrip.Items.Add($statusCount)
+
+    $statusColl = New-Object System.Windows.Forms.ToolStripStatusLabel
+    $statusColl.Text = "No collection loaded"
+    $statusColl.ForeColor = $script:theme.textDim
+    $statusStrip.Items.Add($statusColl)
+
+    # ============================================================
+    # INIT
+    # ============================================================
+    try {
+        RefreshCollectionList
+
+        if ($collectionList.Items.Count -gt 0) {
+            $collectionList.SelectedIndex = 0
+            $name = $collectionList.SelectedItem.ToString()
+            $script:currentCollection = $script:collections[$name]
+            $statusColl.Text = "Loaded: $name"
+            UpdateEditor
+            UpdateStats
+            Log-Message "Loaded collection: $name" "Green"
+        } else {
+            Log-Message "No collections found. Click 'Add' to add one." "Yellow"
+        }
+    } catch {
+        Log-Message "Init warning: $_" "Yellow"
+    }
+
+    $form.ShowDialog() | Out-Null
 }
 
 # ============================================================================
