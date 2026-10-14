@@ -1,5 +1,8 @@
 # ============================================================================
 # METADATA REPAIR TOOL
+# Version: 2.5.65 - FIXED left menu "sinking" away from the title after collapsing
+#                   sections / resizing (scroll offset was ignored when placing
+#                   sections). New Build & Repair button: "Delete Thumbs + Paths".
 # Version: 2.5.64 - After upscaling, assets.box_front is written for EVERY upscaled
 #                   image found in box2dfront (not only this run's), so an
 #                   interrupted/crashed run no longer leaves paths unwritten.
@@ -100,7 +103,7 @@ public static class MrtWin32 {
 # ============================================================================
 # GLOBALS
 # ============================================================================
-$script:version = "2.5.64"
+$script:version = "2.5.65"
 $script:configPath = "$env:APPDATA\Pegasus-Metadata-Editor\config.json"
 $script:collections = @{}
 $script:pegasusPath = ""
@@ -1131,29 +1134,37 @@ function Toggle-LeftSection {
 }
 
 function Relayout-LeftSections {
+    # 2.5.65: the left panel scrolls (AutoScroll). Child Location values are
+    # relative to the scrolled view, so placing sections at fixed Y values while
+    # scrolled made the list "sink" away from the title. Scroll to the top,
+    # place everything, then restore the scroll position.
     if ($null -eq $script:leftPanelRef -or $script:leftSections.Count -eq 0) { return }
-    $y = 40
-    $first = $true
-    foreach ($sec in $script:leftSections) {
-        if ($first) {
-            $y = $sec.Group.Location.Y
-            $first = $false
+    $panel = $script:leftPanelRef
+    $scrollY = 0
+    try { $scrollY = -$panel.DisplayRectangle.Y; if ($scrollY -lt 0) { $scrollY = 0 } } catch { $scrollY = 0 }
+    try { $panel.AutoScrollPosition = New-Object System.Drawing.Point(0, 0) } catch {}
+    try { $panel.SuspendLayout() } catch {}
+    try {
+        $y = 40
+        foreach ($sec in $script:leftSections) {
+            $sec.Group.Location = New-Object System.Drawing.Point(5, $y)
+            $h = if ($sec.Collapsible -and -not $sec.Expanded) {
+                $script:collapsedHeaderH
+            } else {
+                $sec.ExpandedHeight
+            }
+            $sec.Group.Height = $h
+            if ($sec.ToggleBtn) {
+                $sec.ToggleBtn.Location = New-Object System.Drawing.Point(6, 1)
+                $sec.ToggleBtn.BringToFront()
+            }
+            $y += $h + $script:sectionGap
         }
+    } finally {
+        try { $panel.ResumeLayout($true) } catch {}
     }
-    $y = 40
-    foreach ($sec in $script:leftSections) {
-        $sec.Group.Location = New-Object System.Drawing.Point(5, $y)
-        $h = if ($sec.Collapsible -and -not $sec.Expanded) {
-            $script:collapsedHeaderH
-        } else {
-            $sec.ExpandedHeight
-        }
-        $sec.Group.Height = $h
-        if ($sec.ToggleBtn) {
-            $sec.ToggleBtn.Location = New-Object System.Drawing.Point(6, 1)
-            $sec.ToggleBtn.BringToFront()
-        }
-        $y += $h + $script:sectionGap
+    if ($scrollY -gt 0) {
+        try { $panel.AutoScrollPosition = New-Object System.Drawing.Point(0, $scrollY) } catch {}
     }
 }
 
@@ -2500,6 +2511,9 @@ function Get-DeveloperLogText {
     return @"
 Developer Log
 Policy: All changes and updates must always be listed here.
+
+2.5.65 - Left menu layout bug fixed (sections no longer sink away from the title).
+- Build & Repair: Delete Thumbs + Paths (deletes box2dThumb folder, removes box_front_thumb lines).
 
 2.5.64 - box_front paths now written for all upscaled images on disk (recovers crashed runs).
 
@@ -9119,6 +9133,83 @@ function Indent-DescriptionFields {
     }
 }
 
+function Remove-BoxThumbsAndPaths {
+    # Deletes the collection's box2dThumb folder and removes every
+    # assets.box_front_thumb line from the metadata. Front covers are untouched.
+    $c = Get-Col
+    if (-not $c) { return }
+
+    Log-Message "========================================" "Cyan"
+    Log-Message "DELETE BOX THUMBS + PATHS - $($c.name)" "Cyan"
+    Log-Message "========================================" "Cyan"
+
+    try {
+        $p = $c.metadataPath
+        $bp = $c.mediaPath
+        $thumbName = if ($c.thumbFolder) { [string]$c.thumbFolder } else { "box2dThumb" }
+        $thumbDir = $null
+        if (-not [string]::IsNullOrWhiteSpace($bp)) { $thumbDir = Join-Path $bp $thumbName }
+        $dirExists = ($thumbDir -and (Test-Path -LiteralPath $thumbDir))
+        $fileCount = 0
+        if ($dirExists) {
+            $fileCount = @(Get-ChildItem -LiteralPath $thumbDir -File -Recurse -ErrorAction SilentlyContinue).Count
+        }
+
+        $content = $null
+        $pathLines = 0
+        if ($p -and (Test-Path -LiteralPath $p)) {
+            $content = Get-Content -LiteralPath $p -Raw -ErrorAction Stop
+            if ($content) { $pathLines = ([regex]::Matches($content, '(?m)^assets\.box_front_thumb:')).Count }
+        }
+
+        if (-not $dirExists -and $pathLines -eq 0) {
+            Log-Message "Nothing to remove: no '$thumbName' folder and no assets.box_front_thumb lines." "Yellow"
+            return
+        }
+
+        $folderText = if ($dirExists) { "$thumbDir`n   ($fileCount file(s)) - sent to the Recycle Bin where the drive supports it" } else { "(no $thumbName folder found)" }
+        $msg = "This will:`n`n" +
+               "1. Delete the thumbnail folder:`n   $folderText`n`n" +
+               "2. Remove $pathLines assets.box_front_thumb line(s) from the metadata`n   (a backup is made first)`n`n" +
+               "Your front covers (box2dfront) and their paths are NOT touched.`n`n" +
+               "Continue?"
+        $r = [System.Windows.Forms.MessageBox]::Show($msg, "Delete Box Thumbs + Paths", "YesNo", "Warning")
+        if ($r -ne "Yes") { Log-Message "Cancelled - nothing changed." "Yellow"; return }
+
+        if ($dirExists) {
+            $deleted = $false
+            try {
+                Add-Type -AssemblyName Microsoft.VisualBasic -ErrorAction Stop
+                [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory(
+                    $thumbDir,
+                    [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs,
+                    [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+                $deleted = -not (Test-Path -LiteralPath $thumbDir)
+            } catch {
+                Log-Message "Recycle Bin delete failed ($($_.Exception.Message)) - deleting directly." "Yellow"
+            }
+            if (-not $deleted -and (Test-Path -LiteralPath $thumbDir)) {
+                Remove-Item -LiteralPath $thumbDir -Recurse -Force -ErrorAction Stop
+            }
+            Log-Message "Deleted folder: $thumbDir ($fileCount file(s))" "Green"
+        }
+
+        if ($pathLines -gt 0 -and $content) {
+            CreateBackup
+            $updated = [regex]::Replace($content, '(?m)^assets\.box_front_thumb:[^\r\n]*(\r?\n|\z)', '')
+            $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+            [System.IO.File]::WriteAllText($p, $updated, $utf8NoBom)
+            Log-Message "Removed $pathLines assets.box_front_thumb line(s) from metadata." "Green"
+        }
+
+        Log-Message "Done!" "Green"
+        UpdateEditor
+        UpdateStats
+    } catch {
+        Log-Message "ERROR: $_" "Red"
+    }
+}
+
 function Show-BuilderHelp {
     [System.Windows.Forms.MessageBox]::Show(
         "BUILDER / REPAIR TOOLS`n`n" +
@@ -9140,7 +9231,8 @@ function Show-BuilderHelp {
         "  (common after importing SNES header title lists by mistake)`n" +
         "Separate Game Blocks - insert a blank line between every game block`n" +
         "  (makes the raw view readable; idempotent - safe to run more than once)`n" +
-        "Indent Descriptions - indent un-indented description:/summary: text so Pegasus reads it`n`n" +
+        "Indent Descriptions - indent un-indented description:/summary: text so Pegasus reads it`n" +
+        "Delete Thumbs + Paths - delete the box2dThumb folder and remove all assets.box_front_thumb lines`n`n" +
         "Open Workflow Guide for step-by-step help on each tool.",
         "Builder Help", "OK", "Information")
 }
@@ -13443,6 +13535,11 @@ function Show-MainWindow {
     $btnIndentDesc.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
     $btnIndentDesc.Add_Click({ Indent-DescriptionFields })
     $builderGroup.Controls.Add($btnIndentDesc)
+
+    $btnDelThumbs = Create-Button "Delete Thumbs + Paths" $bCol2 $by $bBw 26
+    $btnDelThumbs.Font = New-Object System.Drawing.Font("Segoe UI", 8, [System.Drawing.FontStyle]::Bold)
+    $btnDelThumbs.Add_Click({ Remove-BoxThumbsAndPaths })
+    $builderGroup.Controls.Add($btnDelThumbs)
 
 
     # ============================================================
